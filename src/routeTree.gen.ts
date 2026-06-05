@@ -13,6 +13,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RosterRouteImport } from './routes/roster'
 import { Route as OutreachRouteImport } from './routes/outreach'
 import { Route as InboxRouteImport } from './routes/inbox'
+import { Route as HelpRouteImport } from './routes/help'
 import { Route as DealsRouteImport } from './routes/deals'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
@@ -36,6 +37,11 @@ const OutreachRoute = OutreachRouteImport.update({
 const InboxRoute = InboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HelpRoute = HelpRouteImport.update({
+  id: '/help',
+  path: '/help',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DealsRoute = DealsRouteImport.update({
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AnalyticsRoute
   '/calendar': typeof CalendarRoute
   '/deals': typeof DealsRoute
+  '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
   '/outreach': typeof OutreachRoute
   '/roster': typeof RosterRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/calendar': typeof CalendarRoute
   '/deals': typeof DealsRoute
+  '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
   '/outreach': typeof OutreachRoute
   '/roster': typeof RosterRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/calendar': typeof CalendarRoute
   '/deals': typeof DealsRoute
+  '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
   '/outreach': typeof OutreachRoute
   '/roster': typeof RosterRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/calendar'
     | '/deals'
+    | '/help'
     | '/inbox'
     | '/outreach'
     | '/roster'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/calendar'
     | '/deals'
+    | '/help'
     | '/inbox'
     | '/outreach'
     | '/roster'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/calendar'
     | '/deals'
+    | '/help'
     | '/inbox'
     | '/outreach'
     | '/roster'
@@ -128,6 +140,7 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   CalendarRoute: typeof CalendarRoute
   DealsRoute: typeof DealsRoute
+  HelpRoute: typeof HelpRoute
   InboxRoute: typeof InboxRoute
   OutreachRoute: typeof OutreachRoute
   RosterRoute: typeof RosterRoute
@@ -162,6 +175,13 @@ declare module '@tanstack/react-router' {
       path: '/inbox'
       fullPath: '/inbox'
       preLoaderRoute: typeof InboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/help': {
+      id: '/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof HelpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/deals': {
@@ -200,6 +220,7 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   CalendarRoute: CalendarRoute,
   DealsRoute: DealsRoute,
+  HelpRoute: HelpRoute,
   InboxRoute: InboxRoute,
   OutreachRoute: OutreachRoute,
   RosterRoute: RosterRoute,
@@ -208,3 +229,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
