@@ -1,20 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Users } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
-import { EmptyState } from "@/components/EmptyState";
+import { ToolPageShell } from "@/components/ToolPageShell";
 
-export const Route = createFileRoute("/roster")({ component: Page });
-
-function Page() {
-  return (
-    <div className="px-10 py-8 max-w-6xl">
-      <PageHeader title="Roster" subtitle="Your stable of creators and their key stats." />
-      <EmptyState
-        icon={Users}
-        title="No talent added yet"
-        description="Add the creators you represent to track their platforms, audience, rates, and active campaigns in one place."
-        actionLabel="Add talent"
-      />
-    </div>
-  );
-}
+export const Route = createFileRoute("/roster")({
+  component: () => (
+    <ToolPageShell
+      eyebrow="Roster"
+      title="Your stable of creators, organized."
+      description="Add the talent you represent to track platforms, audience demographics, rate cards, and active campaigns in one quiet view."
+      icon={Users}
+      actionLabel="Add talent"
+    />
+  ),
+});

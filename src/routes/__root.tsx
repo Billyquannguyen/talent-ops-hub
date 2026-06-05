@@ -121,7 +121,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <div className="min-h-screen bg-background">
         <AppSidebar />
-        <main className="ml-60 min-h-screen">
+        <main className="ml-[17.5rem] mr-3 my-3 min-h-[calc(100vh-1.5rem)] rounded-2xl border border-border bg-card/30 overflow-hidden">
           <Outlet />
         </main>
       </div>
