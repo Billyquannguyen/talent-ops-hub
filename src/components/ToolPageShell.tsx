@@ -25,9 +25,7 @@ export function ToolPageShell({ eyebrow, title, description, icon: Icon, actionL
           </p>
         )}
         <h1 className="text-2xl md:text-3xl font-medium tracking-tight max-w-xl">{title}</h1>
-        <p className="mt-3 text-sm text-muted-foreground max-w-md leading-relaxed">
-          {description}
-        </p>
+        <p className="mt-3 text-sm text-muted-foreground max-w-md leading-relaxed">{description}</p>
         {actionLabel && (
           <button className="mt-6 rounded-full bg-foreground text-background text-xs font-medium px-4 py-2 hover:opacity-90">
             {actionLabel}

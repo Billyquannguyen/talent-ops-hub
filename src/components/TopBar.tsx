@@ -14,7 +14,7 @@ export function TopBar() {
     <div className="flex items-center justify-between px-6 pt-5">
       <button className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs font-medium text-foreground/90 hover:bg-card">
         <span className="size-1.5 rounded-full bg-emerald-400" />
-        Talent OS v1.0
+        Katlas Ops v1.0
         <ChevronDown className="size-3.5 text-muted-foreground" />
       </button>
 
@@ -38,7 +38,7 @@ export function TopBar() {
           })}
         </nav>
         <div className="size-8 rounded-full bg-accent grid place-items-center text-[11px] font-semibold ring-1 ring-border">
-          AM
+          KM
         </div>
       </div>
     </div>

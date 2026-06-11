@@ -15,6 +15,7 @@ import { Route as OutreachRouteImport } from './routes/outreach'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as DealsRouteImport } from './routes/deals'
+import { Route as CreatorSourcingRouteImport } from './routes/creator-sourcing'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
@@ -49,6 +50,11 @@ const DealsRoute = DealsRouteImport.update({
   path: '/deals',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CreatorSourcingRoute = CreatorSourcingRouteImport.update({
+  id: '/creator-sourcing',
+  path: '/creator-sourcing',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CalendarRoute = CalendarRouteImport.update({
   id: '/calendar',
   path: '/calendar',
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/calendar': typeof CalendarRoute
+  '/creator-sourcing': typeof CreatorSourcingRoute
   '/deals': typeof DealsRoute
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/calendar': typeof CalendarRoute
+  '/creator-sourcing': typeof CreatorSourcingRoute
   '/deals': typeof DealsRoute
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/calendar': typeof CalendarRoute
+  '/creator-sourcing': typeof CreatorSourcingRoute
   '/deals': typeof DealsRoute
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/calendar'
+    | '/creator-sourcing'
     | '/deals'
     | '/help'
     | '/inbox'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/calendar'
+    | '/creator-sourcing'
     | '/deals'
     | '/help'
     | '/inbox'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/calendar'
+    | '/creator-sourcing'
     | '/deals'
     | '/help'
     | '/inbox'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalyticsRoute: typeof AnalyticsRoute
   CalendarRoute: typeof CalendarRoute
+  CreatorSourcingRoute: typeof CreatorSourcingRoute
   DealsRoute: typeof DealsRoute
   HelpRoute: typeof HelpRoute
   InboxRoute: typeof InboxRoute
@@ -191,6 +204,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DealsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/creator-sourcing': {
+      id: '/creator-sourcing'
+      path: '/creator-sourcing'
+      fullPath: '/creator-sourcing'
+      preLoaderRoute: typeof CreatorSourcingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/calendar': {
       id: '/calendar'
       path: '/calendar'
@@ -219,6 +239,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyticsRoute: AnalyticsRoute,
   CalendarRoute: CalendarRoute,
+  CreatorSourcingRoute: CreatorSourcingRoute,
   DealsRoute: DealsRoute,
   HelpRoute: HelpRoute,
   InboxRoute: InboxRoute,
@@ -229,3 +250,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

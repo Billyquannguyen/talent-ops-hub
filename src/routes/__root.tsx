@@ -11,7 +11,6 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { AppSidebar } from "../components/AppSidebar";
 
 function NotFoundComponent() {
   return (
@@ -78,11 +77,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Talent OS — Influencer Manager Workflow" },
-      { name: "description", content: "Internal workflow tool for influencer talent managers." },
-      { name: "author", content: "Talent OS" },
-      { property: "og:title", content: "Talent OS" },
-      { property: "og:description", content: "Internal workflow tool for influencer talent managers." },
+      { title: "Katlas Media Workflow Agent" },
+      { name: "description", content: "Creator sourcing workflow automation for Katlas Media." },
+      { name: "author", content: "Katlas Media" },
+      { property: "og:title", content: "Katlas Media Workflow Agent" },
+      {
+        property: "og:description",
+        content: "Creator sourcing workflow automation for Katlas Media.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
@@ -119,12 +121,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen bg-background">
-        <AppSidebar />
-        <main className="ml-[17.5rem] mr-3 my-3 min-h-[calc(100vh-1.5rem)] rounded-2xl border border-border bg-card/30 overflow-hidden">
-          <Outlet />
-        </main>
-      </div>
+      <Outlet />
     </QueryClientProvider>
   );
 }
