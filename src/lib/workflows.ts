@@ -1,4 +1,4 @@
-import { ClipboardList, Search, Sparkles } from "lucide-react";
+import { BriefcaseBusiness, MessageSquareText, Search, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type WorkflowCard = {
@@ -21,19 +21,29 @@ export const workflowCards: WorkflowCard[] = [
     icon: Search,
   },
   {
-    id: "placeholder-one",
-    title: "Placeholder Function",
+    id: "creator-outreach",
+    title: "Creator Outreach Assistant",
     description:
-      "Reserved for the next Katlas workflow, such as campaign matching or creator vetting.",
-    status: "placeholder",
-    icon: ClipboardList,
+      "Translate creator messages, apply campaign templates, and copy ready-to-send replies.",
+    status: "ready",
+    route: "/creator-outreach",
+    icon: MessageSquareText,
   },
   {
-    id: "placeholder-two",
-    title: "Placeholder Function",
+    id: "active-campaigns",
+    title: "Active Campaign Management",
     description:
-      "Reserved for another repeatable workflow that should live as its own dashboard function.",
-    status: "placeholder",
-    icon: Sparkles,
+      "Track selected creators, quotes, status, profit, drafts, payments, and live links.",
+    status: "ready",
+    route: "/active-campaigns",
+    icon: BriefcaseBusiness,
+  },
+  {
+    id: "employee-profile",
+    title: "Employee Profile",
+    description: "Keep your work identity, contact details, and account links in one useful place.",
+    status: "ready",
+    route: "/employee-profile",
+    icon: UserRound,
   },
 ];

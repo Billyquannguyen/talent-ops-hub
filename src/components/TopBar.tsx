@@ -2,9 +2,10 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { ChevronDown } from "lucide-react";
 
 const navItems = [
-  { to: "/", label: "Dashboard" },
-  { to: "/settings", label: "Settings" },
-  { to: "/help", label: "Help & Support" },
+  { to: "/", label: "AI Slave" },
+  { to: "/campaign-profiles", label: "Campaign Profiles" },
+  { to: "/employee-profile", label: "Employee Profile" },
+  { to: "/about-katlas-media", label: "About Katlas Media" },
 ] as const;
 
 export function TopBar() {
@@ -18,10 +19,12 @@ export function TopBar() {
         <ChevronDown className="size-3.5 text-muted-foreground" />
       </button>
 
-      <div className="flex items-center gap-5">
-        <nav className="flex items-center gap-5 text-sm">
+      <div className="flex min-w-0 items-center gap-5">
+        <nav className="flex max-w-[70vw] items-center gap-5 overflow-x-auto text-sm">
           {navItems.map((n) => {
-            const active = pathname === n.to;
+            const active =
+              pathname === n.to ||
+              (n.to === "/employee-profile" && pathname === "/employee-performance");
             return (
               <Link
                 key={n.to}

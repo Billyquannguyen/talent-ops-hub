@@ -14,11 +14,19 @@ import { Route as RosterRouteImport } from './routes/roster'
 import { Route as OutreachRouteImport } from './routes/outreach'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as HelpRouteImport } from './routes/help'
+import { Route as EmployeeProfileRouteImport } from './routes/employee-profile'
+import { Route as EmployeePerformanceRouteImport } from './routes/employee-performance'
 import { Route as DealsRouteImport } from './routes/deals'
 import { Route as CreatorSourcingRouteImport } from './routes/creator-sourcing'
+import { Route as CreatorOutreachRouteImport } from './routes/creator-outreach'
+import { Route as CampaignProfilesRouteImport } from './routes/campaign-profiles'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
+import { Route as ActiveCampaignsRouteImport } from './routes/active-campaigns'
+import { Route as AboutKatlasMediaRouteImport } from './routes/about-katlas-media'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ActiveCampaignsIndexRouteImport } from './routes/active-campaigns.index'
+import { Route as ActiveCampaignsCampaignIdRouteImport } from './routes/active-campaigns.$campaignId'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -45,6 +53,16 @@ const HelpRoute = HelpRouteImport.update({
   path: '/help',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EmployeeProfileRoute = EmployeeProfileRouteImport.update({
+  id: '/employee-profile',
+  path: '/employee-profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmployeePerformanceRoute = EmployeePerformanceRouteImport.update({
+  id: '/employee-performance',
+  path: '/employee-performance',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DealsRoute = DealsRouteImport.update({
   id: '/deals',
   path: '/deals',
@@ -53,6 +71,16 @@ const DealsRoute = DealsRouteImport.update({
 const CreatorSourcingRoute = CreatorSourcingRouteImport.update({
   id: '/creator-sourcing',
   path: '/creator-sourcing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreatorOutreachRoute = CreatorOutreachRouteImport.update({
+  id: '/creator-outreach',
+  path: '/creator-outreach',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CampaignProfilesRoute = CampaignProfilesRouteImport.update({
+  id: '/campaign-profiles',
+  path: '/campaign-profiles',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CalendarRoute = CalendarRouteImport.update({
@@ -65,94 +93,167 @@ const AnalyticsRoute = AnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ActiveCampaignsRoute = ActiveCampaignsRouteImport.update({
+  id: '/active-campaigns',
+  path: '/active-campaigns',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutKatlasMediaRoute = AboutKatlasMediaRouteImport.update({
+  id: '/about-katlas-media',
+  path: '/about-katlas-media',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ActiveCampaignsIndexRoute = ActiveCampaignsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ActiveCampaignsRoute,
+} as any)
+const ActiveCampaignsCampaignIdRoute =
+  ActiveCampaignsCampaignIdRouteImport.update({
+    id: '/$campaignId',
+    path: '/$campaignId',
+    getParentRoute: () => ActiveCampaignsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about-katlas-media': typeof AboutKatlasMediaRoute
+  '/active-campaigns': typeof ActiveCampaignsRouteWithChildren
   '/analytics': typeof AnalyticsRoute
   '/calendar': typeof CalendarRoute
+  '/campaign-profiles': typeof CampaignProfilesRoute
+  '/creator-outreach': typeof CreatorOutreachRoute
   '/creator-sourcing': typeof CreatorSourcingRoute
   '/deals': typeof DealsRoute
+  '/employee-performance': typeof EmployeePerformanceRoute
+  '/employee-profile': typeof EmployeeProfileRoute
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
   '/outreach': typeof OutreachRoute
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
+  '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
+  '/active-campaigns/': typeof ActiveCampaignsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about-katlas-media': typeof AboutKatlasMediaRoute
   '/analytics': typeof AnalyticsRoute
   '/calendar': typeof CalendarRoute
+  '/campaign-profiles': typeof CampaignProfilesRoute
+  '/creator-outreach': typeof CreatorOutreachRoute
   '/creator-sourcing': typeof CreatorSourcingRoute
   '/deals': typeof DealsRoute
+  '/employee-performance': typeof EmployeePerformanceRoute
+  '/employee-profile': typeof EmployeeProfileRoute
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
   '/outreach': typeof OutreachRoute
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
+  '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
+  '/active-campaigns': typeof ActiveCampaignsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about-katlas-media': typeof AboutKatlasMediaRoute
+  '/active-campaigns': typeof ActiveCampaignsRouteWithChildren
   '/analytics': typeof AnalyticsRoute
   '/calendar': typeof CalendarRoute
+  '/campaign-profiles': typeof CampaignProfilesRoute
+  '/creator-outreach': typeof CreatorOutreachRoute
   '/creator-sourcing': typeof CreatorSourcingRoute
   '/deals': typeof DealsRoute
+  '/employee-performance': typeof EmployeePerformanceRoute
+  '/employee-profile': typeof EmployeeProfileRoute
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
   '/outreach': typeof OutreachRoute
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
+  '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
+  '/active-campaigns/': typeof ActiveCampaignsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about-katlas-media'
+    | '/active-campaigns'
     | '/analytics'
     | '/calendar'
+    | '/campaign-profiles'
+    | '/creator-outreach'
     | '/creator-sourcing'
     | '/deals'
+    | '/employee-performance'
+    | '/employee-profile'
     | '/help'
     | '/inbox'
     | '/outreach'
     | '/roster'
     | '/settings'
+    | '/active-campaigns/$campaignId'
+    | '/active-campaigns/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about-katlas-media'
     | '/analytics'
     | '/calendar'
+    | '/campaign-profiles'
+    | '/creator-outreach'
     | '/creator-sourcing'
     | '/deals'
+    | '/employee-performance'
+    | '/employee-profile'
     | '/help'
     | '/inbox'
     | '/outreach'
     | '/roster'
     | '/settings'
+    | '/active-campaigns/$campaignId'
+    | '/active-campaigns'
   id:
     | '__root__'
     | '/'
+    | '/about-katlas-media'
+    | '/active-campaigns'
     | '/analytics'
     | '/calendar'
+    | '/campaign-profiles'
+    | '/creator-outreach'
     | '/creator-sourcing'
     | '/deals'
+    | '/employee-performance'
+    | '/employee-profile'
     | '/help'
     | '/inbox'
     | '/outreach'
     | '/roster'
     | '/settings'
+    | '/active-campaigns/$campaignId'
+    | '/active-campaigns/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutKatlasMediaRoute: typeof AboutKatlasMediaRoute
+  ActiveCampaignsRoute: typeof ActiveCampaignsRouteWithChildren
   AnalyticsRoute: typeof AnalyticsRoute
   CalendarRoute: typeof CalendarRoute
+  CampaignProfilesRoute: typeof CampaignProfilesRoute
+  CreatorOutreachRoute: typeof CreatorOutreachRoute
   CreatorSourcingRoute: typeof CreatorSourcingRoute
   DealsRoute: typeof DealsRoute
+  EmployeePerformanceRoute: typeof EmployeePerformanceRoute
+  EmployeeProfileRoute: typeof EmployeeProfileRoute
   HelpRoute: typeof HelpRoute
   InboxRoute: typeof InboxRoute
   OutreachRoute: typeof OutreachRoute
@@ -197,6 +298,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HelpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/employee-profile': {
+      id: '/employee-profile'
+      path: '/employee-profile'
+      fullPath: '/employee-profile'
+      preLoaderRoute: typeof EmployeeProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/employee-performance': {
+      id: '/employee-performance'
+      path: '/employee-performance'
+      fullPath: '/employee-performance'
+      preLoaderRoute: typeof EmployeePerformanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/deals': {
       id: '/deals'
       path: '/deals'
@@ -209,6 +324,20 @@ declare module '@tanstack/react-router' {
       path: '/creator-sourcing'
       fullPath: '/creator-sourcing'
       preLoaderRoute: typeof CreatorSourcingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/creator-outreach': {
+      id: '/creator-outreach'
+      path: '/creator-outreach'
+      fullPath: '/creator-outreach'
+      preLoaderRoute: typeof CreatorOutreachRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/campaign-profiles': {
+      id: '/campaign-profiles'
+      path: '/campaign-profiles'
+      fullPath: '/campaign-profiles'
+      preLoaderRoute: typeof CampaignProfilesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/calendar': {
@@ -225,6 +354,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/active-campaigns': {
+      id: '/active-campaigns'
+      path: '/active-campaigns'
+      fullPath: '/active-campaigns'
+      preLoaderRoute: typeof ActiveCampaignsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about-katlas-media': {
+      id: '/about-katlas-media'
+      path: '/about-katlas-media'
+      fullPath: '/about-katlas-media'
+      preLoaderRoute: typeof AboutKatlasMediaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -232,15 +375,49 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/active-campaigns/': {
+      id: '/active-campaigns/'
+      path: '/'
+      fullPath: '/active-campaigns/'
+      preLoaderRoute: typeof ActiveCampaignsIndexRouteImport
+      parentRoute: typeof ActiveCampaignsRoute
+    }
+    '/active-campaigns/$campaignId': {
+      id: '/active-campaigns/$campaignId'
+      path: '/$campaignId'
+      fullPath: '/active-campaigns/$campaignId'
+      preLoaderRoute: typeof ActiveCampaignsCampaignIdRouteImport
+      parentRoute: typeof ActiveCampaignsRoute
+    }
   }
 }
 
+interface ActiveCampaignsRouteChildren {
+  ActiveCampaignsCampaignIdRoute: typeof ActiveCampaignsCampaignIdRoute
+  ActiveCampaignsIndexRoute: typeof ActiveCampaignsIndexRoute
+}
+
+const ActiveCampaignsRouteChildren: ActiveCampaignsRouteChildren = {
+  ActiveCampaignsCampaignIdRoute: ActiveCampaignsCampaignIdRoute,
+  ActiveCampaignsIndexRoute: ActiveCampaignsIndexRoute,
+}
+
+const ActiveCampaignsRouteWithChildren = ActiveCampaignsRoute._addFileChildren(
+  ActiveCampaignsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutKatlasMediaRoute: AboutKatlasMediaRoute,
+  ActiveCampaignsRoute: ActiveCampaignsRouteWithChildren,
   AnalyticsRoute: AnalyticsRoute,
   CalendarRoute: CalendarRoute,
+  CampaignProfilesRoute: CampaignProfilesRoute,
+  CreatorOutreachRoute: CreatorOutreachRoute,
   CreatorSourcingRoute: CreatorSourcingRoute,
   DealsRoute: DealsRoute,
+  EmployeePerformanceRoute: EmployeePerformanceRoute,
+  EmployeeProfileRoute: EmployeeProfileRoute,
   HelpRoute: HelpRoute,
   InboxRoute: InboxRoute,
   OutreachRoute: OutreachRoute,
