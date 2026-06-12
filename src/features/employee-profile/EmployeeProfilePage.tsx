@@ -443,6 +443,8 @@ function LaunchpadUrlModal({
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const Icon = draft.service.icon;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
       <form
@@ -456,11 +458,9 @@ function LaunchpadUrlModal({
         />
 
         <div className="mt-5 flex items-center gap-4 rounded-lg border border-border bg-background p-4">
-          <img
-            src={draft.service.iconSrc}
-            alt=""
-            className="size-16 object-contain drop-shadow-[0_0_14px_rgba(34,211,238,0.22)]"
-          />
+          <div className="grid size-16 shrink-0 place-items-center rounded-xl border border-border bg-card text-foreground/80">
+            <Icon className="size-7" aria-hidden="true" />
+          </div>
           <div>
             <p className="text-sm font-medium">{draft.service.label}</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -584,9 +584,10 @@ function LaunchpadGroup({
   return (
     <section>
       <h3 className="mb-2 text-sm font-semibold">{title}</h3>
-      <div className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-4 xl:grid-cols-6">
+      <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 xl:grid-cols-8">
         {services.map((service) => {
           const hasUrl = Boolean(links[service.id]);
+          const Icon = service.icon;
           return (
             <button
               key={service.id}
@@ -594,16 +595,16 @@ function LaunchpadGroup({
               onClick={() => onOpen(service)}
               onContextMenu={(event) => onEdit(event, service)}
               title={hasUrl ? `Open ${service.label}` : `Add ${service.label} URL`}
-              className={`group flex min-w-0 flex-col items-center gap-2 rounded-xl px-2 py-2 text-center transition duration-200 hover:-translate-y-0.5 ${
+              aria-label={hasUrl ? `Open ${service.label}` : `Add ${service.label} URL`}
+              className={`group relative grid size-16 place-items-center rounded-xl border border-border bg-background/80 text-foreground/75 transition duration-200 hover:border-cyan-300/30 hover:bg-card hover:text-foreground hover:shadow-[0_0_18px_rgba(34,211,238,0.12)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-300/50 ${
                 hasUrl ? "opacity-100" : "opacity-45 hover:opacity-90"
               }`}
             >
-              <img
-                src={service.iconSrc}
-                alt=""
-                className="size-16 object-contain transition duration-200 group-hover:scale-105 group-hover:drop-shadow-[0_0_12px_rgba(34,211,238,0.25)] sm:size-[68px]"
+              <Icon
+                className="size-6 transition duration-200 group-hover:scale-105"
+                aria-hidden="true"
               />
-              <span className="max-w-full truncate text-xs font-medium text-foreground/80">
+              <span className="pointer-events-none absolute -top-9 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-visible:opacity-100">
                 {service.label}
               </span>
             </button>

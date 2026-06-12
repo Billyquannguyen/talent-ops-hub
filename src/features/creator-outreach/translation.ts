@@ -118,6 +118,43 @@ const englishToTarget: Record<Exclude<OutreachLanguage, "english">, Record<strin
     "draft submission": "draft submission",
     posting: "posting",
   },
+  indonesian: {
+    Hi: "Halo",
+    Hello: "Halo",
+    "Thank you": "Terima kasih",
+    "Thank you.": "Terima kasih.",
+    "Could you please": "Bisa tolong",
+    "Could you please share your rate card for this project?":
+      "Bisa tolong bagikan rate card untuk proyek ini?",
+    "Could you please provide pricing for": "Bisa tolong berikan harga untuk",
+    "Could you please confirm": "Bisa tolong konfirmasi",
+    "Could you please send": "Bisa tolong kirim",
+    "Please send": "Tolong kirim",
+    "We are reaching out for": "Kami menghubungi atas nama",
+    "We would like to share this campaign with you.":
+      "Kami ingin membagikan kampanye ini untuk kamu pertimbangkan.",
+    "We would like to confirm the following brief for":
+      "Kami ingin mengonfirmasi brief berikut untuk",
+    "We will review and come back with next steps.":
+      "Kami akan meninjau dan kembali dengan langkah berikutnya.",
+    "Would you be interested in reviewing the details?":
+      "Apakah kamu tertarik untuk melihat detailnya?",
+    "Just following up": "Kami ingin follow up",
+    "Is there room to adjust the rate?": "Apakah rate masih bisa disesuaikan?",
+    "our current budget is a bit lower.": "budget kami saat ini sedikit lebih rendah.",
+    Project: "Proyek",
+    Campaign: "Kampanye",
+    Deliverables: "Deliverables",
+    "Talking Points": "Poin utama",
+    "Usage Rights": "Hak penggunaan",
+    "Payment Terms": "Ketentuan pembayaran",
+    Brief: "Brief",
+    Rate: "Rate",
+    Pricing: "Harga",
+    "live link": "live link",
+    "draft submission": "pengiriman draft",
+    posting: "posting",
+  },
   spanish: {
     Hi: "Hola",
     Hello: "Hola",
@@ -175,6 +212,9 @@ class LocalTranslationProvider implements TranslationProvider {
     if (containsAny(value, [" salamat", " pwede", " kumusta", " rate card", " mag", " pakisend"])) {
       return "filipino";
     }
+    if (containsAny(value, [" terima kasih", " halo", " harga", " kampanye", " tolong", " bisa"])) {
+      return "indonesian";
+    }
     return "english";
   }
 
@@ -207,6 +247,7 @@ export function getLanguageLabel(language: OutreachLanguage): string {
     thai: "Thai",
     vietnamese: "Vietnamese",
     filipino: "Filipino",
+    indonesian: "Indonesian",
     spanish: "Spanish",
   };
   return labels[language];

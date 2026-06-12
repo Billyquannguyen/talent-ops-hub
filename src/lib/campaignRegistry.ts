@@ -11,10 +11,29 @@ export const selectedCreatorStatuses = [
 
 export type SelectedCreatorStatus = (typeof selectedCreatorStatuses)[number];
 
+export const campaignMemoryLanguages = [
+  "English",
+  "Thai",
+  "Filipino",
+  "Vietnamese",
+  "Indonesian",
+  "Spanish",
+] as const;
+
+export type CampaignMemoryLanguage = (typeof campaignMemoryLanguages)[number];
+
+export type CampaignMemoryCard = {
+  id: string;
+  title: string;
+  content: string;
+};
+
 export type GlobalCampaign = {
   id: string;
   campaignName: string;
   campaignCode: string;
+  preferredLanguages: CampaignMemoryLanguage[];
+  memoryCards: CampaignMemoryCard[];
   createdAt: string;
   updatedAt: string;
 };
@@ -90,8 +109,18 @@ export function createCampaign(campaignName: string, campaignCode: string): Glob
     id: createId("campaign"),
     campaignName: campaignName.trim(),
     campaignCode: campaignCode.trim().toUpperCase(),
+    preferredLanguages: inferPreferredLanguages(campaignName),
+    memoryCards: createDefaultMemoryCards(),
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+export function createCampaignMemoryCard(title = "New Memory", content = ""): CampaignMemoryCard {
+  return {
+    id: createId("memory-card"),
+    title,
+    content,
   };
 }
 
@@ -186,6 +215,8 @@ function createDefaultCampaignRegistry(): GlobalCampaignRegistry {
         id: createId("campaign"),
         campaignName: "Dola Thailand",
         campaignCode: "DOLA-TH",
+        preferredLanguages: ["Thai", "English"],
+        memoryCards: createDefaultMemoryCards(),
         createdAt: now,
         updatedAt: now,
       },
@@ -193,6 +224,8 @@ function createDefaultCampaignRegistry(): GlobalCampaignRegistry {
         id: createId("campaign"),
         campaignName: "Dola Philippines",
         campaignCode: "DOLA-PH",
+        preferredLanguages: ["Filipino", "English"],
+        memoryCards: createDefaultMemoryCards(),
         createdAt: now,
         updatedAt: now,
       },
@@ -200,6 +233,8 @@ function createDefaultCampaignRegistry(): GlobalCampaignRegistry {
         id: createId("campaign"),
         campaignName: "Dola UK",
         campaignCode: "DOLA-UK",
+        preferredLanguages: ["English"],
+        memoryCards: createDefaultMemoryCards(),
         createdAt: now,
         updatedAt: now,
       },
@@ -231,6 +266,11 @@ function loadLegacyCampaignRegistry(): GlobalCampaignRegistry | null {
             stringValue(campaign.campaignCode) ||
             stringValue(campaign.campaignId) ||
             createCampaignCode(name),
+          preferredLanguages: normalizePreferredLanguages(
+            campaign.preferredLanguages,
+            inferPreferredLanguages(name),
+          ),
+          memoryCards: normalizeMemoryCardsOrDefault(campaign.memoryCards),
           createdAt: stringValue(campaign.createdAt) || now,
           updatedAt: stringValue(campaign.updatedAt) || now,
         };
@@ -276,6 +316,11 @@ function normalizeCampaign(value: unknown): GlobalCampaign {
     id: stringValue(campaign.id) || createId("campaign"),
     campaignName: name,
     campaignCode: code.toUpperCase(),
+    preferredLanguages: normalizePreferredLanguages(
+      campaign.preferredLanguages,
+      inferPreferredLanguages(name),
+    ),
+    memoryCards: normalizeMemoryCardsOrDefault(campaign.memoryCards),
     createdAt,
     updatedAt: stringValue(campaign.updatedAt) || createdAt,
   };
@@ -332,6 +377,55 @@ function createCampaignCode(name: string): string {
   const words = name.split(/\s+/).filter(Boolean);
   if (!words.length) return "CAMPAIGN";
   return words.map((word) => word.slice(0, 4).toUpperCase()).join("-");
+}
+
+function createDefaultMemoryCards(): CampaignMemoryCard[] {
+  return [
+    createCampaignMemoryCard("Deliverables", "1 TikTok video\n60-day ad code"),
+    createCampaignMemoryCard("Talking Points", "Free\nAd-free\nUnlimited uploads"),
+    createCampaignMemoryCard("Payment Terms", "Payment after posting"),
+  ];
+}
+
+function inferPreferredLanguages(campaignName: string): CampaignMemoryLanguage[] {
+  const value = campaignName.toLowerCase();
+  if (value.includes("thai") || value.includes("thailand")) return ["Thai", "English"];
+  if (value.includes("philippines") || value.includes("filipino")) {
+    return ["Filipino", "English"];
+  }
+  if (value.includes("vietnam")) return ["Vietnamese", "English"];
+  if (value.includes("indo")) return ["Indonesian", "English"];
+  return ["English"];
+}
+
+function normalizePreferredLanguages(
+  value: unknown,
+  fallback: CampaignMemoryLanguage[],
+): CampaignMemoryLanguage[] {
+  const source = Array.isArray(value) ? value : fallback;
+  const normalized = source.filter((language): language is CampaignMemoryLanguage =>
+    campaignMemoryLanguages.includes(language as CampaignMemoryLanguage),
+  );
+  return normalized.length ? normalized : fallback;
+}
+
+function normalizeMemoryCards(value: unknown): CampaignMemoryCard[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const card = isRecord(item) ? item : {};
+      return {
+        id: stringValue(card.id) || createId("memory-card"),
+        title: stringValue(card.title) || "Memory",
+        content: stringValue(card.content),
+      };
+    })
+    .filter((card) => card.title.trim() || card.content.trim());
+}
+
+function normalizeMemoryCardsOrDefault(value: unknown): CampaignMemoryCard[] {
+  const cards = normalizeMemoryCards(value);
+  return cards.length ? cards : createDefaultMemoryCards();
 }
 
 function numberValue(value: unknown): number {

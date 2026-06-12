@@ -4,22 +4,30 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { TopBar } from "@/components/TopBar";
 import {
+  campaignMemoryLanguages,
   createCampaign,
+  createCampaignMemoryCard,
   loadCampaignRegistry,
   saveCampaignRegistry,
   type GlobalCampaign,
   type GlobalCampaignRegistry,
+  type CampaignMemoryCard,
+  type CampaignMemoryLanguage,
 } from "@/lib/campaignRegistry";
 
 type CampaignDraft = {
   id?: string;
   campaignName: string;
   campaignCode: string;
+  preferredLanguages: CampaignMemoryLanguage[];
+  memoryCards: CampaignMemoryCard[];
 };
 
 const emptyDraft: CampaignDraft = {
   campaignName: "",
   campaignCode: "",
+  preferredLanguages: ["English"],
+  memoryCards: [createCampaignMemoryCard("Deliverables", "")],
 };
 
 export function CampaignProfiles() {
@@ -52,6 +60,8 @@ export function CampaignProfiles() {
                   ...campaign,
                   campaignName: editingDraft.campaignName.trim(),
                   campaignCode: editingDraft.campaignCode.trim().toUpperCase(),
+                  preferredLanguages: editingDraft.preferredLanguages,
+                  memoryCards: editingDraft.memoryCards,
                   updatedAt: now,
                 }
               : campaign,
@@ -62,7 +72,11 @@ export function CampaignProfiles() {
       return {
         ...current,
         campaigns: [
-          createCampaign(editingDraft.campaignName, editingDraft.campaignCode),
+          {
+            ...createCampaign(editingDraft.campaignName, editingDraft.campaignCode),
+            preferredLanguages: editingDraft.preferredLanguages,
+            memoryCards: editingDraft.memoryCards,
+          },
           ...current.campaigns,
         ],
       };
@@ -141,6 +155,8 @@ export function CampaignProfiles() {
                 <tr>
                   <TableHeader>Campaign Name</TableHeader>
                   <TableHeader>Campaign ID</TableHeader>
+                  <TableHeader>Preferred Languages</TableHeader>
+                  <TableHeader>Memory Cards</TableHeader>
                   <TableHeader>Actions</TableHeader>
                 </tr>
               </thead>
@@ -154,6 +170,23 @@ export function CampaignProfiles() {
                       <TableCell>
                         <span className="rounded-full border border-border bg-background px-2 py-1 text-xs">
                           {campaign.campaignCode}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1.5">
+                          {campaign.preferredLanguages.map((language) => (
+                            <span
+                              key={language}
+                              className="rounded-full border border-border bg-background px-2 py-1 text-xs text-muted-foreground"
+                            >
+                              {language}
+                            </span>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">
+                          {campaign.memoryCards.length.toLocaleString()} cards
                         </span>
                       </TableCell>
                       <TableCell>
@@ -179,7 +212,7 @@ export function CampaignProfiles() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={3}
+                      colSpan={5}
                       className="px-4 py-10 text-center text-sm text-muted-foreground"
                     >
                       No campaign profiles yet. Add one before tracking selected creators.
@@ -221,7 +254,7 @@ function CampaignProfileModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-xl rounded-xl border border-border bg-card p-5 shadow-2xl"
+        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-2xl"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -254,6 +287,106 @@ function CampaignProfileModal({
             placeholder="DOLA-TH"
             required
           />
+        </div>
+
+        <div className="mt-5 border-t border-border pt-4">
+          <p className="text-xs font-medium text-muted-foreground">Preferred Languages</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {campaignMemoryLanguages.map((language) => {
+              const selected = draft.preferredLanguages.includes(language);
+              return (
+                <button
+                  key={language}
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      preferredLanguages: selected
+                        ? draft.preferredLanguages.filter((item) => item !== language)
+                        : [...draft.preferredLanguages, language],
+                    })
+                  }
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    selected
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                >
+                  {language}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-5 border-t border-border pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">Memory Cards</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Store reusable campaign information for Creator Outreach.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                onChange({
+                  memoryCards: [...draft.memoryCards, createCampaignMemoryCard("New Memory", "")],
+                })
+              }
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-medium transition hover:bg-accent"
+            >
+              <Plus className="size-3.5" />
+              Add Card
+            </button>
+          </div>
+
+          <div className="mt-3 space-y-3">
+            {draft.memoryCards.map((card) => (
+              <div key={card.id} className="rounded-lg border border-border bg-background p-3">
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                  <TextInput
+                    label="Title"
+                    value={card.title}
+                    onChange={(title) =>
+                      onChange({
+                        memoryCards: draft.memoryCards.map((item) =>
+                          item.id === card.id ? { ...item, title } : item,
+                        ),
+                      })
+                    }
+                  />
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onChange({
+                          memoryCards: draft.memoryCards.filter((item) => item.id !== card.id),
+                        })
+                      }
+                      className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-3 text-xs font-medium transition hover:bg-accent"
+                    >
+                      <Trash2 className="size-3.5" />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                <FieldLabel label="Content">
+                  <textarea
+                    value={card.content}
+                    rows={4}
+                    onChange={(event) =>
+                      onChange({
+                        memoryCards: draft.memoryCards.map((item) =>
+                          item.id === card.id ? { ...item, content: event.target.value } : item,
+                        ),
+                      })
+                    }
+                    className="w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-sm leading-6 outline-none ring-ring focus:ring-2"
+                  />
+                </FieldLabel>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
@@ -355,5 +488,7 @@ function toDraft(campaign: GlobalCampaign): CampaignDraft {
     id: campaign.id,
     campaignName: campaign.campaignName,
     campaignCode: campaign.campaignCode,
+    preferredLanguages: campaign.preferredLanguages,
+    memoryCards: campaign.memoryCards,
   };
 }

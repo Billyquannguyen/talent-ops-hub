@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, MessageSquareText, Search, UserRound } from "lucide-react";
+import { BriefcaseBusiness, Gauge, MessageSquareText, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type WorkflowCard = {
@@ -39,11 +39,12 @@ export const workflowCards: WorkflowCard[] = [
     icon: BriefcaseBusiness,
   },
   {
-    id: "employee-profile",
-    title: "Employee Profile",
-    description: "Keep your work identity, contact details, and account links in one useful place.",
+    id: "employee-performance",
+    title: "Employee Performance Tracking",
+    description:
+      "Calculate outreach, submission, approval, and profit scores against measurable KPI targets.",
     status: "ready",
-    route: "/employee-profile",
-    icon: UserRound,
+    route: "/employee-performance",
+    icon: Gauge,
   },
 ];

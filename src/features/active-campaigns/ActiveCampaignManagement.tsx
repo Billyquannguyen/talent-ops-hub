@@ -11,10 +11,13 @@ import {
   loadCampaignRegistry,
   saveCampaignRegistry,
   selectedCreatorStatuses,
+  type GlobalCampaign,
   type GlobalCampaignRegistry,
   type SelectedCreatorRecord,
   type SelectedCreatorStatus,
 } from "@/lib/campaignRegistry";
+
+const allCampaignsSelectionId = "all-campaigns";
 
 export function ActiveCampaignManagement({
   initialCampaignId = "",
@@ -23,17 +26,21 @@ export function ActiveCampaignManagement({
 }) {
   const [loaded, setLoaded] = useState(false);
   const [registry, setRegistry] = useState<GlobalCampaignRegistry>(() => loadCampaignRegistry());
-  const [selectedCampaignId, setSelectedCampaignId] = useState(initialCampaignId);
+  const [selectedCampaignId, setSelectedCampaignId] = useState(
+    initialCampaignId || allCampaignsSelectionId,
+  );
   const [editingRecord, setEditingRecord] = useState<SelectedCreatorRecord | null>(null);
 
   useEffect(() => {
     const currentRegistry = loadCampaignRegistry();
     setRegistry(currentRegistry);
-    setSelectedCampaignId((current) =>
-      currentRegistry.campaigns.some((campaign) => campaign.id === (initialCampaignId || current))
-        ? initialCampaignId || current
-        : currentRegistry.campaigns[0]?.id || "",
-    );
+    setSelectedCampaignId((current) => {
+      const requestedSelection = initialCampaignId || current || allCampaignsSelectionId;
+      if (requestedSelection === allCampaignsSelectionId) return allCampaignsSelectionId;
+      return currentRegistry.campaigns.some((campaign) => campaign.id === requestedSelection)
+        ? requestedSelection
+        : allCampaignsSelectionId;
+    });
     setLoaded(true);
   }, [initialCampaignId]);
 
@@ -42,17 +49,29 @@ export function ActiveCampaignManagement({
     saveCampaignRegistry(registry);
   }, [loaded, registry]);
 
-  const selectedCampaign =
-    registry.campaigns.find((campaign) => campaign.id === selectedCampaignId) ??
-    registry.campaigns[0];
-  const selectedCampaignRecords = useMemo(
-    () => (selectedCampaign ? getCampaignCreators(registry, selectedCampaign.id) : []),
-    [registry, selectedCampaign],
+  const hasCampaignProfiles = registry.campaigns.length > 0;
+  const isAllCampaignsView = selectedCampaignId === allCampaignsSelectionId;
+  const selectedCampaign = isAllCampaignsView
+    ? undefined
+    : registry.campaigns.find((campaign) => campaign.id === selectedCampaignId);
+  const campaignById = useMemo(
+    () => new Map(registry.campaigns.map((campaign) => [campaign.id, campaign])),
+    [registry.campaigns],
   );
-  const selectedSummary = useMemo(
-    () => calculateCampaignSummary(selectedCampaignRecords),
-    [selectedCampaignRecords],
+  const visibleCreatorRecords = useMemo(
+    () =>
+      isAllCampaignsView
+        ? registry.creatorRecords
+        : selectedCampaign
+          ? getCampaignCreators(registry, selectedCampaign.id)
+          : [],
+    [isAllCampaignsView, registry, selectedCampaign],
   );
+  const visibleSummary = useMemo(
+    () => calculateCampaignSummary(visibleCreatorRecords),
+    [visibleCreatorRecords],
+  );
+  const modalCampaign = editingRecord ? campaignById.get(editingRecord.campaignRegistryId) : null;
 
   function openNewCreator() {
     if (!selectedCampaign) return;
@@ -61,11 +80,11 @@ export function ActiveCampaignManagement({
 
   function saveCreatorRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!editingRecord || !editingRecord.creatorName.trim() || !selectedCampaign) return;
+    if (!editingRecord || !editingRecord.creatorName.trim()) return;
+    if (!campaignById.has(editingRecord.campaignRegistryId)) return;
     const now = new Date().toISOString();
     const savedRecord = {
       ...editingRecord,
-      campaignRegistryId: selectedCampaign.id,
       updatedAt: now,
     };
 
@@ -117,10 +136,11 @@ export function ActiveCampaignManagement({
             <div className="w-full lg:max-w-sm">
               <FieldLabel label="Campaign Selector">
                 <select
-                  value={selectedCampaign?.id ?? ""}
+                  value={selectedCampaignId}
                   onChange={(event) => setSelectedCampaignId(event.target.value)}
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
                 >
+                  <option value={allCampaignsSelectionId}>All Campaigns</option>
                   {registry.campaigns.map((campaign) => (
                     <option key={campaign.id} value={campaign.id}>
                       {campaign.campaignName}
@@ -132,46 +152,58 @@ export function ActiveCampaignManagement({
           </div>
         </section>
 
-        {selectedCampaign ? (
+        {hasCampaignProfiles ? (
           <>
             <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <SummaryCard
                 label="Selected Creators"
-                value={selectedSummary.totalCreators.toLocaleString()}
+                value={visibleSummary.totalCreators.toLocaleString()}
               />
-              <SummaryCard label="Total Spend" value={formatCurrency(selectedSummary.totalSpend)} />
+              <SummaryCard label="Total Spend" value={formatCurrency(visibleSummary.totalSpend)} />
               <SummaryCard
                 label="Total Profit"
-                value={formatCurrency(selectedSummary.totalProfit)}
+                value={formatCurrency(visibleSummary.totalProfit)}
               />
               <SummaryCard
                 label="Average Profit Margin"
-                value={formatPercent(selectedSummary.averageMargin)}
+                value={formatPercent(visibleSummary.averageMargin)}
               />
-              <SummaryCard label="Status Summary" value={selectedSummary.statusSummary} />
+              <SummaryCard label="Status Summary" value={visibleSummary.statusSummary} />
             </section>
 
             <Panel title="Creator Records" icon={UsersRound}>
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                 <div>
                   <p className="text-sm font-medium">
-                    {selectedCampaign.campaignName} | {selectedCampaign.campaignCode}
+                    {selectedCampaign
+                      ? `${selectedCampaign.campaignName} | ${selectedCampaign.campaignCode}`
+                      : "All Campaigns"}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Add only creators who are officially selected and contract signed.
+                    {selectedCampaign
+                      ? "Add only creators who are officially selected and contract signed."
+                      : "Showing selected creators across every campaign profile."}
                   </p>
                 </div>
-                <button
-                  onClick={openNewCreator}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
-                >
-                  <Plus className="size-4" />
-                  Add Creator
-                </button>
+                {selectedCampaign ? (
+                  <button
+                    onClick={openNewCreator}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+                  >
+                    <Plus className="size-4" />
+                    Add Creator
+                  </button>
+                ) : (
+                  <p className="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+                    Select one campaign to add a creator.
+                  </p>
+                )}
               </div>
 
               <CreatorRecordsTable
-                records={selectedCampaignRecords}
+                records={visibleCreatorRecords}
+                campaignById={campaignById}
+                showCampaignColumn={isAllCampaignsView}
                 onEdit={setEditingRecord}
                 onDelete={deleteCreatorRecord}
               />
@@ -184,11 +216,11 @@ export function ActiveCampaignManagement({
         )}
       </main>
 
-      {editingRecord && selectedCampaign ? (
+      {editingRecord && modalCampaign ? (
         <CreatorRecordModal
           record={editingRecord}
-          campaignName={selectedCampaign.campaignName}
-          campaignCode={selectedCampaign.campaignCode}
+          campaignName={modalCampaign.campaignName}
+          campaignCode={modalCampaign.campaignCode}
           onChange={setEditingRecord}
           onCancel={() => setEditingRecord(null)}
           onSubmit={saveCreatorRecord}
@@ -200,10 +232,14 @@ export function ActiveCampaignManagement({
 
 function CreatorRecordsTable({
   records,
+  campaignById,
+  showCampaignColumn,
   onEdit,
   onDelete,
 }: {
   records: SelectedCreatorRecord[];
+  campaignById: Map<string, GlobalCampaign>;
+  showCampaignColumn: boolean;
   onEdit: (record: SelectedCreatorRecord) => void;
   onDelete: (recordId: string) => void;
 }) {
@@ -213,6 +249,7 @@ function CreatorRecordsTable({
         <thead className="bg-muted/40 text-xs text-muted-foreground">
           <tr>
             <TableHeader>Creator</TableHeader>
+            {showCampaignColumn ? <TableHeader>Campaign</TableHeader> : null}
             <TableHeader>Creator Link</TableHeader>
             <TableHeader>Avg Views</TableHeader>
             <TableHeader>Internal Quote</TableHeader>
@@ -231,11 +268,20 @@ function CreatorRecordsTable({
           {records.length ? (
             records.map((record) => {
               const financials = calculateCreatorFinancials(record);
+              const campaign = campaignById.get(record.campaignRegistryId);
               return (
                 <tr key={record.id} className="border-t border-border">
                   <TableCell>
                     <span className="font-medium">{record.creatorName}</span>
                   </TableCell>
+                  {showCampaignColumn ? (
+                    <TableCell>
+                      <p className="font-medium">{campaign?.campaignName ?? "Unknown Campaign"}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {campaign?.campaignCode ?? "No campaign ID"}
+                      </p>
+                    </TableCell>
+                  ) : null}
                   <TableCell>
                     <InlineLink href={record.creatorLink} label="Creator Link" />
                   </TableCell>
@@ -282,8 +328,11 @@ function CreatorRecordsTable({
             })
           ) : (
             <tr>
-              <td colSpan={13} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                No selected creators for this campaign yet.
+              <td
+                colSpan={showCampaignColumn ? 14 : 13}
+                className="px-4 py-10 text-center text-sm text-muted-foreground"
+              >
+                No selected creators for this view yet.
               </td>
             </tr>
           )}

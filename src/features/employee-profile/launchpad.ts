@@ -1,17 +1,20 @@
-import discordIcon from "@/assets/launchpad-icons/discord.png";
-import facebookIcon from "@/assets/launchpad-icons/facebook.png";
-import googleDriveIcon from "@/assets/launchpad-icons/google-drive.png";
-import instagramIcon from "@/assets/launchpad-icons/instagram.png";
-import lineIcon from "@/assets/launchpad-icons/line.png";
-import notionIcon from "@/assets/launchpad-icons/notion.png";
-import outlookIcon from "@/assets/launchpad-icons/outlook.png";
-import slackIcon from "@/assets/launchpad-icons/slack.png";
-import telegramIcon from "@/assets/launchpad-icons/telegram.png";
-import threadsIcon from "@/assets/launchpad-icons/threads.png";
-import tiktokIcon from "@/assets/launchpad-icons/tiktok.png";
-import viberIcon from "@/assets/launchpad-icons/viber.png";
-import whatsappIcon from "@/assets/launchpad-icons/whatsapp.png";
-import calendlyIcon from "@/assets/launchpad-icons/calendly.png";
+import { MdOutlineMail } from "react-icons/md";
+import {
+  SiCalendly,
+  SiDiscord,
+  SiFacebook,
+  SiGoogledrive,
+  SiInstagram,
+  SiLine,
+  SiNotion,
+  SiSlack,
+  SiTelegram,
+  SiThreads,
+  SiTiktok,
+  SiViber,
+  SiWhatsapp,
+} from "react-icons/si";
+import type { IconType } from "react-icons";
 
 import type { EmployeeAccountLink, EmployeeProfile } from "./types";
 
@@ -41,26 +44,43 @@ export type LaunchpadService = {
   id: LaunchpadServiceId;
   label: string;
   category: LaunchpadCategory;
-  iconSrc: string;
+  icon: IconType;
 };
 
 export type LaunchpadLinks = Partial<Record<LaunchpadServiceId, string>>;
 
+export const defaultLaunchpadLinks: LaunchpadLinks = {
+  slack: "https://app.slack.com/client",
+  whatsapp: "https://web.whatsapp.com",
+  line: "https://manager.line.biz",
+  telegram: "https://web.telegram.org",
+  viber: "https://web.viber.com",
+  discord: "https://discord.com/app",
+  instagram: "https://www.instagram.com/direct/inbox/",
+  tiktok: "https://www.tiktok.com/messages",
+  facebook: "https://www.facebook.com/messages",
+  threads: "https://www.threads.net",
+  outlook: "https://outlook.office.com/mail/",
+  "google-drive": "https://drive.google.com/drive/my-drive",
+  notion: "https://www.notion.so",
+  calendly: "https://calendly.com/app",
+};
+
 export const launchpadServices: LaunchpadService[] = [
-  { id: "slack", label: "Slack", category: "Communication", iconSrc: slackIcon },
-  { id: "whatsapp", label: "WhatsApp", category: "Communication", iconSrc: whatsappIcon },
-  { id: "line", label: "LINE", category: "Communication", iconSrc: lineIcon },
-  { id: "telegram", label: "Telegram", category: "Communication", iconSrc: telegramIcon },
-  { id: "viber", label: "Viber", category: "Communication", iconSrc: viberIcon },
-  { id: "discord", label: "Discord", category: "Communication", iconSrc: discordIcon },
-  { id: "instagram", label: "Instagram", category: "Social", iconSrc: instagramIcon },
-  { id: "tiktok", label: "TikTok", category: "Social", iconSrc: tiktokIcon },
-  { id: "facebook", label: "Facebook", category: "Social", iconSrc: facebookIcon },
-  { id: "threads", label: "Threads", category: "Social", iconSrc: threadsIcon },
-  { id: "outlook", label: "Outlook", category: "Workspace", iconSrc: outlookIcon },
-  { id: "google-drive", label: "Google Drive", category: "Workspace", iconSrc: googleDriveIcon },
-  { id: "notion", label: "Notion", category: "Workspace", iconSrc: notionIcon },
-  { id: "calendly", label: "Calendly", category: "Workspace", iconSrc: calendlyIcon },
+  { id: "slack", label: "Slack", category: "Communication", icon: SiSlack },
+  { id: "whatsapp", label: "WhatsApp", category: "Communication", icon: SiWhatsapp },
+  { id: "line", label: "LINE", category: "Communication", icon: SiLine },
+  { id: "telegram", label: "Telegram", category: "Communication", icon: SiTelegram },
+  { id: "viber", label: "Viber", category: "Communication", icon: SiViber },
+  { id: "discord", label: "Discord", category: "Communication", icon: SiDiscord },
+  { id: "instagram", label: "Instagram", category: "Social", icon: SiInstagram },
+  { id: "tiktok", label: "TikTok", category: "Social", icon: SiTiktok },
+  { id: "facebook", label: "Facebook", category: "Social", icon: SiFacebook },
+  { id: "threads", label: "Threads", category: "Social", icon: SiThreads },
+  { id: "outlook", label: "Outlook", category: "Workspace", icon: MdOutlineMail },
+  { id: "google-drive", label: "Google Drive", category: "Workspace", icon: SiGoogledrive },
+  { id: "notion", label: "Notion", category: "Workspace", icon: SiNotion },
+  { id: "calendly", label: "Calendly", category: "Workspace", icon: SiCalendly },
 ];
 
 const legacyLabels: Record<LaunchpadServiceId, string[]> = {
@@ -98,7 +118,7 @@ export function saveLaunchpadLinks(links: LaunchpadLinks) {
 }
 
 function normalizeLinks(value: unknown, fallbackProfile?: EmployeeProfile): LaunchpadLinks {
-  const links = linksFromProfile(fallbackProfile);
+  const links = { ...defaultLaunchpadLinks, ...linksFromProfile(fallbackProfile) };
   if (!isRecord(value)) return links;
 
   for (const service of launchpadServices) {
@@ -112,7 +132,7 @@ function normalizeLinks(value: unknown, fallbackProfile?: EmployeeProfile): Laun
 }
 
 function linksFromProfile(profile?: EmployeeProfile): LaunchpadLinks {
-  const links: LaunchpadLinks = {};
+  const links: LaunchpadLinks = { ...defaultLaunchpadLinks };
   if (!profile?.accounts?.length) return links;
 
   for (const service of launchpadServices) {

@@ -17,14 +17,14 @@ function Dashboard() {
         <section className="mx-auto flex max-w-3xl flex-col items-center text-center">
           <div className="mb-6 size-16 rounded-full bg-orb shadow-[0_0_60px_-10px_var(--glow)]" />
           <p className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">
-            Katlas Media Workflows
+            KATLAS BUDDY
           </p>
           <h1 className="mt-3 text-3xl font-medium tracking-tight md:text-5xl">
-            Run creator sourcing from one quiet dashboard.
+            Unlock global markets with local voices
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Process EasyKOL exports, enrich contact details, and keep room for future workflow
-            functions without turning the app into a marketing site.
+            A companion for creator sourcing, outreach, campaign tracking, and the everyday ops that
+            help Katlas move faster.
           </p>
         </section>
 

@@ -22,9 +22,7 @@ export function TopBar() {
       <div className="flex min-w-0 items-center gap-5">
         <nav className="flex max-w-[70vw] items-center gap-5 overflow-x-auto text-sm">
           {navItems.map((n) => {
-            const active =
-              pathname === n.to ||
-              (n.to === "/employee-profile" && pathname === "/employee-performance");
+            const active = pathname === n.to;
             return (
               <Link
                 key={n.to}
