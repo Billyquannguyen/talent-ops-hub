@@ -62,12 +62,24 @@ export type TemplateColumn = {
   customValue?: string;
 };
 
+export type SourcingTemplate = {
+  id: string;
+  campaignId: string;
+  templateName: string;
+  columns: TemplateColumn[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type SourcingProject = {
   id: string;
   name: string;
   createdAt: string;
   filters: FilterSettings;
+  templates: SourcingTemplate[];
+  activeTemplateId: string;
   template: TemplateColumn[];
+  templateName: string;
   templateSavedAt?: string;
 };
 

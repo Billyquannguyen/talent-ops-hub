@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Plus, Trash2 } from "lucide-react";
 
 import { TopBar } from "@/components/TopBar";
+import { loadCampaignRegistry, type GlobalCampaign } from "@/lib/campaignRegistry";
+import {
+  getAppSetting,
+  readPerformanceBenchmarks,
+  readPerformanceWeeklyInputs,
+  updateDatabase,
+} from "@/storage/appRepository";
+import type { AppSettingRecord } from "@/storage/schema";
 
 type CampaignPerformanceInput = {
   id: string;
+  campaignId: string;
   campaignName: string;
   targetDailyOutreachVolume: number;
   teamOutreachVolumeExcludingMe: number;
@@ -32,7 +40,6 @@ type ScoreResult = {
   unavailableReason?: string;
 };
 
-const storageKey = "katlas-employee-performance-tracking-v1";
 const defaultTargetDailyOutreach = 25;
 
 const scoreWeights = {
@@ -44,12 +51,15 @@ const scoreWeights = {
 
 export function EmployeePerformanceTracking() {
   const [loaded, setLoaded] = useState(false);
+  const [campaignProfiles, setCampaignProfiles] = useState<GlobalCampaign[]>([]);
   const [state, setState] = useState<EmployeePerformanceState>(() =>
-    createDefaultPerformanceState(),
+    createDefaultPerformanceState([]),
   );
 
   useEffect(() => {
-    setState(loadPerformanceState());
+    const campaigns = loadCampaignRegistry().campaigns;
+    setCampaignProfiles(campaigns);
+    setState(loadPerformanceState(campaigns));
     setLoaded(true);
   }, []);
 
@@ -74,25 +84,6 @@ export function EmployeePerformanceTracking() {
       campaigns: current.campaigns.map((campaign) =>
         campaign.id === id ? { ...campaign, ...patch } : campaign,
       ),
-      updatedAt: new Date().toISOString(),
-    }));
-  }
-
-  function addCampaign() {
-    setState((current) => ({
-      ...current,
-      campaigns: [
-        ...current.campaigns,
-        createCampaignInput(`Campaign ${current.campaigns.length + 1}`),
-      ],
-      updatedAt: new Date().toISOString(),
-    }));
-  }
-
-  function deleteCampaign(id: string) {
-    setState((current) => ({
-      ...current,
-      campaigns: current.campaigns.filter((campaign) => campaign.id !== id),
       updatedAt: new Date().toISOString(),
     }));
   }
@@ -150,86 +141,67 @@ export function EmployeePerformanceTracking() {
             </div>
           </Panel>
 
-          <Panel
-            title="2. Campaign Benchmarks"
-            action={
-              <button
-                onClick={addCampaign}
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-medium transition hover:bg-accent"
-              >
-                <Plus className="size-3.5" />
-                Add Campaign
-              </button>
-            }
-          >
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="min-w-[980px] w-full border-collapse text-left text-sm">
-                <thead className="bg-muted/40 text-xs text-muted-foreground">
-                  <tr>
-                    <TableHeader>Campaign Name</TableHeader>
-                    <TableHeader>Target Daily Outreach</TableHeader>
-                    <TableHeader>Team Outreach Excluding Me</TableHeader>
-                    <TableHeader>Team Submissions Excluding Me</TableHeader>
-                    <TableHeader>Team Approvals Excluding Me</TableHeader>
-                    <TableHeader>Actions</TableHeader>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.campaigns.map((campaign) => (
-                    <tr key={campaign.id} className="border-t border-border">
-                      <TableCell>
-                        <TextInput
-                          ariaLabel="Campaign Name"
-                          value={campaign.campaignName}
-                          onChange={(campaignName) => patchCampaign(campaign.id, { campaignName })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <CompactNumberInput
-                          value={campaign.targetDailyOutreachVolume}
-                          onChange={(targetDailyOutreachVolume) =>
-                            patchCampaign(campaign.id, { targetDailyOutreachVolume })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <CompactNumberInput
-                          value={campaign.teamOutreachVolumeExcludingMe}
-                          onChange={(teamOutreachVolumeExcludingMe) =>
-                            patchCampaign(campaign.id, { teamOutreachVolumeExcludingMe })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <CompactNumberInput
-                          value={campaign.teamSubmissionsExcludingMe}
-                          onChange={(teamSubmissionsExcludingMe) =>
-                            patchCampaign(campaign.id, { teamSubmissionsExcludingMe })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <CompactNumberInput
-                          value={campaign.teamApprovalsExcludingMe}
-                          onChange={(teamApprovalsExcludingMe) =>
-                            patchCampaign(campaign.id, { teamApprovalsExcludingMe })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <button
-                          onClick={() => deleteCampaign(campaign.id)}
-                          className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-medium transition hover:bg-accent"
-                        >
-                          <Trash2 className="size-3.5" />
-                          Delete
-                        </button>
-                      </TableCell>
+          <Panel title="2. Campaign Benchmarks">
+            {campaignProfiles.length ? (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="min-w-[980px] w-full border-collapse text-left text-sm">
+                  <thead className="bg-muted/40 text-xs text-muted-foreground">
+                    <tr>
+                      <TableHeader>Campaign Name</TableHeader>
+                      <TableHeader>Target Daily Outreach</TableHeader>
+                      <TableHeader>Team Outreach Excluding Me</TableHeader>
+                      <TableHeader>Team Submissions Excluding Me</TableHeader>
+                      <TableHeader>Team Approvals Excluding Me</TableHeader>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {state.campaigns.map((campaign) => (
+                      <tr key={campaign.id} className="border-t border-border">
+                        <TableCell>
+                          <span className="font-medium">{campaign.campaignName}</span>
+                        </TableCell>
+                        <TableCell>
+                          <CompactNumberInput
+                            value={campaign.targetDailyOutreachVolume}
+                            onChange={(targetDailyOutreachVolume) =>
+                              patchCampaign(campaign.id, { targetDailyOutreachVolume })
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <CompactNumberInput
+                            value={campaign.teamOutreachVolumeExcludingMe}
+                            onChange={(teamOutreachVolumeExcludingMe) =>
+                              patchCampaign(campaign.id, { teamOutreachVolumeExcludingMe })
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <CompactNumberInput
+                            value={campaign.teamSubmissionsExcludingMe}
+                            onChange={(teamSubmissionsExcludingMe) =>
+                              patchCampaign(campaign.id, { teamSubmissionsExcludingMe })
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <CompactNumberInput
+                            value={campaign.teamApprovalsExcludingMe}
+                            onChange={(teamApprovalsExcludingMe) =>
+                              patchCampaign(campaign.id, { teamApprovalsExcludingMe })
+                            }
+                          />
+                        </TableCell>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-dashed border-border bg-background p-4 text-sm text-muted-foreground">
+                No campaign profiles exist yet. Create campaigns in Campaign Profiles first.
+              </p>
+            )}
           </Panel>
         </section>
 
@@ -659,25 +631,6 @@ function CompactNumberInput({
   );
 }
 
-function TextInput({
-  value,
-  ariaLabel,
-  onChange,
-}: {
-  value: string;
-  ariaLabel: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <input
-      aria-label={ariaLabel}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="h-9 w-full min-w-40 rounded-md border border-input bg-background px-2 text-sm outline-none ring-ring focus:ring-2"
-    />
-  );
-}
-
 function TableHeader({ children }: { children: ReactNode }) {
   return <th className="px-3 py-3 font-medium">{children}</th>;
 }
@@ -686,36 +639,67 @@ function TableCell({ children }: { children: ReactNode }) {
   return <td className="px-3 py-3 align-top">{children}</td>;
 }
 
-function loadPerformanceState(): EmployeePerformanceState {
-  if (typeof window === "undefined") return createDefaultPerformanceState();
-
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return createDefaultPerformanceState();
-    return normalizePerformanceState(JSON.parse(raw));
-  } catch {
-    return createDefaultPerformanceState();
-  }
+function loadPerformanceState(campaignProfiles: GlobalCampaign[]): EmployeePerformanceState {
+  if (typeof window === "undefined") return createDefaultPerformanceState(campaignProfiles);
+  return createPerformanceStateFromRepository(campaignProfiles);
 }
 
 function savePerformanceState(state: EmployeePerformanceState) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(storageKey, JSON.stringify(state));
+  updateDatabase((database) => {
+    const now = new Date().toISOString();
+    database.worksheets.PerformanceBenchmarks = state.campaigns.map((campaign) => ({
+      benchmarkId: `benchmark-${campaign.campaignId}`,
+      campaignId: campaign.campaignId,
+      targetDailyOutreach: campaign.targetDailyOutreachVolume,
+      teamOutreachExcludingMe: campaign.teamOutreachVolumeExcludingMe,
+      teamSubmissionsExcludingMe: campaign.teamSubmissionsExcludingMe,
+      teamApprovalsExcludingMe: campaign.teamApprovalsExcludingMe,
+      createdAt: now,
+      updatedAt: state.updatedAt,
+    }));
+    database.worksheets.PerformanceWeeklyInputs = state.campaigns.map((campaign) => ({
+      inputId: `weekly-${campaign.campaignId}`,
+      weekStart: "",
+      campaignId: campaign.campaignId,
+      myOutreachVolume: campaign.myOutreachVolume,
+      myCreatorSubmissions: campaign.myCreatorSubmissions,
+      myCreatorApprovals: campaign.myCreatorApprovals,
+      myCampaignExecutions: campaign.myCampaignExecutions,
+      expectedProfit: campaign.expectedProfit,
+      actualProfit: campaign.actualProfit,
+      createdAt: now,
+      updatedAt: state.updatedAt,
+    }));
+    upsertSetting(
+      database.worksheets.AppSettings,
+      "performance.monthlyProfitKpi",
+      String(state.monthlyProfitKpi),
+    );
+    upsertSetting(
+      database.worksheets.AppSettings,
+      "performance.workingDays",
+      String(state.workingDays),
+    );
+  });
 }
 
-function createDefaultPerformanceState(): EmployeePerformanceState {
+function createDefaultPerformanceState(
+  campaignProfiles: GlobalCampaign[],
+): EmployeePerformanceState {
   return {
     monthlyProfitKpi: 0,
     workingDays: 5,
-    campaigns: [createCampaignInput("Campaign 1")],
+    campaigns: campaignProfiles.map((campaign) => createCampaignInput(campaign)),
     updatedAt: new Date().toISOString(),
   };
 }
 
-function createCampaignInput(campaignName: string): CampaignPerformanceInput {
+function createCampaignInput(campaign: GlobalCampaign): CampaignPerformanceInput {
   return {
-    id: createId("performance-campaign"),
-    campaignName,
+    id: campaign.id,
+    campaignId: campaign.id,
+    campaignName: campaign.campaignName,
     targetDailyOutreachVolume: defaultTargetDailyOutreach,
     teamOutreachVolumeExcludingMe: 0,
     teamSubmissionsExcludingMe: 0,
@@ -729,37 +713,57 @@ function createCampaignInput(campaignName: string): CampaignPerformanceInput {
   };
 }
 
-function normalizePerformanceState(value: unknown): EmployeePerformanceState {
-  const state = isRecord(value) ? value : {};
-  const campaigns = Array.isArray(state.campaigns)
-    ? state.campaigns.map(normalizeCampaignInput)
-    : [];
+function createPerformanceStateFromRepository(
+  campaignProfiles: GlobalCampaign[],
+): EmployeePerformanceState {
+  const database = loadCentralPerformanceData();
+  const benchmarkByCampaign = new Map(
+    database.benchmarks.map((benchmark) => [benchmark.campaignId, benchmark]),
+  );
+  const inputByCampaign = new Map(database.weeklyInputs.map((input) => [input.campaignId, input]));
 
   return {
-    monthlyProfitKpi: toNumber(state.monthlyProfitKpi),
-    workingDays: toNumber(state.workingDays) || 5,
-    campaigns: campaigns.length ? campaigns : [createCampaignInput("Campaign 1")],
-    updatedAt: stringValue(state.updatedAt) || new Date().toISOString(),
+    monthlyProfitKpi: Number(getAppSetting("performance.monthlyProfitKpi", "0")) || 0,
+    workingDays: Number(getAppSetting("performance.workingDays", "5")) || 5,
+    campaigns: campaignProfiles.map((campaign) => {
+      const benchmark = benchmarkByCampaign.get(campaign.id);
+      const input = inputByCampaign.get(campaign.id);
+      return {
+        id: campaign.id,
+        campaignId: campaign.id,
+        campaignName: campaign.campaignName,
+        targetDailyOutreachVolume: benchmark?.targetDailyOutreach ?? defaultTargetDailyOutreach,
+        teamOutreachVolumeExcludingMe: benchmark?.teamOutreachExcludingMe ?? 0,
+        teamSubmissionsExcludingMe: benchmark?.teamSubmissionsExcludingMe ?? 0,
+        teamApprovalsExcludingMe: benchmark?.teamApprovalsExcludingMe ?? 0,
+        myOutreachVolume: input?.myOutreachVolume ?? 0,
+        myCreatorSubmissions: input?.myCreatorSubmissions ?? 0,
+        myCreatorApprovals: input?.myCreatorApprovals ?? 0,
+        myCampaignExecutions: input?.myCampaignExecutions ?? 0,
+        expectedProfit: input?.expectedProfit ?? 0,
+        actualProfit: input?.actualProfit ?? 0,
+      };
+    }),
+    updatedAt: new Date().toISOString(),
   };
 }
 
-function normalizeCampaignInput(value: unknown): CampaignPerformanceInput {
-  const campaign = isRecord(value) ? value : {};
+function loadCentralPerformanceData() {
   return {
-    id: stringValue(campaign.id) || createId("performance-campaign"),
-    campaignName: stringValue(campaign.campaignName) || "Untitled Campaign",
-    targetDailyOutreachVolume:
-      toNumber(campaign.targetDailyOutreachVolume) || defaultTargetDailyOutreach,
-    teamOutreachVolumeExcludingMe: toNumber(campaign.teamOutreachVolumeExcludingMe),
-    teamSubmissionsExcludingMe: toNumber(campaign.teamSubmissionsExcludingMe),
-    teamApprovalsExcludingMe: toNumber(campaign.teamApprovalsExcludingMe),
-    myOutreachVolume: toNumber(campaign.myOutreachVolume),
-    myCreatorSubmissions: toNumber(campaign.myCreatorSubmissions),
-    myCreatorApprovals: toNumber(campaign.myCreatorApprovals),
-    myCampaignExecutions: toNumber(campaign.myCampaignExecutions),
-    expectedProfit: toNumber(campaign.expectedProfit),
-    actualProfit: toNumber(campaign.actualProfit),
+    benchmarks: readPerformanceBenchmarks(),
+    weeklyInputs: readPerformanceWeeklyInputs(),
   };
+}
+
+function upsertSetting(settings: AppSettingRecord[], settingKey: string, settingValue: string) {
+  const existing = settings.find((setting) => setting.settingKey === settingKey);
+  const updatedAt = new Date().toISOString();
+  if (existing) {
+    existing.settingValue = settingValue;
+    existing.updatedAt = updatedAt;
+    return;
+  }
+  settings.push({ settingKey, settingValue, updatedAt });
 }
 
 function safeScore(numerator: number, denominator: number): number | null {
@@ -805,17 +809,4 @@ function formatScore(value: number): string {
 
 function formatNullableScore(value: number | null): string {
   return value === null ? "--" : formatScore(value);
-}
-
-function createId(prefix: string): string {
-  if (globalThis.crypto?.randomUUID) return `${prefix}-${globalThis.crypto.randomUUID()}`;
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function stringValue(value: unknown): string {
-  return value == null ? "" : String(value);
 }

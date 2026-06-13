@@ -7,10 +7,11 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { refreshAppDatabaseFromPrimary } from "@/storage/appRepository";
 
 function NotFoundComponent() {
   return (
@@ -118,10 +119,27 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const [storageReady, setStorageReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void refreshAppDatabaseFromPrimary().finally(() => {
+      if (!cancelled) setStorageReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      {storageReady ? (
+        <Outlet />
+      ) : (
+        <div className="flex min-h-screen items-center justify-center bg-background px-5 text-center text-sm text-muted-foreground">
+          Connecting storage...
+        </div>
+      )}
     </QueryClientProvider>
   );
 }

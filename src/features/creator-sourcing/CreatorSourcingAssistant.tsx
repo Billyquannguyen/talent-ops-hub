@@ -23,6 +23,9 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { TopBar } from "@/components/TopBar";
+import { loadCampaignRegistry, type GlobalCampaign } from "@/lib/campaignRegistry";
+import { loadAppDatabase, updateDatabase } from "@/storage/appRepository";
+import type { AppSettingRecord, SourcingTemplateRecord } from "@/storage/schema";
 import { buildPreviewRow, hasContactInfo, runEnrichmentPipeline } from "./enrichment";
 import { exportPreviewSpreadsheet, parseSpreadsheet } from "./excel";
 import {
@@ -42,12 +45,12 @@ import {
   type FilterSettings,
   type PreviewRow,
   type SourcingProject,
+  type SourcingTemplate,
   type TemplateBlockType,
   type TemplateColumn,
   type UploadedCreator,
 } from "./types";
 
-const storageKey = "katlas-creator-sourcing-projects-v1";
 const followersRangeOptions = [
   { key: "followers-1k-10k", label: "1k-10k", min: "1000", max: "10000" },
   { key: "followers-10k-100k", label: "10k-100k", min: "10000", max: "100000" },
@@ -102,20 +105,20 @@ type RangeOption = {
   count: number;
 };
 type PendingLeaveAction =
-  | { type: "createProject"; name: string }
-  | { type: "selectProject"; projectId: string };
+  | { type: "selectProject"; projectId: string }
+  | { type: "selectTemplate"; templateId: string };
 
 export function CreatorSourcingAssistant() {
   const [projects, setProjects] = useState<SourcingProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState("");
   const [projectsLoaded, setProjectsLoaded] = useState(false);
-  const [projectName, setProjectName] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [creators, setCreators] = useState<UploadedCreator[]>([]);
   const [sourceFileName, setSourceFileName] = useState("");
   const [sheetName, setSheetName] = useState("");
   const [filters, setFilters] = useState<FilterSettings>(() => ({ ...emptyFilters }));
   const [draftTemplate, setDraftTemplate] = useState<TemplateColumn[]>([]);
+  const [draftTemplateName, setDraftTemplateName] = useState("");
   const [templateMessage, setTemplateMessage] = useState("");
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
@@ -142,9 +145,11 @@ export function CreatorSourcingAssistant() {
   const projectsRef = useRef<SourcingProject[]>([]);
 
   const activeProject = projects.find((project) => project.id === activeProjectId);
+  const activeTemplateId = activeProject?.activeTemplateId ?? "";
   const template = useMemo(() => draftTemplate, [draftTemplate]);
   const templateHasUnsavedChanges = activeProject
-    ? !templatesEqual(draftTemplate, activeProject.template)
+    ? !templatesEqual(draftTemplate, activeProject.template) ||
+      draftTemplateName.trim() !== activeProject.templateName
     : false;
   const hasActiveWorkingData = Boolean(
     sourceFileName || headers.length > 0 || creators.length > 0 || previewReady,
@@ -221,6 +226,7 @@ export function CreatorSourcingAssistant() {
     setActiveProjectId(loadedProjects[0]?.id ?? "");
     setFilters(loadedProjects[0]?.filters ?? { ...emptyFilters });
     setDraftTemplate(cloneTemplate(loadedProjects[0]?.template ?? []));
+    setDraftTemplateName(loadedProjects[0]?.templateName ?? "");
     setProjectsLoaded(true);
   }, []);
 
@@ -248,8 +254,9 @@ export function CreatorSourcingAssistant() {
     const project = projectsRef.current.find((item) => item.id === activeProjectId);
     if (!project) return;
     setDraftTemplate(cloneTemplate(project.template));
+    setDraftTemplateName(project.templateName);
     setTemplateMessage("");
-  }, [activeProjectId, projectsLoaded]);
+  }, [activeProjectId, activeTemplateId, projectsLoaded]);
 
   useEffect(() => {
     if (!activeProjectId) return;
@@ -289,41 +296,6 @@ export function CreatorSourcingAssistant() {
     setSelectedRowIds((current) => current.filter((id) => filteredIds.has(id)));
   }, [filteredCreators]);
 
-  function requestCreateProject() {
-    const name = projectName.trim();
-    if (!name) return;
-
-    if (shouldConfirmBeforeLeaving) {
-      setPendingLeaveAction({ type: "createProject", name });
-      return;
-    }
-
-    performCreateProject(name);
-  }
-
-  function performCreateProject(name: string) {
-    const filtersForProject = { ...emptyFilters };
-    const templateForProject = defaultTemplate();
-    const project: SourcingProject = {
-      id: createId("project"),
-      name,
-      createdAt: new Date().toISOString(),
-      filters: filtersForProject,
-      template: templateForProject,
-      templateSavedAt: new Date().toISOString(),
-    };
-
-    clearWorkingData();
-    setProjects((current) => [project, ...current]);
-    setActiveProjectId(project.id);
-    setFilters(filtersForProject);
-    setDraftTemplate(cloneTemplate(templateForProject));
-    setProjectName("");
-    setStatusMessage(`Project created: ${name}`);
-    setTemplateMessage("");
-    setErrorMessage("");
-  }
-
   function requestProjectChange(projectId: string) {
     if (projectId === activeProjectId) return;
     if (shouldConfirmBeforeLeaving) {
@@ -336,9 +308,61 @@ export function CreatorSourcingAssistant() {
   function switchProject(projectId: string) {
     clearWorkingData();
     setActiveProjectId(projectId);
-    setStatusMessage("Project changed.");
+    setStatusMessage("Campaign changed.");
     setErrorMessage("");
     setCopyMessage("");
+  }
+
+  function requestTemplateChange(templateId: string) {
+    if (templateId === activeTemplateId) return;
+    if (shouldConfirmBeforeLeaving) {
+      setPendingLeaveAction({ type: "selectTemplate", templateId });
+      return;
+    }
+    switchTemplate(templateId);
+  }
+
+  function switchTemplate(templateId: string) {
+    clearWorkingData();
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === activeProjectId ? activateProjectTemplate(project, templateId) : project,
+      ),
+    );
+    setStatusMessage("Template changed.");
+    setErrorMessage("");
+    setCopyMessage("");
+  }
+
+  function createNewTemplate() {
+    if (!activeProject) return;
+    const now = new Date().toISOString();
+    const nextTemplate: SourcingTemplate = {
+      id: createId("sourcing-template"),
+      campaignId: activeProject.id,
+      templateName: getNextTemplateName(activeProject.templates),
+      columns: defaultTemplate(),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    clearWorkingData();
+    setProjects((current) =>
+      current.map((project) => {
+        if (project.id !== activeProject.id) return project;
+        return activateProjectTemplate(
+          {
+            ...project,
+            templates: [...project.templates, nextTemplate],
+          },
+          nextTemplate.id,
+        );
+      }),
+    );
+    setDraftTemplate(cloneTemplate(nextTemplate.columns));
+    setDraftTemplateName(nextTemplate.templateName);
+    setTemplateMessage("New template created. Edit and save it when ready.");
+    setIsTemplateModalOpen(true);
   }
 
   function clearWorkingData() {
@@ -358,8 +382,8 @@ export function CreatorSourcingAssistant() {
     if (!pendingLeaveAction) return;
     const action = pendingLeaveAction;
     setPendingLeaveAction(null);
-    if (action.type === "createProject") {
-      performCreateProject(action.name);
+    if (action.type === "selectTemplate") {
+      switchTemplate(action.templateId);
       return;
     }
     switchProject(action.projectId);
@@ -405,7 +429,7 @@ export function CreatorSourcingAssistant() {
 
   async function enrichContacts() {
     if (!activeProject) {
-      setErrorMessage("Create or select a project first.");
+      setErrorMessage("Select a campaign first.");
       return;
     }
     if (creators.length === 0) {
@@ -450,7 +474,7 @@ export function CreatorSourcingAssistant() {
 
   async function preparePreview() {
     if (!activeProject) {
-      setErrorMessage("Create or select a project first.");
+      setErrorMessage("Select a campaign first.");
       return;
     }
     if (creators.length === 0) {
@@ -458,7 +482,7 @@ export function CreatorSourcingAssistant() {
       return;
     }
     if (template.length === 0) {
-      setErrorMessage("Add at least one output column to the project template.");
+      setErrorMessage("Add at least one output column to the selected sourcing template.");
       return;
     }
 
@@ -620,18 +644,66 @@ export function CreatorSourcingAssistant() {
   }
 
   function saveTemplate() {
-    if (!activeProjectId) return;
+    if (!activeProject) return;
     const savedAt = new Date().toISOString();
     const savedTemplate = cloneTemplate(draftTemplate);
+    const savedTemplateName = draftTemplateName.trim() || activeProject.templateName;
     setProjects((current) =>
-      current.map((project) =>
-        project.id === activeProjectId
-          ? { ...project, template: savedTemplate, templateSavedAt: savedAt }
-          : project,
-      ),
+      current.map((project) => {
+        if (project.id !== activeProject.id) return project;
+        const templates = project.templates.map((templateItem) =>
+          templateItem.id === project.activeTemplateId
+            ? {
+                ...templateItem,
+                templateName: savedTemplateName,
+                columns: savedTemplate,
+                updatedAt: savedAt,
+              }
+            : templateItem,
+        );
+        return activateProjectTemplate(
+          {
+            ...project,
+            templates,
+          },
+          project.activeTemplateId,
+        );
+      }),
     );
     setDraftTemplate(cloneTemplate(savedTemplate));
-    setTemplateMessage("Template saved for this project.");
+    setDraftTemplateName(savedTemplateName);
+    setTemplateMessage("Template saved for this campaign.");
+    setIsTemplateModalOpen(false);
+  }
+
+  function saveTemplateAsNew() {
+    if (!activeProject) return;
+    const savedAt = new Date().toISOString();
+    const baseName = draftTemplateName.trim() || activeProject.templateName || "Template";
+    const nextTemplate: SourcingTemplate = {
+      id: createId("sourcing-template"),
+      campaignId: activeProject.id,
+      templateName: getDuplicateTemplateName(baseName, activeProject.templates),
+      columns: cloneTemplate(draftTemplate),
+      createdAt: savedAt,
+      updatedAt: savedAt,
+    };
+
+    setProjects((current) =>
+      current.map((project) => {
+        if (project.id !== activeProject.id) return project;
+        return activateProjectTemplate(
+          {
+            ...project,
+            templates: [...project.templates, nextTemplate],
+          },
+          nextTemplate.id,
+        );
+      }),
+    );
+    setDraftTemplate(cloneTemplate(nextTemplate.columns));
+    setDraftTemplateName(nextTemplate.templateName);
+    setTemplateMessage("Template saved as a new template.");
     setIsTemplateModalOpen(false);
   }
 
@@ -640,14 +712,18 @@ export function CreatorSourcingAssistant() {
     const templateForProject = defaultTemplate();
     const savedAt = new Date().toISOString();
     setProjects((current) =>
-      current.map((project) =>
-        project.id === activeProject.id
-          ? { ...project, template: templateForProject, templateSavedAt: savedAt }
-          : project,
-      ),
+      current.map((project) => {
+        if (project.id !== activeProject.id) return project;
+        const templates = project.templates.map((templateItem) =>
+          templateItem.id === project.activeTemplateId
+            ? { ...templateItem, columns: templateForProject, updatedAt: savedAt }
+            : templateItem,
+        );
+        return activateProjectTemplate({ ...project, templates }, project.activeTemplateId);
+      }),
     );
     setDraftTemplate(cloneTemplate(templateForProject));
-    setTemplateMessage("Template reset for this project.");
+    setTemplateMessage("Template reset for this campaign.");
     setIsTemplateModalOpen(false);
   }
 
@@ -762,31 +838,12 @@ export function CreatorSourcingAssistant() {
 
         <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
           <aside className="flex min-w-0 flex-col gap-5">
-            <Panel title="Project" icon={ClipboardList}>
-              <div className="flex gap-2">
-                <input
-                  value={projectName}
-                  onChange={(event) => setProjectName(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") requestCreateProject();
-                  }}
-                  placeholder="Dola Thailand"
-                  className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                />
-                <button
-                  onClick={requestCreateProject}
-                  className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
-                >
-                  <Plus className="size-4" />
-                  Create
-                </button>
-              </div>
-
+            <Panel title="Campaign" icon={ClipboardList}>
               {projects.length > 0 ? (
                 <>
-                  <div className="mt-4">
+                  <div>
                     <label className="text-xs font-medium text-muted-foreground">
-                      Active Project
+                      Campaign From Campaign Profiles
                     </label>
                     <select
                       value={activeProjectId}
@@ -800,14 +857,38 @@ export function CreatorSourcingAssistant() {
                       ))}
                     </select>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="mt-3">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Saved Sourcing Template
+                    </label>
+                    <select
+                      value={activeProject?.activeTemplateId ?? ""}
+                      onChange={(event) => requestTemplateChange(event.target.value)}
+                      className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                    >
+                      {activeProject?.templates.map((templateItem) => (
+                        <option key={templateItem.id} value={templateItem.id}>
+                          {templateItem.templateName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <button
+                      onClick={createNewTemplate}
+                      disabled={!activeProject}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Plus className="size-4" />
+                      New
+                    </button>
                     <button
                       onClick={() => setIsTemplateModalOpen(true)}
                       disabled={!activeProject}
                       className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Columns3 className="size-4" />
-                      Edit Template
+                      Edit
                     </button>
                     <button
                       onClick={resetTemplate}
@@ -815,11 +896,12 @@ export function CreatorSourcingAssistant() {
                       className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <RotateCcw className="size-4" />
-                      Reset Template
+                      Reset
                     </button>
                   </div>
                   <TemplateStatus
                     columnCount={activeProject?.template.length ?? 0}
+                    templateName={activeProject?.templateName ?? ""}
                     savedAt={activeProject?.templateSavedAt}
                     hasUnsavedChanges={templateHasUnsavedChanges}
                     message={templateMessage}
@@ -827,7 +909,8 @@ export function CreatorSourcingAssistant() {
                 </>
               ) : (
                 <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                  Create a project first. The project stores the output template and saved filters.
+                  Create campaigns in Campaign Profiles first. Sourcing templates attach to those
+                  campaign records.
                 </p>
               )}
             </Panel>
@@ -846,7 +929,7 @@ export function CreatorSourcingAssistant() {
                     ? "Reading file..."
                     : activeProject
                       ? "Upload EasyKOL Excel or CSV"
-                      : "Create a project before uploading"}
+                      : "Select a campaign before uploading"}
                 </span>
                 <span className="mt-1 text-xs text-muted-foreground">
                   The app automatically reads the second worksheet.
@@ -924,7 +1007,7 @@ export function CreatorSourcingAssistant() {
                     creators match the current filters
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Preview shows only the columns from the active project template.
+                    Preview shows only the columns from the selected sourcing template.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -1022,13 +1105,16 @@ export function CreatorSourcingAssistant() {
       {isTemplateModalOpen && activeProject ? (
         <TemplateEditorModal
           projectName={activeProject.name}
+          templateName={draftTemplateName}
           template={template}
+          onTemplateNameChange={setDraftTemplateName}
           onAddColumn={addTemplateColumn}
           onMoveColumn={moveTemplateColumn}
           onRemoveColumn={removeTemplateColumn}
           onUpdateColumn={updateTemplateColumn}
           onUpdateBlock={updateTemplateBlock}
           onSave={saveTemplate}
+          onSaveAsNew={saveTemplateAsNew}
           onClose={() => setIsTemplateModalOpen(false)}
         />
       ) : null}
@@ -1559,7 +1645,7 @@ function LeaveProjectModal({
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl">
         <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-          Before leaving this project:
+          Before leaving this campaign:
         </p>
         <h2 className="mt-3 text-lg font-semibold">
           {hasUnsavedTemplateChanges
@@ -1580,7 +1666,7 @@ function LeaveProjectModal({
             onClick={onLeave}
             className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
           >
-            Leave Project
+            Leave Campaign
           </button>
         </div>
       </div>
@@ -1590,23 +1676,29 @@ function LeaveProjectModal({
 
 function TemplateEditorModal({
   projectName,
+  templateName,
   template,
+  onTemplateNameChange,
   onAddColumn,
   onMoveColumn,
   onRemoveColumn,
   onUpdateColumn,
   onUpdateBlock,
   onSave,
+  onSaveAsNew,
   onClose,
 }: {
   projectName: string;
+  templateName: string;
   template: TemplateColumn[];
+  onTemplateNameChange: (value: string) => void;
   onAddColumn: () => void;
   onMoveColumn: (columnId: string, direction: "up" | "down") => void;
   onRemoveColumn: (columnId: string) => void;
   onUpdateColumn: (columnId: string, patch: Partial<TemplateColumn>) => void;
   onUpdateBlock: (column: TemplateColumn, value: string) => void;
   onSave: () => void;
+  onSaveAsNew: () => void;
   onClose: () => void;
 }) {
   return (
@@ -1631,7 +1723,9 @@ function TemplateEditorModal({
         <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
           <TemplateBuilder
             projectName={projectName}
+            templateName={templateName}
             template={template}
+            onTemplateNameChange={onTemplateNameChange}
             onAddColumn={onAddColumn}
             onMoveColumn={onMoveColumn}
             onRemoveColumn={onRemoveColumn}
@@ -1655,6 +1749,14 @@ function TemplateEditorModal({
             <Save className="size-4" />
             Save Template
           </button>
+          <button
+            onClick={onSaveAsNew}
+            disabled={template.length === 0}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus className="size-4" />
+            Save As New
+          </button>
         </div>
       </div>
     </div>
@@ -1663,11 +1765,13 @@ function TemplateEditorModal({
 
 function TemplateStatus({
   columnCount,
+  templateName,
   savedAt,
   hasUnsavedChanges,
   message,
 }: {
   columnCount: number;
+  templateName: string;
   savedAt?: string;
   hasUnsavedChanges: boolean;
   message: string;
@@ -1675,8 +1779,10 @@ function TemplateStatus({
   const statusText = hasUnsavedChanges
     ? "Unsaved template changes"
     : columnCount > 0
-      ? `Saved template: ${columnCount} column${columnCount === 1 ? "" : "s"}`
-      : "Currently no saved template for this project";
+      ? `Saved template: ${templateName || "Untitled Template"} (${columnCount} column${
+          columnCount === 1 ? "" : "s"
+        })`
+      : "Currently no saved template for this campaign";
 
   return (
     <div className="mt-3 rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
@@ -1695,7 +1801,9 @@ function TemplateStatus({
 
 function TemplateBuilder({
   projectName,
+  templateName,
   template,
+  onTemplateNameChange,
   onAddColumn,
   onMoveColumn,
   onRemoveColumn,
@@ -1703,7 +1811,9 @@ function TemplateBuilder({
   onUpdateBlock,
 }: {
   projectName: string;
+  templateName: string;
   template: TemplateColumn[];
+  onTemplateNameChange: (value: string) => void;
   onAddColumn: () => void;
   onMoveColumn: (columnId: string, direction: "up" | "down") => void;
   onRemoveColumn: (columnId: string) => void;
@@ -1713,8 +1823,17 @@ function TemplateBuilder({
   return (
     <div>
       <p className="mb-3 text-xs leading-5 text-muted-foreground">
-        Project: <span className="font-medium text-foreground">{projectName}</span>
+        Campaign: <span className="font-medium text-foreground">{projectName}</span>
       </p>
+      <label className="mb-4 block">
+        <span className="text-xs font-medium text-muted-foreground">Template Name</span>
+        <input
+          value={templateName}
+          onChange={(event) => onTemplateNameChange(event.target.value)}
+          placeholder="Default Template"
+          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+        />
+      </label>
       <div className="space-y-2">
         {template.map((column, index) => (
           <div key={column.id} className="rounded-lg border border-border bg-background p-3">
@@ -2373,33 +2492,186 @@ function filterValueEqual(
 
 function loadProjects(): SourcingProject[] {
   if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map(normalizeProject);
-  } catch {
-    return [];
-  }
+  const campaigns = loadCampaignRegistry().campaigns;
+  const database = loadAppDatabase();
+  const settings = new Map(
+    database.worksheets.AppSettings.map((setting) => [setting.settingKey, setting.settingValue]),
+  );
+  const templatesByCampaign = groupSourcingTemplates(database.worksheets.SourcingTemplates);
+
+  return campaigns.map((campaign) =>
+    createProjectFromCampaign(campaign, templatesByCampaign.get(campaign.id) ?? [], settings),
+  );
 }
 
 function saveProjects(projects: SourcingProject[]) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(storageKey, JSON.stringify(projects));
+  updateDatabase((database) => {
+    const managedCampaignIds = new Set(projects.map((project) => project.id));
+    const unmanagedTemplates = database.worksheets.SourcingTemplates.filter(
+      (template) => !managedCampaignIds.has(template.campaignId),
+    );
+
+    database.worksheets.SourcingTemplates = [
+      ...unmanagedTemplates,
+      ...projects.flatMap((project) => project.templates.map(toSourcingTemplateRecord)),
+    ];
+
+    projects.forEach((project) => {
+      upsertAppSetting(
+        database.worksheets.AppSettings,
+        `sourcing.activeTemplate.${project.id}`,
+        project.activeTemplateId,
+      );
+      upsertAppSetting(
+        database.worksheets.AppSettings,
+        `sourcing.filters.${project.id}`,
+        JSON.stringify(project.filters),
+      );
+    });
+  });
 }
 
-function normalizeProject(value: unknown): SourcingProject {
-  const project = isRecord(value) ? value : {};
-  const createdAt = String(project.createdAt || new Date().toISOString());
+function createProjectFromCampaign(
+  campaign: GlobalCampaign,
+  templates: SourcingTemplate[],
+  settings: Map<string, string>,
+): SourcingProject {
+  const ensuredTemplates =
+    templates.length > 0 ? templates : [createDefaultSourcingTemplate(campaign.id)];
+  const activeTemplateId =
+    settings.get(`sourcing.activeTemplate.${campaign.id}`) || ensuredTemplates[0]?.id || "";
+  const filters = parseJsonSetting(settings.get(`sourcing.filters.${campaign.id}`));
+
+  return activateProjectTemplate(
+    {
+      id: campaign.id,
+      name: campaign.campaignName,
+      createdAt: campaign.createdAt,
+      filters: normalizeFilters(filters),
+      templates: ensuredTemplates,
+      activeTemplateId,
+      template: [],
+      templateName: "",
+      templateSavedAt: undefined,
+    },
+    activeTemplateId,
+  );
+}
+
+function groupSourcingTemplates(records: SourcingTemplateRecord[]) {
+  const grouped = new Map<string, SourcingTemplate[]>();
+  records.forEach((record) => {
+    const template = normalizeSourcingTemplateRecord(record);
+    const templates = grouped.get(template.campaignId) ?? [];
+    templates.push(template);
+    grouped.set(template.campaignId, templates);
+  });
+
+  grouped.forEach((templates) =>
+    templates.sort((first, second) => first.createdAt.localeCompare(second.createdAt)),
+  );
+  return grouped;
+}
+
+function normalizeSourcingTemplateRecord(record: SourcingTemplateRecord): SourcingTemplate {
   return {
-    id: String(project.id || createId("project")),
-    name: String(project.name || "Untitled Project"),
-    createdAt,
-    filters: normalizeFilters(project.filters),
-    template: normalizeTemplate(project.template),
-    templateSavedAt: stringValue(project.templateSavedAt) || createdAt,
+    id: record.templateId || createId("sourcing-template"),
+    campaignId: record.campaignId,
+    templateName: record.templateName || "Default Template",
+    columns: normalizeTemplate(parseJsonSetting(record.columnsJson)),
+    createdAt: record.createdAt || new Date().toISOString(),
+    updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
   };
+}
+
+function createDefaultSourcingTemplate(campaignId: string): SourcingTemplate {
+  const now = new Date().toISOString();
+  return {
+    id: createId("sourcing-template"),
+    campaignId,
+    templateName: "Default Template",
+    columns: defaultTemplate(),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function activateProjectTemplate(project: SourcingProject, templateId: string): SourcingProject {
+  const templates =
+    project.templates.length > 0 ? project.templates : [createDefaultSourcingTemplate(project.id)];
+  const activeTemplate = templates.find((template) => template.id === templateId) ?? templates[0];
+
+  if (!activeTemplate) {
+    return {
+      ...project,
+      templates,
+      activeTemplateId: "",
+      template: [],
+      templateName: "",
+      templateSavedAt: undefined,
+    };
+  }
+
+  return {
+    ...project,
+    templates,
+    activeTemplateId: activeTemplate.id,
+    template: cloneTemplate(activeTemplate.columns),
+    templateName: activeTemplate.templateName,
+    templateSavedAt: activeTemplate.updatedAt,
+  };
+}
+
+function toSourcingTemplateRecord(template: SourcingTemplate): SourcingTemplateRecord {
+  return {
+    templateId: template.id,
+    campaignId: template.campaignId,
+    templateName: template.templateName,
+    columnsJson: JSON.stringify(template.columns),
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt,
+  };
+}
+
+function upsertAppSetting(settings: AppSettingRecord[], settingKey: string, settingValue: string) {
+  const updatedAt = new Date().toISOString();
+  const existing = settings.find((setting) => setting.settingKey === settingKey);
+  if (existing) {
+    existing.settingValue = settingValue;
+    existing.updatedAt = updatedAt;
+    return;
+  }
+  settings.push({ settingKey, settingValue, updatedAt });
+}
+
+function parseJsonSetting(value: unknown): unknown {
+  if (typeof value !== "string" || !value.trim()) return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function getNextTemplateName(templates: SourcingTemplate[]): string {
+  let index = templates.length + 1;
+  const names = new Set(templates.map((template) => template.templateName));
+  while (names.has(`Template ${index}`)) {
+    index += 1;
+  }
+  return `Template ${index}`;
+}
+
+function getDuplicateTemplateName(baseName: string, templates: SourcingTemplate[]): string {
+  const names = new Set(templates.map((template) => template.templateName));
+  let index = 2;
+  let candidate = `${baseName} Copy`;
+  while (names.has(candidate)) {
+    candidate = `${baseName} Copy ${index}`;
+    index += 1;
+  }
+  return candidate;
 }
 
 function normalizeFilters(value: unknown): FilterSettings {

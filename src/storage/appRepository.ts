@@ -1,0 +1,243 @@
+import {
+  loadCentralDatabaseFromLocalStorage,
+  saveCentralDatabaseToLocalStorage,
+} from "./localStorageAdapter";
+import {
+  getGoogleSheetsStorageStatus,
+  loadDatabaseFromGoogleSheets,
+  migrateDatabaseToGoogleSheets,
+  saveDatabaseToGoogleSheets,
+  type MigrationReport,
+} from "./googleSheetsAdapter";
+
+export type { MigrationReport };
+import {
+  type ActiveCampaignCreatorRecord,
+  type AppSettingRecord,
+  type CampaignMemoryCardRecord,
+  type CampaignProfileRecord,
+  type CentralAppDatabase,
+  type OutreachTemplateRecord,
+  type PerformanceBenchmarkRecord,
+  type PerformanceWeeklyInputRecord,
+  type SourcingTemplateRecord,
+  type StorageStatus,
+} from "./schema";
+
+export function loadAppDatabase(): CentralAppDatabase {
+  return loadCentralDatabaseFromLocalStorage().database;
+}
+
+export function saveAppDatabase(database: CentralAppDatabase) {
+  saveCentralDatabaseToLocalStorage(database);
+  if (typeof window !== "undefined") {
+    void saveDatabaseToGoogleSheets(database).catch(() => {
+      // Local cache remains the fallback when Google Sheets is unavailable.
+    });
+  }
+}
+
+export function getAppStorageStatus(): StorageStatus {
+  const localResult = loadCentralDatabaseFromLocalStorage();
+
+  return {
+    source: "localStorage",
+    shared: false,
+    configured: true,
+    diagnostics: localResult.diagnostics,
+  };
+}
+
+export async function getAppStorageStatusAsync(): Promise<StorageStatus> {
+  const localResult = loadCentralDatabaseFromLocalStorage();
+  try {
+    const sheetsStatus = await getGoogleSheetsStorageStatus();
+    if (sheetsStatus.configured) return sheetsStatus;
+
+    return {
+      source: "localStorage",
+      shared: false,
+      configured: true,
+      diagnostics: [...localResult.diagnostics, ...sheetsStatus.diagnostics],
+    };
+  } catch (error) {
+    return {
+      source: "localStorage",
+      shared: false,
+      configured: true,
+      diagnostics: [
+        ...localResult.diagnostics,
+        {
+          level: "warning",
+          message:
+            error instanceof Error ? error.message : "Could not check Google Sheets connection.",
+        },
+      ],
+    };
+  }
+}
+
+export async function refreshAppDatabaseFromPrimary(): Promise<StorageStatus> {
+  try {
+    const result = await loadDatabaseFromGoogleSheets();
+    if (result.ok && result.database) {
+      saveCentralDatabaseToLocalStorage(result.database);
+      return {
+        ...result.status,
+        source: "googleSheets",
+        shared: true,
+      };
+    }
+    return {
+      source: "localStorage",
+      shared: false,
+      configured: true,
+      diagnostics: result.status.diagnostics,
+    };
+  } catch (error) {
+    return {
+      source: "localStorage",
+      shared: false,
+      configured: true,
+      diagnostics: [
+        {
+          level: "warning",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Google Sheets is unavailable. Using local fallback.",
+        },
+      ],
+    };
+  }
+}
+
+export async function migrateLocalDatabaseToPrimary(): Promise<{
+  ok: boolean;
+  report: MigrationReport | null;
+  status: StorageStatus;
+}> {
+  const localDatabase = loadAppDatabase();
+  const result = await migrateDatabaseToGoogleSheets(localDatabase);
+  if (result.ok && result.database) {
+    saveCentralDatabaseToLocalStorage(result.database);
+  }
+  return {
+    ok: result.ok,
+    report: result.report,
+    status: result.ok
+      ? {
+          ...result.status,
+          source: "googleSheets",
+          shared: true,
+        }
+      : result.status,
+  };
+}
+
+export function readCampaignProfiles(): CampaignProfileRecord[] {
+  return loadAppDatabase().worksheets.CampaignProfiles;
+}
+
+export function writeCampaignProfiles(records: CampaignProfileRecord[]) {
+  updateDatabase((database) => {
+    database.worksheets.CampaignProfiles = records;
+  });
+}
+
+export function readSourcingTemplates(): SourcingTemplateRecord[] {
+  return loadAppDatabase().worksheets.SourcingTemplates;
+}
+
+export function writeSourcingTemplates(records: SourcingTemplateRecord[]) {
+  updateDatabase((database) => {
+    database.worksheets.SourcingTemplates = records;
+  });
+}
+
+export function readOutreachTemplates(): OutreachTemplateRecord[] {
+  return loadAppDatabase().worksheets.OutreachTemplates;
+}
+
+export function writeOutreachTemplates(records: OutreachTemplateRecord[]) {
+  updateDatabase((database) => {
+    database.worksheets.OutreachTemplates = records;
+  });
+}
+
+export function readCampaignMemoryCards(): CampaignMemoryCardRecord[] {
+  return loadAppDatabase().worksheets.CampaignMemoryCards;
+}
+
+export function writeCampaignMemoryCards(records: CampaignMemoryCardRecord[]) {
+  updateDatabase((database) => {
+    database.worksheets.CampaignMemoryCards = records;
+  });
+}
+
+export function readActiveCampaignCreators(): ActiveCampaignCreatorRecord[] {
+  return loadAppDatabase().worksheets.ActiveCampaignCreators;
+}
+
+export function writeActiveCampaignCreators(records: ActiveCampaignCreatorRecord[]) {
+  updateDatabase((database) => {
+    database.worksheets.ActiveCampaignCreators = records;
+  });
+}
+
+export function readPerformanceBenchmarks(): PerformanceBenchmarkRecord[] {
+  return loadAppDatabase().worksheets.PerformanceBenchmarks;
+}
+
+export function writePerformanceBenchmarks(records: PerformanceBenchmarkRecord[]) {
+  updateDatabase((database) => {
+    database.worksheets.PerformanceBenchmarks = records;
+  });
+}
+
+export function readPerformanceWeeklyInputs(): PerformanceWeeklyInputRecord[] {
+  return loadAppDatabase().worksheets.PerformanceWeeklyInputs;
+}
+
+export function writePerformanceWeeklyInputs(records: PerformanceWeeklyInputRecord[]) {
+  updateDatabase((database) => {
+    database.worksheets.PerformanceWeeklyInputs = records;
+  });
+}
+
+export function readAppSettings(): AppSettingRecord[] {
+  return loadAppDatabase().worksheets.AppSettings;
+}
+
+export function writeAppSettings(records: AppSettingRecord[]) {
+  updateDatabase((database) => {
+    database.worksheets.AppSettings = records;
+  });
+}
+
+export function getAppSetting(settingKey: string, fallback = "") {
+  return (
+    readAppSettings().find((setting) => setting.settingKey === settingKey)?.settingValue ?? fallback
+  );
+}
+
+export function setAppSetting(settingKey: string, settingValue: string) {
+  updateDatabase((database) => {
+    const existing = database.worksheets.AppSettings.find(
+      (setting) => setting.settingKey === settingKey,
+    );
+    const updatedAt = new Date().toISOString();
+    if (existing) {
+      existing.settingValue = settingValue;
+      existing.updatedAt = updatedAt;
+      return;
+    }
+    database.worksheets.AppSettings.push({ settingKey, settingValue, updatedAt });
+  });
+}
+
+export function updateDatabase(mutator: (database: CentralAppDatabase) => void) {
+  const database = loadAppDatabase();
+  mutator(database);
+  saveAppDatabase(database);
+}

@@ -13,11 +13,14 @@ export function TopBar() {
 
   return (
     <div className="flex items-center justify-between px-6 pt-5">
-      <button className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs font-medium text-foreground/90 hover:bg-card">
+      <Link
+        to="/settings"
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs font-medium text-foreground/90 hover:bg-card"
+      >
         <span className="size-1.5 rounded-full bg-emerald-400" />
         Katlas Ops v1.0
         <ChevronDown className="size-3.5 text-muted-foreground" />
-      </button>
+      </Link>
 
       <div className="flex min-w-0 items-center gap-5">
         <nav className="flex max-w-[70vw] items-center gap-5 overflow-x-auto text-sm">

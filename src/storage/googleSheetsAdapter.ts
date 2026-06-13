@@ -1,0 +1,134 @@
+import {
+  centralWorksheetNames,
+  requiredWorksheetHeaders,
+  worksheetHeaderAliases,
+  type CentralAppDatabase,
+  type CentralWorksheetName,
+  type StorageDiagnostic,
+  type StorageStatus,
+} from "./schema";
+import {
+  getGoogleSheetsConnectionStatus,
+  loadGoogleSheetsDatabase,
+  migrateLocalDatabaseToGoogleSheets,
+  saveGoogleSheetsDatabase,
+} from "./googleSheets.functions";
+
+export type RawSheetTable = {
+  worksheetName: string;
+  headers: string[];
+  rows: Array<Record<string, unknown>>;
+};
+
+export type ParsedSheetTable = {
+  worksheetName: CentralWorksheetName;
+  headerMap: Record<string, number>;
+  rows: Array<Record<string, unknown>>;
+};
+
+export type GoogleSheetsDatabaseResult = {
+  ok: boolean;
+  database: CentralAppDatabase | null;
+  status: StorageStatus;
+};
+
+export type MigrationReport = Record<CentralWorksheetName, number> & { errors: string[] };
+
+export async function getGoogleSheetsStorageStatus(): Promise<StorageStatus> {
+  return getGoogleSheetsConnectionStatus();
+}
+
+export async function loadDatabaseFromGoogleSheets(): Promise<GoogleSheetsDatabaseResult> {
+  return loadGoogleSheetsDatabase();
+}
+
+export async function saveDatabaseToGoogleSheets(
+  database: CentralAppDatabase,
+): Promise<GoogleSheetsDatabaseResult> {
+  return saveGoogleSheetsDatabase({ data: { database } });
+}
+
+export async function migrateDatabaseToGoogleSheets(database: CentralAppDatabase): Promise<{
+  ok: boolean;
+  database: CentralAppDatabase | null;
+  report: MigrationReport | null;
+  status: StorageStatus;
+}> {
+  return migrateLocalDatabaseToGoogleSheets({ data: { database } });
+}
+
+export function parseWorksheetByHeaders(
+  worksheetName: CentralWorksheetName,
+  headers: string[],
+  rows: Array<Record<string, unknown>>,
+): ParsedSheetTable {
+  return {
+    worksheetName,
+    headerMap: buildHeaderMap(headers, requiredWorksheetHeaders[worksheetName]),
+    rows,
+  };
+}
+
+export function diagnoseWorkbookTables(tables: RawSheetTable[]): StorageDiagnostic[] {
+  const diagnostics: StorageDiagnostic[] = [];
+  const tablesByName = new Map(
+    tables.map((table) => [normalizeWorksheetName(table.worksheetName), table]),
+  );
+
+  for (const worksheetName of centralWorksheetNames) {
+    const table = tablesByName.get(normalizeWorksheetName(worksheetName));
+    if (!table) {
+      diagnostics.push({
+        level: "error",
+        worksheet: worksheetName,
+        message: `Missing worksheet: ${worksheetName}`,
+      });
+      continue;
+    }
+
+    const missingHeaders = getMissingHeaders(worksheetName, table.headers);
+    if (missingHeaders.length > 0) {
+      diagnostics.push({
+        level: "error",
+        worksheet: worksheetName,
+        message: `${worksheetName} is missing required headers.`,
+        missingHeaders,
+      });
+    }
+  }
+
+  return diagnostics;
+}
+
+export function buildHeaderMap(headers: string[], requiredHeaders: string[]) {
+  const normalizedHeaders = headers.map(normalizeHeader);
+  const map: Record<string, number> = {};
+
+  for (const requiredHeader of requiredHeaders) {
+    const candidates = [requiredHeader, ...(worksheetHeaderAliases[requiredHeader] ?? [])].map(
+      normalizeHeader,
+    );
+    const index = normalizedHeaders.findIndex((header) => candidates.includes(header));
+    if (index >= 0) map[requiredHeader] = index;
+  }
+
+  return map;
+}
+
+export function getMissingHeaders(worksheetName: CentralWorksheetName, headers: string[]) {
+  const headerMap = buildHeaderMap(headers, requiredWorksheetHeaders[worksheetName]);
+  return requiredWorksheetHeaders[worksheetName].filter(
+    (header) => headerMap[header] === undefined,
+  );
+}
+
+export function normalizeHeader(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function normalizeWorksheetName(value: string) {
+  return value.trim().toLowerCase();
+}

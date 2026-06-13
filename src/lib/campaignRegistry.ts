@@ -1,3 +1,5 @@
+import { loadAppDatabase, saveAppDatabase } from "@/storage/appRepository";
+
 export const selectedCreatorStatuses = [
   "Contract Signed",
   "Draft Pending",
@@ -83,24 +85,107 @@ export type CreatorFinancials = {
   profitMargin: number;
 };
 
-const campaignRegistryStorageKey = "katlas-global-campaign-registry-v1";
 const legacyActiveCampaignsStorageKey = "katlas-active-campaigns-v1";
 
 export function loadCampaignRegistry(): GlobalCampaignRegistry {
-  if (typeof window === "undefined") return createDefaultCampaignRegistry();
+  if (typeof window === "undefined") return { campaigns: [], creatorRecords: [] };
 
   try {
-    const raw = window.localStorage.getItem(campaignRegistryStorageKey);
-    if (!raw) return loadLegacyCampaignRegistry() ?? createDefaultCampaignRegistry();
-    return normalizeCampaignRegistry(JSON.parse(raw));
+    const database = loadAppDatabase();
+    const campaigns = database.worksheets.CampaignProfiles.map((campaign) =>
+      normalizeCampaign({
+        id: campaign.campaignId,
+        campaignName: campaign.campaignName,
+        campaignCode: campaign.campaignCode,
+        country: campaign.country,
+        status: campaign.status,
+        preferredLanguages: campaign.preferredLanguages,
+        memoryCards: database.worksheets.CampaignMemoryCards.filter(
+          (card) => card.campaignId === campaign.campaignId,
+        ).map((card) => ({
+          id: card.cardId,
+          title: card.title,
+          content: card.content,
+        })),
+        createdAt: campaign.createdAt,
+        updatedAt: campaign.updatedAt,
+      }),
+    );
+    const campaignIds = new Set(campaigns.map((campaign) => campaign.id));
+    const creatorRecords = database.worksheets.ActiveCampaignCreators.map((record) =>
+      normalizeCreatorRecord({
+        id: record.recordId,
+        campaignRegistryId: record.campaignId,
+        creatorName: record.creatorName,
+        creatorLink: record.creatorLink,
+        avgViews: record.avgViews,
+        internalQuote: record.internalQuote,
+        externalQuote: record.externalQuote,
+        status: record.status,
+        draftLink: record.draftLink,
+        liveLink: record.liveLink,
+        notes: record.notes,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+      }),
+    ).filter((record) => campaignIds.has(record.campaignRegistryId));
+
+    if (!campaigns.length) return loadLegacyCampaignRegistry() ?? { campaigns, creatorRecords };
+    return { campaigns, creatorRecords };
   } catch {
-    return createDefaultCampaignRegistry();
+    return loadLegacyCampaignRegistry() ?? { campaigns: [], creatorRecords: [] };
   }
 }
 
 export function saveCampaignRegistry(registry: GlobalCampaignRegistry) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(campaignRegistryStorageKey, JSON.stringify(registry));
+  const database = loadAppDatabase();
+  const existingProfiles = new Map(
+    database.worksheets.CampaignProfiles.map((campaign) => [campaign.campaignId, campaign]),
+  );
+  database.worksheets.CampaignProfiles = registry.campaigns.map((campaign) => ({
+    campaignId: campaign.id,
+    campaignName: campaign.campaignName,
+    campaignCode: campaign.campaignCode,
+    country: existingProfiles.get(campaign.id)?.country ?? "",
+    preferredLanguages: campaign.preferredLanguages.join(", "),
+    status: existingProfiles.get(campaign.id)?.status ?? "Active",
+    createdAt: campaign.createdAt,
+    updatedAt: campaign.updatedAt,
+  }));
+  database.worksheets.CampaignMemoryCards = registry.campaigns.flatMap((campaign) =>
+    campaign.memoryCards.map((card) => ({
+      cardId: card.id,
+      campaignId: campaign.id,
+      title: card.title,
+      content: card.content,
+      preferredLanguages: campaign.preferredLanguages.join(", "),
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt,
+    })),
+  );
+  database.worksheets.ActiveCampaignCreators = registry.creatorRecords.map((record) => {
+    const financials = calculateCreatorFinancials(record);
+    return {
+      recordId: record.id,
+      campaignId: record.campaignRegistryId,
+      creatorName: record.creatorName,
+      creatorLink: record.creatorLink,
+      avgViews: record.avgViews,
+      internalQuote: record.internalQuote,
+      externalQuote: record.externalQuote,
+      cpm: financials.cpm,
+      profit: financials.profit,
+      profitMargin: financials.profitMargin,
+      status: record.status,
+      draftLink: record.draftLink,
+      liveLink: record.liveLink,
+      notes: record.notes,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    };
+  });
+  saveAppDatabase(database);
 }
 
 export function createCampaign(campaignName: string, campaignCode: string): GlobalCampaign {
@@ -402,7 +487,11 @@ function normalizePreferredLanguages(
   value: unknown,
   fallback: CampaignMemoryLanguage[],
 ): CampaignMemoryLanguage[] {
-  const source = Array.isArray(value) ? value : fallback;
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[,|]/).map((item) => item.trim())
+      : fallback;
   const normalized = source.filter((language): language is CampaignMemoryLanguage =>
     campaignMemoryLanguages.includes(language as CampaignMemoryLanguage),
   );
