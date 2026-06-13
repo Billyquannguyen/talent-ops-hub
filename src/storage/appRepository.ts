@@ -31,10 +31,36 @@ export function loadAppDatabase(): CentralAppDatabase {
 export function saveAppDatabase(database: CentralAppDatabase) {
   saveCentralDatabaseToLocalStorage(database);
   if (typeof window !== "undefined") {
-    void saveDatabaseToGoogleSheets(database).catch(() => {
-      // Local cache remains the fallback when Google Sheets is unavailable.
-    });
+    void saveDatabaseToGoogleSheets(database)
+      .then((result) => {
+        if (result.ok) return;
+        reportGoogleSheetsWriteFailure(result.status.diagnostics);
+      })
+      .catch((error) => {
+        reportGoogleSheetsWriteFailure([
+          {
+            level: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Google Sheets write failed. Local cache was not promoted to shared storage.",
+          },
+        ]);
+      });
   }
+}
+
+function reportGoogleSheetsWriteFailure(diagnostics: StorageStatus["diagnostics"]) {
+  const message =
+    diagnostics.map((diagnostic) => diagnostic.message).join("\n") ||
+    "Google Sheets write failed. Local cache was not promoted to shared storage.";
+  console.error(message);
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("katlas-storage-error", {
+      detail: { message, diagnostics },
+    }),
+  );
 }
 
 export function getAppStorageStatus(): StorageStatus {

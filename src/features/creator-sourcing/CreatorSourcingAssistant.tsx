@@ -8,10 +8,12 @@ import {
   ClipboardList,
   Columns3,
   Copy,
+  CopyPlus,
   Download,
   FileSpreadsheet,
   Filter,
   Loader2,
+  Pencil,
   Plus,
   RotateCcw,
   Save,
@@ -24,6 +26,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { TopBar } from "@/components/TopBar";
 import { loadCampaignRegistry, type GlobalCampaign } from "@/lib/campaignRegistry";
+import { formatCountryLabel, matchesCountryQuery } from "@/lib/countries";
 import { loadAppDatabase, updateDatabase } from "@/storage/appRepository";
 import type { AppSettingRecord, SourcingTemplateRecord } from "@/storage/schema";
 import { buildPreviewRow, hasContactInfo, runEnrichmentPipeline } from "./enrichment";
@@ -121,6 +124,7 @@ export function CreatorSourcingAssistant() {
   const [draftTemplateName, setDraftTemplateName] = useState("");
   const [templateMessage, setTemplateMessage] = useState("");
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [openFilterSections, setOpenFilterSections] = useState(filterSectionDefaults);
   const [customRanges, setCustomRanges] = useState({
@@ -363,6 +367,66 @@ export function CreatorSourcingAssistant() {
     setDraftTemplateName(nextTemplate.templateName);
     setTemplateMessage("New template created. Edit and save it when ready.");
     setIsTemplateModalOpen(true);
+  }
+
+  function duplicateSourcingTemplate(templateId: string) {
+    if (!activeProject) return;
+    const sourceTemplate = activeProject.templates.find(
+      (templateItem) => templateItem.id === templateId,
+    );
+    if (!sourceTemplate) return;
+    const now = new Date().toISOString();
+    const nextTemplate: SourcingTemplate = {
+      ...sourceTemplate,
+      id: createId("sourcing-template"),
+      templateName: getDuplicateTemplateName(sourceTemplate.templateName, activeProject.templates),
+      columns: cloneTemplate(sourceTemplate.columns),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setProjects((current) =>
+      current.map((project) => {
+        if (project.id !== activeProject.id) return project;
+        return activateProjectTemplate(
+          {
+            ...project,
+            templates: [...project.templates, nextTemplate],
+          },
+          nextTemplate.id,
+        );
+      }),
+    );
+    setDraftTemplate(cloneTemplate(nextTemplate.columns));
+    setDraftTemplateName(nextTemplate.templateName);
+    setTemplateMessage("Template duplicated.");
+  }
+
+  function deleteSourcingTemplate(templateId: string) {
+    if (!activeProject || activeProject.templates.length <= 1) return;
+    const templateToDelete = activeProject.templates.find(
+      (templateItem) => templateItem.id === templateId,
+    );
+    if (!templateToDelete) return;
+    const confirmed =
+      typeof window === "undefined" ||
+      window.confirm(`Delete "${templateToDelete.templateName}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setProjects((current) =>
+      current.map((project) => {
+        if (project.id !== activeProject.id) return project;
+        const templates = project.templates.filter(
+          (templateItem) => templateItem.id !== templateId,
+        );
+        const nextActiveTemplateId =
+          project.activeTemplateId === templateId
+            ? (templates[0]?.id ?? "")
+            : project.activeTemplateId;
+        return activateProjectTemplate({ ...project, templates }, nextActiveTemplateId);
+      }),
+    );
+    setTemplateMessage("Template deleted.");
   }
 
   function clearWorkingData() {
@@ -873,7 +937,7 @@ export function CreatorSourcingAssistant() {
                       ))}
                     </select>
                   </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
+                  <div className="mt-3 grid grid-cols-2 gap-2">
                     <button
                       onClick={createNewTemplate}
                       disabled={!activeProject}
@@ -889,6 +953,14 @@ export function CreatorSourcingAssistant() {
                     >
                       <Columns3 className="size-4" />
                       Edit
+                    </button>
+                    <button
+                      onClick={() => setIsTemplateManagerOpen(true)}
+                      disabled={!activeProject}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Pencil className="size-4" />
+                      Manage
                     </button>
                     <button
                       onClick={resetTemplate}
@@ -1119,6 +1191,20 @@ export function CreatorSourcingAssistant() {
         />
       ) : null}
 
+      {isTemplateManagerOpen && activeProject ? (
+        <SourcingTemplateManagerModal
+          projectName={activeProject.name}
+          templates={activeProject.templates}
+          activeTemplateId={activeProject.activeTemplateId}
+          onSelectTemplate={requestTemplateChange}
+          onNewTemplate={createNewTemplate}
+          onEditActiveTemplate={() => setIsTemplateModalOpen(true)}
+          onDuplicateTemplate={duplicateSourcingTemplate}
+          onDeleteTemplate={deleteSourcingTemplate}
+          onClose={() => setIsTemplateManagerOpen(false)}
+        />
+      ) : null}
+
       {isPreviewModalOpen ? (
         <PreviewModal
           headers={previewHeaders}
@@ -1203,13 +1289,17 @@ function EasyKolFilters({
     <div className="space-y-3">
       <FilterDropdown
         title="Regions"
-        summary={getSelectionSummary(filters.regions, "Select Regions")}
+        summary={getSelectionSummary(filters.regions, "Select Regions", formatCountryLabel)}
         open={openSections.regions}
         onToggle={() => onToggleSection("regions")}
       >
         <CountOptionList
           emptyLabel="Upload creator data to see regions."
+          formatValue={formatCountryLabel}
+          matchesQuery={matchesCountryQuery}
+          noResultsLabel="No matching countries."
           options={regionCounts}
+          searchPlaceholder="Search country code or name"
           selected={filters.regions}
           onSelect={onToggleRegion}
         />
@@ -1385,30 +1475,65 @@ function CountOptionList({
   options,
   selected,
   emptyLabel,
+  noResultsLabel = "No matching options.",
+  searchPlaceholder,
+  formatValue = (value) => value,
+  matchesQuery,
   onSelect,
 }: {
   options: CountOption[];
   selected: string[];
   emptyLabel: string;
+  noResultsLabel?: string;
+  searchPlaceholder?: string;
+  formatValue?: (value: string) => string;
+  matchesQuery?: (value: string, query: string) => boolean;
   onSelect: (value: string) => void;
 }) {
+  const [searchQuery, setSearchQuery] = useState("");
+
   if (options.length === 0) {
     return (
       <p className="rounded-md bg-card px-3 py-3 text-xs text-muted-foreground">{emptyLabel}</p>
     );
   }
 
+  const visibleOptions = searchQuery.trim()
+    ? options.filter((option) =>
+        matchesQuery
+          ? matchesQuery(option.value, searchQuery)
+          : formatValue(option.value).toLowerCase().includes(searchQuery.trim().toLowerCase()),
+      )
+    : options;
+
   return (
-    <div className="max-h-52 space-y-1 overflow-auto pr-1">
-      {options.map((option) => (
-        <FilterOptionButton
-          key={option.value}
-          label={option.value}
-          count={option.count}
-          selected={selected.includes(option.value)}
-          onClick={() => onSelect(option.value)}
+    <div className="space-y-2">
+      {searchPlaceholder ? (
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder={searchPlaceholder}
+          className="h-9 w-full rounded-md border border-input bg-card px-3 text-xs text-foreground outline-none transition placeholder:text-muted-foreground focus:border-primary"
         />
-      ))}
+      ) : null}
+      <div className="max-h-52 space-y-1 overflow-auto pr-1">
+        {visibleOptions.length > 0 ? (
+          visibleOptions.map((option) => (
+            <FilterOptionButton
+              key={option.value}
+              label={formatValue(option.value)}
+              count={option.count}
+              selected={selected.includes(option.value)}
+              onClick={() => onSelect(option.value)}
+            />
+          ))
+        ) : (
+          <p className="rounded-md bg-card px-3 py-3 text-xs text-muted-foreground">
+            {noResultsLabel}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -1668,6 +1793,129 @@ function LeaveProjectModal({
           >
             Leave Campaign
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SourcingTemplateManagerModal({
+  projectName,
+  templates,
+  activeTemplateId,
+  onSelectTemplate,
+  onNewTemplate,
+  onEditActiveTemplate,
+  onDuplicateTemplate,
+  onDeleteTemplate,
+  onClose,
+}: {
+  projectName: string;
+  templates: SourcingTemplate[];
+  activeTemplateId: string;
+  onSelectTemplate: (templateId: string) => void;
+  onNewTemplate: () => void;
+  onEditActiveTemplate: () => void;
+  onDuplicateTemplate: (templateId: string) => void;
+  onDeleteTemplate: (templateId: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl border border-border bg-card shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              Manage Sourcing Templates
+            </p>
+            <h2 className="mt-1 text-lg font-semibold">{projectName}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="grid size-9 place-items-center rounded-md border border-border bg-background text-muted-foreground transition hover:text-foreground"
+            aria-label="Close sourcing template manager"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="mb-3 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onNewTemplate();
+                onClose();
+              }}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+            >
+              <Plus className="size-4" />
+              New Template
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onEditActiveTemplate();
+                onClose();
+              }}
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent"
+            >
+              <Pencil className="size-4" />
+              Edit Active
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {templates.map((templateItem) => {
+              const selected = templateItem.id === activeTemplateId;
+              return (
+                <article
+                  key={templateItem.id}
+                  className={`rounded-lg border p-3 ${
+                    selected ? "border-primary bg-primary/10" : "border-border bg-background"
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="font-semibold">{templateItem.templateName}</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {templateItem.columns.length} column
+                        {templateItem.columns.length === 1 ? "" : "s"}
+                        {selected ? " · Active" : ""}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onSelectTemplate(templateItem.id)}
+                        disabled={selected}
+                        className="inline-flex h-8 items-center rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Select
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDuplicateTemplate(templateItem.id)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent"
+                      >
+                        <CopyPlus className="size-3.5" />
+                        Duplicate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteTemplate(templateItem.id)}
+                        disabled={templates.length <= 1}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Trash2 className="size-3.5" />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -2268,9 +2516,13 @@ function valueInRange(value: unknown, range: { min: string; max: string }): bool
   return true;
 }
 
-function getSelectionSummary(values: string[], emptyLabel: string): string {
+function getSelectionSummary(
+  values: string[],
+  emptyLabel: string,
+  formatValue: (value: string) => string = (value) => value,
+): string {
   if (values.length === 0) return emptyLabel;
-  if (values.length === 1) return values[0] ?? emptyLabel;
+  if (values.length === 1) return values[0] ? formatValue(values[0]) : emptyLabel;
   return `${values.length} selected`;
 }
 
@@ -2334,7 +2586,7 @@ function getActiveFilterChips(filters: FilterSettings): FilterChip[] {
   filters.regions.forEach((region) =>
     chips.push({
       key: `region-${region}`,
-      label: region,
+      label: formatCountryLabel(region),
       action: { type: "array", field: "regions", value: region },
     }),
   );
