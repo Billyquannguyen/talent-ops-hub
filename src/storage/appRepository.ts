@@ -28,6 +28,26 @@ export function loadAppDatabase(): CentralAppDatabase {
   return loadCentralDatabaseFromLocalStorage().database;
 }
 
+export async function loadAppDatabaseFromGoogleSheetsOnly(): Promise<CentralAppDatabase> {
+  const result = await loadDatabaseFromGoogleSheets();
+  if (!result.ok || !result.database) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  saveCentralDatabaseToLocalStorage(result.database);
+  return result.database;
+}
+
+export async function saveAppDatabaseToGoogleSheetsOnly(
+  database: CentralAppDatabase,
+): Promise<CentralAppDatabase> {
+  const result = await saveDatabaseToGoogleSheets(database);
+  if (!result.ok || !result.database) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  saveCentralDatabaseToLocalStorage(result.database);
+  return result.database;
+}
+
 export function saveAppDatabase(database: CentralAppDatabase) {
   saveCentralDatabaseToLocalStorage(database);
   if (typeof window !== "undefined") {
@@ -60,6 +80,15 @@ function reportGoogleSheetsWriteFailure(diagnostics: StorageStatus["diagnostics"
     new CustomEvent("katlas-storage-error", {
       detail: { message, diagnostics },
     }),
+  );
+}
+
+function getStorageFailureMessage(status: StorageStatus): string {
+  return (
+    status.diagnostics
+      .map((diagnostic) => diagnostic.message)
+      .filter(Boolean)
+      .join("\n") || "Google Sheets is unavailable. Shared database write was not completed."
   );
 }
 

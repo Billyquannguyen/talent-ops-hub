@@ -188,12 +188,15 @@ function mergeLegacySourcingTemplates(database: CentralAppDatabase, now: string)
     const columns = Array.isArray(project.template) ? project.template : [];
     if (!columns.length) continue;
     database.worksheets.SourcingTemplates.push({
-      templateId: createId("sourcing-template"),
+      id: createId("sourcing-template"),
       campaignId,
+      campaignName,
       templateName: "Default Template",
       columnsJson: JSON.stringify(columns),
       createdAt: stringValue(project.createdAt) || now,
       updatedAt: stringValue(project.templateSavedAt) || now,
+      createdBy: "",
+      updatedBy: "",
     });
 
     upsertSetting(
@@ -342,12 +345,15 @@ function normalizeSourcingTemplate(value: unknown): SourcingTemplateRecord {
   const now = new Date().toISOString();
   const createdAt = stringValue(row.createdAt) || now;
   return {
-    templateId: stringValue(row.templateId) || stringValue(row.id) || createId("sourcing-template"),
+    id: stringValue(row.id) || stringValue(row.templateId) || createId("sourcing-template"),
     campaignId: stringValue(row.campaignId),
+    campaignName: stringValue(row.campaignName),
     templateName: stringValue(row.templateName) || "Default Template",
     columnsJson: stringValue(row.columnsJson) || "[]",
     createdAt,
     updatedAt: stringValue(row.updatedAt) || createdAt,
+    createdBy: stringValue(row.createdBy),
+    updatedBy: stringValue(row.updatedBy),
   };
 }
 

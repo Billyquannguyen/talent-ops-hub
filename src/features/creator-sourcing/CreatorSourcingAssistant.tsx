@@ -25,10 +25,16 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { TopBar } from "@/components/TopBar";
-import { loadCampaignRegistry, type GlobalCampaign } from "@/lib/campaignRegistry";
 import { formatCountryLabel, matchesCountryQuery } from "@/lib/countries";
-import { loadAppDatabase, updateDatabase } from "@/storage/appRepository";
-import type { AppSettingRecord, SourcingTemplateRecord } from "@/storage/schema";
+import {
+  loadAppDatabaseFromGoogleSheetsOnly,
+  saveAppDatabaseToGoogleSheetsOnly,
+} from "@/storage/appRepository";
+import type {
+  AppSettingRecord,
+  CampaignProfileRecord,
+  SourcingTemplateRecord,
+} from "@/storage/schema";
 import { buildPreviewRow, hasContactInfo, runEnrichmentPipeline } from "./enrichment";
 import { exportPreviewSpreadsheet, parseSpreadsheet } from "./excel";
 import {
@@ -115,6 +121,8 @@ export function CreatorSourcingAssistant() {
   const [projects, setProjects] = useState<SourcingProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState("");
   const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
+  const [isSavingTemplates, setIsSavingTemplates] = useState(false);
   const [headers, setHeaders] = useState<string[]>([]);
   const [creators, setCreators] = useState<UploadedCreator[]>([]);
   const [sourceFileName, setSourceFileName] = useState("");
@@ -225,19 +233,50 @@ export function CreatorSourcingAssistant() {
   const activeFilterChips = getActiveFilterChips(filters);
 
   useEffect(() => {
-    const loadedProjects = loadProjects();
-    setProjects(loadedProjects);
-    setActiveProjectId(loadedProjects[0]?.id ?? "");
-    setFilters(loadedProjects[0]?.filters ?? { ...emptyFilters });
-    setDraftTemplate(cloneTemplate(loadedProjects[0]?.template ?? []));
-    setDraftTemplateName(loadedProjects[0]?.templateName ?? "");
-    setProjectsLoaded(true);
-  }, []);
+    let cancelled = false;
 
-  useEffect(() => {
-    if (!projectsLoaded) return;
-    saveProjects(projects);
-  }, [projects, projectsLoaded]);
+    async function loadTemplates() {
+      setIsLoadingTemplates(true);
+      setProjectsLoaded(false);
+      setErrorMessage("");
+      try {
+        const database = await loadAppDatabaseFromGoogleSheetsOnly();
+        if (cancelled) return;
+        const loadedProjects = loadProjects(database);
+        setProjects(loadedProjects);
+        setActiveProjectId((current) =>
+          loadedProjects.some((project) => project.id === current)
+            ? current
+            : (loadedProjects[0]?.id ?? ""),
+        );
+        const selectedProject = loadedProjects[0];
+        setFilters(selectedProject?.filters ?? { ...emptyFilters });
+        setDraftTemplate(cloneTemplate(selectedProject?.template ?? []));
+        setDraftTemplateName(selectedProject?.templateName ?? "");
+        setProjectsLoaded(true);
+      } catch (error) {
+        if (cancelled) return;
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Google Sheets database is unavailable. Sourcing templates were not loaded.";
+        console.error(message);
+        setErrorMessage(message);
+        setProjects([]);
+        setActiveProjectId("");
+        setDraftTemplate([]);
+        setDraftTemplateName("");
+        setProjectsLoaded(true);
+      } finally {
+        if (!cancelled) setIsLoadingTemplates(false);
+      }
+    }
+
+    void loadTemplates();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     projectsRef.current = projects;
@@ -338,6 +377,95 @@ export function CreatorSourcingAssistant() {
     setCopyMessage("");
   }
 
+  async function persistSourcingTemplate(template: SourcingTemplate, successMessage: string) {
+    setIsSavingTemplates(true);
+    setErrorMessage("");
+    try {
+      const database = await loadAppDatabaseFromGoogleSheetsOnly();
+      const existing = database.worksheets.SourcingTemplates.find(
+        (record) => record.id === template.id,
+      );
+      const record = toSourcingTemplateRecord(template, activeProject?.name ?? "");
+      if (existing) {
+        database.worksheets.SourcingTemplates = database.worksheets.SourcingTemplates.map((item) =>
+          item.id === record.id ? record : item,
+        );
+      } else {
+        database.worksheets.SourcingTemplates.push(record);
+      }
+      upsertAppSetting(
+        database.worksheets.AppSettings,
+        `sourcing.activeTemplate.${template.campaignId}`,
+        template.id,
+      );
+
+      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(database);
+      const loadedProjects = loadProjects(savedDatabase);
+      const nextProjects = loadedProjects.map((project) =>
+        project.id === template.campaignId
+          ? activateProjectTemplate(project, template.id)
+          : project,
+      );
+      const nextProject =
+        nextProjects.find((project) => project.id === template.campaignId) ?? nextProjects[0];
+      setProjects(nextProjects);
+      setActiveProjectId(nextProject?.id ?? "");
+      setFilters(nextProject?.filters ?? { ...emptyFilters });
+      setDraftTemplate(cloneTemplate(nextProject?.template ?? []));
+      setDraftTemplateName(nextProject?.templateName ?? "");
+      setTemplateMessage(successMessage);
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Google Sheets save failed. Template was not saved.";
+      console.error(message);
+      setErrorMessage(message);
+      setTemplateMessage("Template was not saved to Google Sheets.");
+      return false;
+    } finally {
+      setIsSavingTemplates(false);
+    }
+  }
+
+  async function deleteSourcingTemplateFromSheets(templateId: string) {
+    setIsSavingTemplates(true);
+    setErrorMessage("");
+    try {
+      const database = await loadAppDatabaseFromGoogleSheetsOnly();
+      const existing = database.worksheets.SourcingTemplates.find(
+        (record) => record.id === templateId,
+      );
+      if (!existing) return true;
+      database.worksheets.SourcingTemplates = database.worksheets.SourcingTemplates.filter(
+        (record) => record.id !== templateId,
+      );
+      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(database);
+      const loadedProjects = loadProjects(savedDatabase);
+      const nextProject =
+        loadedProjects.find((project) => project.id === activeProjectId) ?? loadedProjects[0];
+      setProjects(loadedProjects);
+      setActiveProjectId(nextProject?.id ?? "");
+      setFilters(nextProject?.filters ?? { ...emptyFilters });
+      setDraftTemplate(cloneTemplate(nextProject?.template ?? []));
+      setDraftTemplateName(nextProject?.templateName ?? "");
+      setTemplateMessage("Template deleted from Google Sheets.");
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Google Sheets delete failed. Template was not deleted.";
+      console.error(message);
+      setErrorMessage(message);
+      setTemplateMessage("Template was not deleted from Google Sheets.");
+      return false;
+    } finally {
+      setIsSavingTemplates(false);
+    }
+  }
+
   function createNewTemplate() {
     if (!activeProject) return;
     const now = new Date().toISOString();
@@ -369,7 +497,7 @@ export function CreatorSourcingAssistant() {
     setIsTemplateModalOpen(true);
   }
 
-  function duplicateSourcingTemplate(templateId: string) {
+  async function duplicateSourcingTemplate(templateId: string) {
     if (!activeProject) return;
     const sourceTemplate = activeProject.templates.find(
       (templateItem) => templateItem.id === templateId,
@@ -385,24 +513,10 @@ export function CreatorSourcingAssistant() {
       updatedAt: now,
     };
 
-    setProjects((current) =>
-      current.map((project) => {
-        if (project.id !== activeProject.id) return project;
-        return activateProjectTemplate(
-          {
-            ...project,
-            templates: [...project.templates, nextTemplate],
-          },
-          nextTemplate.id,
-        );
-      }),
-    );
-    setDraftTemplate(cloneTemplate(nextTemplate.columns));
-    setDraftTemplateName(nextTemplate.templateName);
-    setTemplateMessage("Template duplicated.");
+    await persistSourcingTemplate(nextTemplate, "Template duplicated and saved to Google Sheets.");
   }
 
-  function deleteSourcingTemplate(templateId: string) {
+  async function deleteSourcingTemplate(templateId: string) {
     if (!activeProject || activeProject.templates.length <= 1) return;
     const templateToDelete = activeProject.templates.find(
       (templateItem) => templateItem.id === templateId,
@@ -413,20 +527,7 @@ export function CreatorSourcingAssistant() {
       window.confirm(`Delete "${templateToDelete.templateName}"? This cannot be undone.`);
     if (!confirmed) return;
 
-    setProjects((current) =>
-      current.map((project) => {
-        if (project.id !== activeProject.id) return project;
-        const templates = project.templates.filter(
-          (templateItem) => templateItem.id !== templateId,
-        );
-        const nextActiveTemplateId =
-          project.activeTemplateId === templateId
-            ? (templates[0]?.id ?? "")
-            : project.activeTemplateId;
-        return activateProjectTemplate({ ...project, templates }, nextActiveTemplateId);
-      }),
-    );
-    setTemplateMessage("Template deleted.");
+    await deleteSourcingTemplateFromSheets(templateId);
   }
 
   function clearWorkingData() {
@@ -707,40 +808,31 @@ export function CreatorSourcingAssistant() {
     });
   }
 
-  function saveTemplate() {
+  async function saveTemplate() {
     if (!activeProject) return;
+    const activeTemplate = activeProject.templates.find(
+      (templateItem) => templateItem.id === activeProject.activeTemplateId,
+    );
     const savedAt = new Date().toISOString();
     const savedTemplate = cloneTemplate(draftTemplate);
     const savedTemplateName = draftTemplateName.trim() || activeProject.templateName;
-    setProjects((current) =>
-      current.map((project) => {
-        if (project.id !== activeProject.id) return project;
-        const templates = project.templates.map((templateItem) =>
-          templateItem.id === project.activeTemplateId
-            ? {
-                ...templateItem,
-                templateName: savedTemplateName,
-                columns: savedTemplate,
-                updatedAt: savedAt,
-              }
-            : templateItem,
-        );
-        return activateProjectTemplate(
-          {
-            ...project,
-            templates,
-          },
-          project.activeTemplateId,
-        );
-      }),
+    const templateToSave: SourcingTemplate = {
+      ...(activeTemplate ?? createDefaultSourcingTemplate(activeProject.id)),
+      id: activeProject.activeTemplateId || activeTemplate?.id || createId("sourcing-template"),
+      campaignId: activeProject.id,
+      templateName: savedTemplateName,
+      columns: savedTemplate,
+      createdAt: activeTemplate?.createdAt || savedAt,
+      updatedAt: savedAt,
+    };
+    const saved = await persistSourcingTemplate(
+      templateToSave,
+      "Template saved to Google Sheets for this campaign.",
     );
-    setDraftTemplate(cloneTemplate(savedTemplate));
-    setDraftTemplateName(savedTemplateName);
-    setTemplateMessage("Template saved for this campaign.");
-    setIsTemplateModalOpen(false);
+    if (saved) setIsTemplateModalOpen(false);
   }
 
-  function saveTemplateAsNew() {
+  async function saveTemplateAsNew() {
     if (!activeProject) return;
     const savedAt = new Date().toISOString();
     const baseName = draftTemplateName.trim() || activeProject.templateName || "Template";
@@ -753,42 +845,35 @@ export function CreatorSourcingAssistant() {
       updatedAt: savedAt,
     };
 
-    setProjects((current) =>
-      current.map((project) => {
-        if (project.id !== activeProject.id) return project;
-        return activateProjectTemplate(
-          {
-            ...project,
-            templates: [...project.templates, nextTemplate],
-          },
-          nextTemplate.id,
-        );
-      }),
+    const saved = await persistSourcingTemplate(
+      nextTemplate,
+      "Template saved as a new Google Sheets template.",
     );
-    setDraftTemplate(cloneTemplate(nextTemplate.columns));
-    setDraftTemplateName(nextTemplate.templateName);
-    setTemplateMessage("Template saved as a new template.");
-    setIsTemplateModalOpen(false);
+    if (saved) setIsTemplateModalOpen(false);
   }
 
-  function resetTemplate() {
+  async function resetTemplate() {
     if (!activeProject) return;
+    const activeTemplate = activeProject.templates.find(
+      (templateItem) => templateItem.id === activeProject.activeTemplateId,
+    );
     const templateForProject = defaultTemplate();
     const savedAt = new Date().toISOString();
-    setProjects((current) =>
-      current.map((project) => {
-        if (project.id !== activeProject.id) return project;
-        const templates = project.templates.map((templateItem) =>
-          templateItem.id === project.activeTemplateId
-            ? { ...templateItem, columns: templateForProject, updatedAt: savedAt }
-            : templateItem,
-        );
-        return activateProjectTemplate({ ...project, templates }, project.activeTemplateId);
-      }),
+    const templateToSave: SourcingTemplate = {
+      ...(activeTemplate ?? createDefaultSourcingTemplate(activeProject.id)),
+      id: activeProject.activeTemplateId || activeTemplate?.id || createId("sourcing-template"),
+      campaignId: activeProject.id,
+      templateName:
+        activeTemplate?.templateName || activeProject.templateName || "Default Template",
+      columns: templateForProject,
+      createdAt: activeTemplate?.createdAt || savedAt,
+      updatedAt: savedAt,
+    };
+    const saved = await persistSourcingTemplate(
+      templateToSave,
+      "Template reset and saved to Google Sheets.",
     );
-    setDraftTemplate(cloneTemplate(templateForProject));
-    setTemplateMessage("Template reset for this campaign.");
-    setIsTemplateModalOpen(false);
+    if (saved) setIsTemplateModalOpen(false);
   }
 
   function addTemplateColumn() {
@@ -940,7 +1025,7 @@ export function CreatorSourcingAssistant() {
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <button
                       onClick={createNewTemplate}
-                      disabled={!activeProject}
+                      disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
                       className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Plus className="size-4" />
@@ -948,7 +1033,7 @@ export function CreatorSourcingAssistant() {
                     </button>
                     <button
                       onClick={() => setIsTemplateModalOpen(true)}
-                      disabled={!activeProject}
+                      disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
                       className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Columns3 className="size-4" />
@@ -956,7 +1041,7 @@ export function CreatorSourcingAssistant() {
                     </button>
                     <button
                       onClick={() => setIsTemplateManagerOpen(true)}
-                      disabled={!activeProject}
+                      disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
                       className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Pencil className="size-4" />
@@ -964,7 +1049,7 @@ export function CreatorSourcingAssistant() {
                     </button>
                     <button
                       onClick={resetTemplate}
-                      disabled={!activeProject}
+                      disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
                       className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <RotateCcw className="size-4" />
@@ -976,7 +1061,13 @@ export function CreatorSourcingAssistant() {
                     templateName={activeProject?.templateName ?? ""}
                     savedAt={activeProject?.templateSavedAt}
                     hasUnsavedChanges={templateHasUnsavedChanges}
-                    message={templateMessage}
+                    message={
+                      isLoadingTemplates
+                        ? "Loading templates from Google Sheets..."
+                        : isSavingTemplates
+                          ? "Saving to Google Sheets..."
+                          : templateMessage
+                    }
                   />
                 </>
               ) : (
@@ -1179,6 +1270,7 @@ export function CreatorSourcingAssistant() {
           projectName={activeProject.name}
           templateName={draftTemplateName}
           template={template}
+          isSaving={isSavingTemplates}
           onTemplateNameChange={setDraftTemplateName}
           onAddColumn={addTemplateColumn}
           onMoveColumn={moveTemplateColumn}
@@ -1196,6 +1288,7 @@ export function CreatorSourcingAssistant() {
           projectName={activeProject.name}
           templates={activeProject.templates}
           activeTemplateId={activeProject.activeTemplateId}
+          isSaving={isSavingTemplates}
           onSelectTemplate={requestTemplateChange}
           onNewTemplate={createNewTemplate}
           onEditActiveTemplate={() => setIsTemplateModalOpen(true)}
@@ -1803,6 +1896,7 @@ function SourcingTemplateManagerModal({
   projectName,
   templates,
   activeTemplateId,
+  isSaving,
   onSelectTemplate,
   onNewTemplate,
   onEditActiveTemplate,
@@ -1813,6 +1907,7 @@ function SourcingTemplateManagerModal({
   projectName: string;
   templates: SourcingTemplate[];
   activeTemplateId: string;
+  isSaving: boolean;
   onSelectTemplate: (templateId: string) => void;
   onNewTemplate: () => void;
   onEditActiveTemplate: () => void;
@@ -1847,6 +1942,7 @@ function SourcingTemplateManagerModal({
                 onNewTemplate();
                 onClose();
               }}
+              disabled={isSaving}
               className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
             >
               <Plus className="size-4" />
@@ -1858,6 +1954,7 @@ function SourcingTemplateManagerModal({
                 onEditActiveTemplate();
                 onClose();
               }}
+              disabled={isSaving}
               className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent"
             >
               <Pencil className="size-4" />
@@ -1888,7 +1985,7 @@ function SourcingTemplateManagerModal({
                       <button
                         type="button"
                         onClick={() => onSelectTemplate(templateItem.id)}
-                        disabled={selected}
+                        disabled={selected || isSaving}
                         className="inline-flex h-8 items-center rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Select
@@ -1896,6 +1993,7 @@ function SourcingTemplateManagerModal({
                       <button
                         type="button"
                         onClick={() => onDuplicateTemplate(templateItem.id)}
+                        disabled={isSaving}
                         className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent"
                       >
                         <CopyPlus className="size-3.5" />
@@ -1904,7 +2002,7 @@ function SourcingTemplateManagerModal({
                       <button
                         type="button"
                         onClick={() => onDeleteTemplate(templateItem.id)}
-                        disabled={templates.length <= 1}
+                        disabled={templates.length <= 1 || isSaving}
                         className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Trash2 className="size-3.5" />
@@ -1926,6 +2024,7 @@ function TemplateEditorModal({
   projectName,
   templateName,
   template,
+  isSaving,
   onTemplateNameChange,
   onAddColumn,
   onMoveColumn,
@@ -1939,6 +2038,7 @@ function TemplateEditorModal({
   projectName: string;
   templateName: string;
   template: TemplateColumn[];
+  isSaving: boolean;
   onTemplateNameChange: (value: string) => void;
   onAddColumn: () => void;
   onMoveColumn: (columnId: string, direction: "up" | "down") => void;
@@ -1991,15 +2091,15 @@ function TemplateEditorModal({
           </button>
           <button
             onClick={onSave}
-            disabled={template.length === 0}
+            disabled={template.length === 0 || isSaving}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Save className="size-4" />
-            Save Template
+            {isSaving ? "Saving..." : "Save Template"}
           </button>
           <button
             onClick={onSaveAsNew}
-            disabled={template.length === 0}
+            disabled={template.length === 0 || isSaving}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="size-4" />
@@ -2742,10 +2842,15 @@ function filterValueEqual(
   return first === second;
 }
 
-function loadProjects(): SourcingProject[] {
+function loadProjects(database: {
+  worksheets: {
+    AppSettings: AppSettingRecord[];
+    CampaignProfiles: CampaignProfileRecord[];
+    SourcingTemplates: SourcingTemplateRecord[];
+  };
+}): SourcingProject[] {
   if (typeof window === "undefined") return [];
-  const campaigns = loadCampaignRegistry().campaigns;
-  const database = loadAppDatabase();
+  const campaigns = database.worksheets.CampaignProfiles;
   const settings = new Map(
     database.worksheets.AppSettings.map((setting) => [setting.settingKey, setting.settingValue]),
   );
@@ -2756,48 +2861,20 @@ function loadProjects(): SourcingProject[] {
   );
 }
 
-function saveProjects(projects: SourcingProject[]) {
-  if (typeof window === "undefined") return;
-  updateDatabase((database) => {
-    const managedCampaignIds = new Set(projects.map((project) => project.id));
-    const unmanagedTemplates = database.worksheets.SourcingTemplates.filter(
-      (template) => !managedCampaignIds.has(template.campaignId),
-    );
-
-    database.worksheets.SourcingTemplates = [
-      ...unmanagedTemplates,
-      ...projects.flatMap((project) => project.templates.map(toSourcingTemplateRecord)),
-    ];
-
-    projects.forEach((project) => {
-      upsertAppSetting(
-        database.worksheets.AppSettings,
-        `sourcing.activeTemplate.${project.id}`,
-        project.activeTemplateId,
-      );
-      upsertAppSetting(
-        database.worksheets.AppSettings,
-        `sourcing.filters.${project.id}`,
-        JSON.stringify(project.filters),
-      );
-    });
-  });
-}
-
 function createProjectFromCampaign(
-  campaign: GlobalCampaign,
+  campaign: CampaignProfileRecord,
   templates: SourcingTemplate[],
   settings: Map<string, string>,
 ): SourcingProject {
   const ensuredTemplates =
-    templates.length > 0 ? templates : [createDefaultSourcingTemplate(campaign.id)];
+    templates.length > 0 ? templates : [createDefaultSourcingTemplate(campaign.campaignId)];
   const activeTemplateId =
-    settings.get(`sourcing.activeTemplate.${campaign.id}`) || ensuredTemplates[0]?.id || "";
-  const filters = parseJsonSetting(settings.get(`sourcing.filters.${campaign.id}`));
+    settings.get(`sourcing.activeTemplate.${campaign.campaignId}`) || ensuredTemplates[0]?.id || "";
+  const filters = parseJsonSetting(settings.get(`sourcing.filters.${campaign.campaignId}`));
 
   return activateProjectTemplate(
     {
-      id: campaign.id,
+      id: campaign.campaignId,
       name: campaign.campaignName,
       createdAt: campaign.createdAt,
       filters: normalizeFilters(filters),
@@ -2828,7 +2905,7 @@ function groupSourcingTemplates(records: SourcingTemplateRecord[]) {
 
 function normalizeSourcingTemplateRecord(record: SourcingTemplateRecord): SourcingTemplate {
   return {
-    id: record.templateId || createId("sourcing-template"),
+    id: record.id || createId("sourcing-template"),
     campaignId: record.campaignId,
     templateName: record.templateName || "Default Template",
     columns: normalizeTemplate(parseJsonSetting(record.columnsJson)),
@@ -2875,26 +2952,21 @@ function activateProjectTemplate(project: SourcingProject, templateId: string): 
   };
 }
 
-function toSourcingTemplateRecord(template: SourcingTemplate): SourcingTemplateRecord {
+function toSourcingTemplateRecord(
+  template: SourcingTemplate,
+  campaignName = "",
+): SourcingTemplateRecord {
   return {
-    templateId: template.id,
+    id: template.id,
     campaignId: template.campaignId,
+    campaignName,
     templateName: template.templateName,
     columnsJson: JSON.stringify(template.columns),
     createdAt: template.createdAt,
     updatedAt: template.updatedAt,
+    createdBy: "",
+    updatedBy: "",
   };
-}
-
-function upsertAppSetting(settings: AppSettingRecord[], settingKey: string, settingValue: string) {
-  const updatedAt = new Date().toISOString();
-  const existing = settings.find((setting) => setting.settingKey === settingKey);
-  if (existing) {
-    existing.settingValue = settingValue;
-    existing.updatedAt = updatedAt;
-    return;
-  }
-  settings.push({ settingKey, settingValue, updatedAt });
 }
 
 function parseJsonSetting(value: unknown): unknown {
@@ -2904,6 +2976,23 @@ function parseJsonSetting(value: unknown): unknown {
   } catch {
     return {};
   }
+}
+
+function upsertAppSetting(settings: AppSettingRecord[], settingKey: string, settingValue: string) {
+  const now = new Date().toISOString();
+  const index = settings.findIndex((setting) => setting.settingKey === settingKey);
+  const nextSetting: AppSettingRecord = {
+    settingKey,
+    settingValue,
+    updatedAt: now,
+  };
+
+  if (index >= 0) {
+    settings[index] = nextSetting;
+    return;
+  }
+
+  settings.push(nextSetting);
 }
 
 function getNextTemplateName(templates: SourcingTemplate[]): string {

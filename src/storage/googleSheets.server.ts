@@ -49,7 +49,7 @@ const scopes = [
 
 const rowIdFields: Record<CentralWorksheetName, string> = {
   CampaignProfiles: "campaignId",
-  SourcingTemplates: "templateId",
+  SourcingTemplates: "id",
   OutreachTemplates: "templateId",
   CampaignMemoryCards: "cardId",
   ActiveCampaignCreators: "recordId",
@@ -423,12 +423,15 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         updatedAt: stringValue(row.updatedAt),
       })),
       SourcingTemplates: rowsBySheet.SourcingTemplates.map((row) => ({
-        templateId: stringValue(row.templateId),
+        id: stringValue(row.id),
         campaignId: stringValue(row.campaignId),
+        campaignName: stringValue(row.campaignName),
         templateName: stringValue(row.templateName),
         columnsJson: stringValue(row.columnsJson),
         createdAt: stringValue(row.createdAt),
         updatedAt: stringValue(row.updatedAt),
+        createdBy: stringValue(row.createdBy),
+        updatedBy: stringValue(row.updatedBy),
       })),
       OutreachTemplates: rowsBySheet.OutreachTemplates.map((row) => ({
         templateId: stringValue(row.templateId),
@@ -550,11 +553,17 @@ function buildHeaderMap(headers: string[], requiredHeaders: string[]) {
   const map: Record<string, number> = {};
 
   for (const requiredHeader of requiredHeaders) {
-    const candidates = [requiredHeader, ...(worksheetHeaderAliases[requiredHeader] ?? [])].map(
-      normalizeHeader,
+    const exactIndex = normalizedHeaders.findIndex(
+      (header) => header === normalizeHeader(requiredHeader),
     );
-    const index = normalizedHeaders.findIndex((header) => candidates.includes(header));
-    if (index >= 0) map[requiredHeader] = index;
+    if (exactIndex >= 0) {
+      map[requiredHeader] = exactIndex;
+      continue;
+    }
+
+    const aliases = (worksheetHeaderAliases[requiredHeader] ?? []).map(normalizeHeader);
+    const aliasIndex = normalizedHeaders.findIndex((header) => aliases.includes(header));
+    if (aliasIndex >= 0) map[requiredHeader] = aliasIndex;
   }
 
   return map;

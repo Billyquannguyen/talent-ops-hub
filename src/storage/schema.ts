@@ -25,12 +25,15 @@ export type CampaignProfileRecord = {
 };
 
 export type SourcingTemplateRecord = {
-  templateId: string;
+  id: string;
   campaignId: string;
+  campaignName: string;
   templateName: string;
   columnsJson: string;
   createdAt: string;
   updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
 };
 
 export type OutreachTemplateRecord = {
@@ -142,12 +145,15 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "updatedAt",
   ],
   SourcingTemplates: [
-    "templateId",
+    "id",
     "campaignId",
+    "campaignName",
     "templateName",
     "columnsJson",
     "createdAt",
     "updatedAt",
+    "createdBy",
+    "updatedBy",
   ],
   OutreachTemplates: ["templateId", "templateName", "type", "body", "createdAt", "updatedAt"],
   CampaignMemoryCards: [
@@ -207,9 +213,11 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   campaignId: ["id", "campaign id", "campaign_id"],
   campaignName: ["campaign name", "name", "campaign_name"],
   campaignCode: ["campaign code", "campaign id code", "campaign_code"],
-  templateId: ["id", "template id", "template_id"],
+  id: ["templateId", "template id", "template_id"],
   templateName: ["template name", "name", "template_name"],
   columnsJson: ["columns", "columns json", "columns_json"],
+  createdBy: ["created by", "created_by"],
+  updatedBy: ["updated by", "updated_by"],
   cardId: ["id", "card id", "card_id"],
   recordId: ["id", "record id", "record_id"],
   creatorName: ["creator", "creator name", "creator_name"],

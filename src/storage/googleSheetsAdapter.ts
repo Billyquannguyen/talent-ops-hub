@@ -105,11 +105,17 @@ export function buildHeaderMap(headers: string[], requiredHeaders: string[]) {
   const map: Record<string, number> = {};
 
   for (const requiredHeader of requiredHeaders) {
-    const candidates = [requiredHeader, ...(worksheetHeaderAliases[requiredHeader] ?? [])].map(
-      normalizeHeader,
+    const exactIndex = normalizedHeaders.findIndex(
+      (header) => header === normalizeHeader(requiredHeader),
     );
-    const index = normalizedHeaders.findIndex((header) => candidates.includes(header));
-    if (index >= 0) map[requiredHeader] = index;
+    if (exactIndex >= 0) {
+      map[requiredHeader] = exactIndex;
+      continue;
+    }
+
+    const aliases = (worksheetHeaderAliases[requiredHeader] ?? []).map(normalizeHeader);
+    const aliasIndex = normalizedHeaders.findIndex((header) => aliases.includes(header));
+    if (aliasIndex >= 0) map[requiredHeader] = aliasIndex;
   }
 
   return map;
