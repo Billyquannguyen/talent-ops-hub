@@ -1,5 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, LockKeyhole } from "lucide-react";
+
+import { lockPasswordGate } from "@/lib/passwordGate";
 
 const navItems = [
   { to: "/", label: "AI Slave" },
@@ -41,6 +43,14 @@ export function TopBar() {
             );
           })}
         </nav>
+        <button
+          type="button"
+          onClick={lockPasswordGate}
+          title="Lock Katlas Buddy"
+          className="grid size-8 place-items-center rounded-full border border-border bg-card/60 text-muted-foreground transition hover:bg-card hover:text-foreground"
+        >
+          <LockKeyhole className="size-3.5" />
+        </button>
         <div className="size-8 rounded-full bg-accent grid place-items-center text-[11px] font-semibold ring-1 ring-border">
           KM
         </div>
