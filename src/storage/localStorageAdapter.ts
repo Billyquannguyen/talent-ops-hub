@@ -1,10 +1,12 @@
 import {
   createEmptyCentralDatabase,
   type ActiveCampaignCreatorRecord,
+  type AgencyDatabaseRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
+  type CreatorDatabaseRecord,
   type OutreachTemplateRecord,
   type PerformanceBenchmarkRecord,
   type PerformanceWeeklyInputRecord,
@@ -318,6 +320,8 @@ function normalizeCentralDatabase(value: unknown): CentralAppDatabase {
         worksheets.PerformanceWeeklyInputs,
         normalizePerformanceWeeklyInput,
       ),
+      AgencyDatabase: normalizeArray(worksheets.AgencyDatabase, normalizeAgencyDatabaseRecord),
+      CreatorDatabase: normalizeArray(worksheets.CreatorDatabase, normalizeCreatorDatabaseRecord),
       AppSettings: normalizeArray(worksheets.AppSettings, normalizeAppSetting),
     },
   };
@@ -449,6 +453,55 @@ function normalizePerformanceWeeklyInput(value: unknown): PerformanceWeeklyInput
   };
 }
 
+function normalizeAgencyDatabaseRecord(value: unknown): AgencyDatabaseRecord {
+  const row = isRecord(value) ? value : {};
+  const now = new Date().toISOString();
+  const createdAt = stringValue(row.createdAt) || now;
+  return {
+    id: stringValue(row.id) || createId("agency"),
+    agencyName: stringValue(row.agencyName),
+    contactName: stringValue(row.contactName),
+    contactRole: stringValue(row.contactRole),
+    email: stringValue(row.email),
+    line: stringValue(row.line),
+    instagram: stringValue(row.instagram),
+    website: stringValue(row.website),
+    country: stringValue(row.country),
+    niche: stringValue(row.niche),
+    notes: stringValue(row.notes),
+    status: normalizeDatabaseStatus(row.status),
+    createdAt,
+    updatedAt: stringValue(row.updatedAt) || createdAt,
+  };
+}
+
+function normalizeCreatorDatabaseRecord(value: unknown): CreatorDatabaseRecord {
+  const row = isRecord(value) ? value : {};
+  const now = new Date().toISOString();
+  const createdAt = stringValue(row.createdAt) || now;
+  return {
+    id: stringValue(row.id) || createId("creator-db"),
+    creatorName: stringValue(row.creatorName),
+    handle: stringValue(row.handle),
+    platform: stringValue(row.platform),
+    profileUrl: stringValue(row.profileUrl),
+    country: stringValue(row.country),
+    language: stringValue(row.language),
+    niche: stringValue(row.niche),
+    followers: numberValue(row.followers),
+    avgViews: numberValue(row.avgViews),
+    email: stringValue(row.email),
+    line: stringValue(row.line),
+    instagram: stringValue(row.instagram),
+    whatsapp: stringValue(row.whatsapp),
+    agencyName: stringValue(row.agencyName),
+    notes: stringValue(row.notes),
+    status: normalizeDatabaseStatus(row.status),
+    createdAt,
+    updatedAt: stringValue(row.updatedAt) || createdAt,
+  };
+}
+
 function normalizeAppSetting(value: unknown): AppSettingRecord {
   const row = isRecord(value) ? value : {};
   return {
@@ -508,6 +561,13 @@ function normalizeStringList(value: unknown): string[] {
     .split(/[,|]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizeDatabaseStatus(value: unknown) {
+  const status = stringValue(value).toLowerCase();
+  return ["potential", "contacted", "interested", "rejected", "saved"].includes(status)
+    ? status
+    : "potential";
 }
 
 function createCampaignCode(name: string): string {

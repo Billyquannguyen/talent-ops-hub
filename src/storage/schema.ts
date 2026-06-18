@@ -8,6 +8,8 @@ export const centralWorksheetNames = [
   "ActiveCampaignCreators",
   "PerformanceBenchmarks",
   "PerformanceWeeklyInputs",
+  "AgencyDatabase",
+  "CreatorDatabase",
   "AppSettings",
 ] as const;
 
@@ -99,6 +101,45 @@ export type PerformanceWeeklyInputRecord = {
   updatedAt: string;
 };
 
+export type AgencyDatabaseRecord = {
+  id: string;
+  agencyName: string;
+  contactName: string;
+  contactRole: string;
+  email: string;
+  line: string;
+  instagram: string;
+  website: string;
+  country: string;
+  niche: string;
+  notes: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreatorDatabaseRecord = {
+  id: string;
+  creatorName: string;
+  handle: string;
+  platform: string;
+  profileUrl: string;
+  country: string;
+  language: string;
+  niche: string;
+  followers: number;
+  avgViews: number;
+  email: string;
+  line: string;
+  instagram: string;
+  whatsapp: string;
+  agencyName: string;
+  notes: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AppSettingRecord = {
   settingKey: string;
   settingValue: string;
@@ -115,6 +156,8 @@ export type CentralAppDatabase = {
     ActiveCampaignCreators: ActiveCampaignCreatorRecord[];
     PerformanceBenchmarks: PerformanceBenchmarkRecord[];
     PerformanceWeeklyInputs: PerformanceWeeklyInputRecord[];
+    AgencyDatabase: AgencyDatabaseRecord[];
+    CreatorDatabase: CreatorDatabaseRecord[];
     AppSettings: AppSettingRecord[];
   };
 };
@@ -206,6 +249,43 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "createdAt",
     "updatedAt",
   ],
+  AgencyDatabase: [
+    "id",
+    "agencyName",
+    "contactName",
+    "contactRole",
+    "email",
+    "line",
+    "instagram",
+    "website",
+    "country",
+    "niche",
+    "notes",
+    "status",
+    "createdAt",
+    "updatedAt",
+  ],
+  CreatorDatabase: [
+    "id",
+    "creatorName",
+    "handle",
+    "platform",
+    "profileUrl",
+    "country",
+    "language",
+    "niche",
+    "followers",
+    "avgViews",
+    "email",
+    "line",
+    "instagram",
+    "whatsapp",
+    "agencyName",
+    "notes",
+    "status",
+    "createdAt",
+    "updatedAt",
+  ],
   AppSettings: ["settingKey", "settingValue", "updatedAt"],
 };
 
@@ -239,6 +319,10 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   myCampaignExecutions: ["my campaign executions", "my executions"],
   expectedProfit: ["expected profit", "expected_profit"],
   actualProfit: ["actual profit", "actual_profit"],
+  agencyName: ["agency name", "agency_name"],
+  contactName: ["contact name", "contact_name"],
+  contactRole: ["contact role", "role", "contact_role"],
+  profileUrl: ["profile url", "url", "profile_url"],
   settingKey: ["setting key", "key", "setting_key"],
   settingValue: ["setting value", "value", "setting_value"],
 };
@@ -254,6 +338,8 @@ export function createEmptyCentralDatabase(): CentralAppDatabase {
       ActiveCampaignCreators: [],
       PerformanceBenchmarks: [],
       PerformanceWeeklyInputs: [],
+      AgencyDatabase: [],
+      CreatorDatabase: [],
       AppSettings: [],
     },
   };

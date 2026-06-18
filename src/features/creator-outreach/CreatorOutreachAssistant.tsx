@@ -18,6 +18,7 @@ import {
   Pencil,
   Plus,
   SmilePlus,
+  Settings2,
   Trash2,
   Users,
   X,
@@ -33,6 +34,12 @@ import {
   type CampaignMemoryCard,
   type GlobalCampaignRegistry,
 } from "@/lib/campaignRegistry";
+import {
+  loadAppDatabaseFromGoogleSheetsOnly,
+  saveAppDatabaseToGoogleSheetsOnly,
+} from "@/storage/appRepository";
+import type { AgencyDatabaseRecord, CreatorDatabaseRecord } from "@/storage/schema";
+import { DatabaseViewModal } from "./ContactDatabaseModal";
 import {
   createDefaultDatabase,
   loadKatlasBuddyDatabase,
@@ -55,7 +62,9 @@ import {
 } from "./types";
 
 const simpleTemplateTypes = ["DM", "Email"] as const;
+const databaseStatusOptions = ["potential", "contacted", "interested", "rejected", "saved"];
 type TextInsertTarget = "creatorMessage" | "replyEditor" | "translatedReply" | "templateBody";
+type DatabaseViewType = "agency" | "creator";
 const outreachEmojis = [
   "😊",
   "🙏",
@@ -95,6 +104,14 @@ export function CreatorOutreachAssistant() {
   const [isSmartFieldsModalOpen, setIsSmartFieldsModalOpen] = useState(false);
   const [isMemoryWidgetOpen, setIsMemoryWidgetOpen] = useState(false);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [activeDatabaseView, setActiveDatabaseView] = useState<DatabaseViewType | null>(null);
+  const [agencyRecords, setAgencyRecords] = useState<AgencyDatabaseRecord[]>([]);
+  const [creatorRecords, setCreatorRecords] = useState<CreatorDatabaseRecord[]>([]);
+  const [isDatabaseLoading, setIsDatabaseLoading] = useState(false);
+  const [isDatabaseSaving, setIsDatabaseSaving] = useState(false);
+  const [databaseError, setDatabaseError] = useState("");
+  const [agencyDraft, setAgencyDraft] = useState<AgencyDatabaseRecord | null>(null);
+  const [creatorDraft, setCreatorDraft] = useState<CreatorDatabaseRecord | null>(null);
   const [selectedMemoryCampaignId, setSelectedMemoryCampaignId] = useState("");
   const [templateDraft, setTemplateDraft] = useState<OutreachTemplate | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
@@ -333,6 +350,213 @@ export function CreatorOutreachAssistant() {
     }
   }
 
+  async function openDatabaseView(view: DatabaseViewType) {
+    setActiveDatabaseView(view);
+    setDatabaseError("");
+    setIsDatabaseLoading(true);
+    try {
+      const appDatabase = await loadAppDatabaseFromGoogleSheetsOnly();
+      setAgencyRecords(appDatabase.worksheets.AgencyDatabase);
+      setCreatorRecords(appDatabase.worksheets.CreatorDatabase);
+    } catch (error) {
+      setDatabaseError(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets is unavailable. Database records could not be loaded.",
+      );
+    } finally {
+      setIsDatabaseLoading(false);
+    }
+  }
+
+  function closeDatabaseView() {
+    setActiveDatabaseView(null);
+    setAgencyDraft(null);
+    setCreatorDraft(null);
+    setDatabaseError("");
+  }
+
+  function createAgencyDraft(): AgencyDatabaseRecord {
+    const now = new Date().toISOString();
+    return {
+      id: createOutreachId("agency"),
+      agencyName: "",
+      contactName: "",
+      contactRole: "",
+      email: "",
+      line: "",
+      instagram: "",
+      website: "",
+      country: "",
+      niche: "",
+      notes: "",
+      status: "potential",
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  function createCreatorDraft(): CreatorDatabaseRecord {
+    const now = new Date().toISOString();
+    return {
+      id: createOutreachId("creator-db"),
+      creatorName: "",
+      handle: "",
+      platform: "",
+      profileUrl: "",
+      country: "",
+      language: "",
+      niche: "",
+      followers: 0,
+      avgViews: 0,
+      email: "",
+      line: "",
+      instagram: "",
+      whatsapp: "",
+      agencyName: "",
+      notes: "",
+      status: "potential",
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  async function saveAgencyDraft(record: AgencyDatabaseRecord) {
+    if (!record.agencyName.trim()) {
+      setDatabaseError("Agency name is required.");
+      return;
+    }
+
+    setIsDatabaseSaving(true);
+    setDatabaseError("");
+    try {
+      const appDatabase = await loadAppDatabaseFromGoogleSheetsOnly();
+      const now = new Date().toISOString();
+      const savedRecord = {
+        ...record,
+        agencyName: record.agencyName.trim(),
+        status: normalizeDatabaseStatus(record.status),
+        createdAt: record.createdAt || now,
+        updatedAt: now,
+      };
+      const exists = appDatabase.worksheets.AgencyDatabase.some((item) => item.id === record.id);
+      appDatabase.worksheets.AgencyDatabase = exists
+        ? appDatabase.worksheets.AgencyDatabase.map((item) =>
+            item.id === record.id ? savedRecord : item,
+          )
+        : [savedRecord, ...appDatabase.worksheets.AgencyDatabase];
+      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(appDatabase);
+      setAgencyRecords(savedDatabase.worksheets.AgencyDatabase);
+      setCreatorRecords(savedDatabase.worksheets.CreatorDatabase);
+      setAgencyDraft(null);
+      setCopyStatus("Agency saved to Google Sheets.");
+    } catch (error) {
+      setDatabaseError(
+        error instanceof Error ? error.message : "Google Sheets save failed. Agency was not saved.",
+      );
+    } finally {
+      setIsDatabaseSaving(false);
+    }
+  }
+
+  async function saveCreatorDraft(record: CreatorDatabaseRecord) {
+    if (!record.creatorName.trim()) {
+      setDatabaseError("Creator name is required.");
+      return;
+    }
+
+    setIsDatabaseSaving(true);
+    setDatabaseError("");
+    try {
+      const appDatabase = await loadAppDatabaseFromGoogleSheetsOnly();
+      const now = new Date().toISOString();
+      const savedRecord = {
+        ...record,
+        creatorName: record.creatorName.trim(),
+        followers: normalizeNumber(record.followers),
+        avgViews: normalizeNumber(record.avgViews),
+        status: normalizeDatabaseStatus(record.status),
+        createdAt: record.createdAt || now,
+        updatedAt: now,
+      };
+      const exists = appDatabase.worksheets.CreatorDatabase.some((item) => item.id === record.id);
+      appDatabase.worksheets.CreatorDatabase = exists
+        ? appDatabase.worksheets.CreatorDatabase.map((item) =>
+            item.id === record.id ? savedRecord : item,
+          )
+        : [savedRecord, ...appDatabase.worksheets.CreatorDatabase];
+      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(appDatabase);
+      setAgencyRecords(savedDatabase.worksheets.AgencyDatabase);
+      setCreatorRecords(savedDatabase.worksheets.CreatorDatabase);
+      setCreatorDraft(null);
+      setCopyStatus("Creator saved to Google Sheets.");
+    } catch (error) {
+      setDatabaseError(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets save failed. Creator was not saved.",
+      );
+    } finally {
+      setIsDatabaseSaving(false);
+    }
+  }
+
+  async function deleteAgencyRecord(recordId: string) {
+    const confirmed =
+      typeof window === "undefined" ||
+      window.confirm("Delete this agency record from Google Sheets?");
+    if (!confirmed) return;
+
+    setIsDatabaseSaving(true);
+    setDatabaseError("");
+    try {
+      const appDatabase = await loadAppDatabaseFromGoogleSheetsOnly();
+      appDatabase.worksheets.AgencyDatabase = appDatabase.worksheets.AgencyDatabase.filter(
+        (record) => record.id !== recordId,
+      );
+      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(appDatabase);
+      setAgencyRecords(savedDatabase.worksheets.AgencyDatabase);
+      setCreatorRecords(savedDatabase.worksheets.CreatorDatabase);
+      setCopyStatus("Agency deleted from Google Sheets.");
+    } catch (error) {
+      setDatabaseError(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets delete failed. Agency was not deleted.",
+      );
+    } finally {
+      setIsDatabaseSaving(false);
+    }
+  }
+
+  async function deleteCreatorRecord(recordId: string) {
+    const confirmed =
+      typeof window === "undefined" ||
+      window.confirm("Delete this creator record from Google Sheets?");
+    if (!confirmed) return;
+
+    setIsDatabaseSaving(true);
+    setDatabaseError("");
+    try {
+      const appDatabase = await loadAppDatabaseFromGoogleSheetsOnly();
+      appDatabase.worksheets.CreatorDatabase = appDatabase.worksheets.CreatorDatabase.filter(
+        (record) => record.id !== recordId,
+      );
+      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(appDatabase);
+      setAgencyRecords(savedDatabase.worksheets.AgencyDatabase);
+      setCreatorRecords(savedDatabase.worksheets.CreatorDatabase);
+      setCopyStatus("Creator deleted from Google Sheets.");
+    } catch (error) {
+      setDatabaseError(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets delete failed. Creator was not deleted.",
+      );
+    } finally {
+      setIsDatabaseSaving(false);
+    }
+  }
+
   function saveSmartFieldsCampaign(updatedCampaign: GlobalCampaignRegistry["campaigns"][number]) {
     const nextRegistry = {
       ...campaignRegistry,
@@ -478,18 +702,20 @@ export function CreatorOutreachAssistant() {
               </button>
               <button
                 type="button"
-                disabled
-                title="Coming Soon"
-                className="inline-flex h-10 cursor-not-allowed items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium text-muted-foreground opacity-60"
+                onClick={() => {
+                  void openDatabaseView("agency");
+                }}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent"
               >
                 <Building2 className="size-4" />
                 Agency Database
               </button>
               <button
                 type="button"
-                disabled
-                title="Coming Soon"
-                className="inline-flex h-10 cursor-not-allowed items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium text-muted-foreground opacity-60"
+                onClick={() => {
+                  void openDatabaseView("creator");
+                }}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent"
               >
                 <Users className="size-4" />
                 Creator Database
@@ -545,57 +771,76 @@ export function CreatorOutreachAssistant() {
           </Panel>
 
           <Panel title="Reply Builder" icon={FileInput}>
-            <div className="grid gap-3 md:grid-cols-[170px_1fr] xl:grid-cols-[170px_minmax(0,1fr)_auto_auto_auto_170px] xl:items-end">
+            <div className="grid gap-3 md:grid-cols-[170px_minmax(0,1fr)] md:items-end">
               <ReplyTypeField value={creatorSource} onChange={changeCreatorSource} />
-              <FieldLabel label="Reply Template">
-                <select
-                  aria-label="Reply Template"
-                  value={selectedTemplateId}
-                  onChange={(event) => setSelectedTemplateId(event.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                >
-                  {replyTemplateOptions.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.templateName}
-                    </option>
-                  ))}
-                </select>
-              </FieldLabel>
-              <button
-                onClick={openNewTemplateModal}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent"
-              >
-                <Plus className="size-4" />
-                New Template
-              </button>
-              <button
-                onClick={() => setIsTemplateManagerOpen(true)}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent"
-              >
-                <Pencil className="size-4" />
-                Manage
-              </button>
-              <div className="relative">
+              <div className="flex items-end gap-2">
+                <div className="min-w-0 flex-1">
+                  <FieldLabel label="Template">
+                    <select
+                      aria-label="Template"
+                      value={selectedTemplateId}
+                      onChange={(event) => setSelectedTemplateId(event.target.value)}
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                    >
+                      {replyTemplateOptions.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.templateName}
+                        </option>
+                      ))}
+                    </select>
+                  </FieldLabel>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setIsEmojiPickerOpen((current) => !current)}
-                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent"
+                  onClick={() => setIsTemplateManagerOpen(true)}
+                  title="Manage templates"
+                  aria-label="Manage templates"
+                  className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition hover:bg-accent hover:text-foreground"
                 >
-                  <SmilePlus className="size-4" />
-                  Emoji
+                  <Settings2 className="size-4" />
                 </button>
-                {isEmojiPickerOpen ? (
-                  <EmojiPicker
-                    emojis={outreachEmojis}
-                    onSelect={(emoji) => {
-                      insertEmoji(emoji);
-                    }}
-                  />
-                ) : null}
               </div>
-              <FieldLabel label="Target Language">
-                <LanguageSelect value={targetLanguage} onChange={setTargetLanguage} />
-              </FieldLabel>
+            </div>
+
+            <div className="mt-4 border-t border-border pt-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold">Reply Editor</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Edit the reply, add quick emojis, then copy the translated version.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="relative">
+                    <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Tools
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsEmojiPickerOpen((current) => !current)}
+                      title="Insert emoji"
+                      aria-label="Insert emoji"
+                      className="inline-flex size-10 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                    >
+                      <SmilePlus className="size-4" />
+                    </button>
+                    {isEmojiPickerOpen ? (
+                      <EmojiPicker
+                        emojis={outreachEmojis}
+                        onSelect={(emoji) => {
+                          insertEmoji(emoji);
+                          setIsEmojiPickerOpen(false);
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                  <div className="w-full sm:w-44">
+                    <FieldLabel label="Language">
+                      <LanguageSelect value={targetLanguage} onChange={setTargetLanguage} />
+                    </FieldLabel>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="mt-3 grid min-h-[520px] gap-3 md:grid-cols-2">
@@ -688,6 +933,39 @@ export function CreatorOutreachAssistant() {
         />
       ) : null}
 
+      {activeDatabaseView ? (
+        <DatabaseViewModal
+          view={activeDatabaseView}
+          agencies={agencyRecords}
+          creators={creatorRecords}
+          isLoading={isDatabaseLoading}
+          isSaving={isDatabaseSaving}
+          error={databaseError}
+          agencyDraft={agencyDraft}
+          creatorDraft={creatorDraft}
+          onNewAgency={() => setAgencyDraft(createAgencyDraft())}
+          onEditAgency={(record) => setAgencyDraft({ ...record })}
+          onChangeAgencyDraft={setAgencyDraft}
+          onSaveAgency={(record) => {
+            void saveAgencyDraft(record);
+          }}
+          onDeleteAgency={(recordId) => {
+            void deleteAgencyRecord(recordId);
+          }}
+          onNewCreator={() => setCreatorDraft(createCreatorDraft())}
+          onEditCreator={(record) => setCreatorDraft({ ...record })}
+          onChangeCreatorDraft={setCreatorDraft}
+          onSaveCreator={(record) => {
+            void saveCreatorDraft(record);
+          }}
+          onDeleteCreator={(recordId) => {
+            void deleteCreatorRecord(recordId);
+          }}
+          onCopy={copyText}
+          onClose={closeDatabaseView}
+        />
+      ) : null}
+
       {isTemplateManagerOpen ? (
         <OutreachTemplateManagerModal
           templates={templates}
@@ -717,7 +995,6 @@ export function CreatorOutreachAssistant() {
     </div>
   );
 }
-
 function NewTemplateModal({
   template,
   onChange,
@@ -1343,6 +1620,16 @@ function resolveReplyTargetLanguage(
 
 function isTemplateCompatibleWithSource(template: OutreachTemplate, source: CreatorMessageSource) {
   return template.channelType === source;
+}
+
+function normalizeDatabaseStatus(value: unknown) {
+  const status = String(value ?? "").toLowerCase();
+  return databaseStatusOptions.includes(status) ? status : "potential";
+}
+
+function normalizeNumber(value: unknown) {
+  const parsed = Number(String(value ?? "").replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function EmojiPicker({
