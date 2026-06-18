@@ -17,6 +17,7 @@ import {
   Layers3,
   Pencil,
   Plus,
+  SmilePlus,
   Trash2,
   Users,
   X,
@@ -55,6 +56,26 @@ import {
 
 const simpleTemplateTypes = ["DM", "Email"] as const;
 type TextInsertTarget = "creatorMessage" | "replyEditor" | "translatedReply" | "templateBody";
+const outreachEmojis = [
+  "😊",
+  "🙏",
+  "✨",
+  "🙌",
+  "👍",
+  "💛",
+  "💙",
+  "🔥",
+  "🎉",
+  "📩",
+  "📌",
+  "✅",
+  "🤝",
+  "💬",
+  "💡",
+  "📅",
+  "⏰",
+  "🚀",
+] as const;
 
 export function CreatorOutreachAssistant() {
   const [loaded, setLoaded] = useState(false);
@@ -73,9 +94,12 @@ export function CreatorOutreachAssistant() {
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
   const [isSmartFieldsModalOpen, setIsSmartFieldsModalOpen] = useState(false);
   const [isMemoryWidgetOpen, setIsMemoryWidgetOpen] = useState(false);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [selectedMemoryCampaignId, setSelectedMemoryCampaignId] = useState("");
   const [templateDraft, setTemplateDraft] = useState<OutreachTemplate | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
+  const replyEditorTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const translatedReplyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const activeTextTargetRef = useRef<{
     id: TextInsertTarget;
     element: HTMLTextAreaElement;
@@ -346,12 +370,18 @@ export function CreatorOutreachAssistant() {
     textarea: HTMLTextAreaElement,
     start = textarea.selectionStart,
     end = textarea.selectionEnd,
+    options: { blockInsert?: boolean } = {},
   ) {
+    const blockInsert = options.blockInsert ?? true;
+    let nextPosition = start + content.length;
     const applyInsert = (current: string) => {
       const safeStart = Math.min(Math.max(start, 0), current.length);
       const safeEnd = Math.min(Math.max(end, safeStart), current.length);
       const spacer =
-        current && safeStart === current.length && !current.endsWith("\n") ? "\n\n" : "";
+        blockInsert && current && safeStart === current.length && !current.endsWith("\n")
+          ? "\n\n"
+          : "";
+      nextPosition = safeStart + spacer.length + content.length;
       return `${current.slice(0, safeStart)}${spacer}${content}${current.slice(safeEnd)}`;
     };
 
@@ -370,7 +400,6 @@ export function CreatorOutreachAssistant() {
       );
     }
 
-    const nextPosition = start + content.length;
     activeTextTargetRef.current = { id, element: textarea, start: nextPosition, end: nextPosition };
     requestAnimationFrame(() => {
       textarea.focus();
@@ -395,6 +424,30 @@ export function CreatorOutreachAssistant() {
     const textarea = event.currentTarget;
     textarea.focus();
     insertTextIntoTarget(id, content, textarea, textarea.selectionStart, textarea.selectionEnd);
+  }
+
+  function insertEmoji(emoji: string) {
+    const target = activeTextTargetRef.current;
+    if (
+      target &&
+      target.element.isConnected &&
+      (target.id === "replyEditor" || target.id === "translatedReply")
+    ) {
+      insertTextIntoTarget(target.id, emoji, target.element, target.start, target.end, {
+        blockInsert: false,
+      });
+      return;
+    }
+
+    const textarea = replyEditorTextareaRef.current;
+    if (!textarea) {
+      setReplyEditor((current) => `${current}${emoji}`);
+      return;
+    }
+
+    insertTextIntoTarget("replyEditor", emoji, textarea, replyEditor.length, replyEditor.length, {
+      blockInsert: false,
+    });
   }
 
   return (
@@ -492,7 +545,7 @@ export function CreatorOutreachAssistant() {
           </Panel>
 
           <Panel title="Reply Builder" icon={FileInput}>
-            <div className="grid gap-3 md:grid-cols-[170px_1fr] xl:grid-cols-[170px_minmax(0,1fr)_auto_auto_170px] xl:items-end">
+            <div className="grid gap-3 md:grid-cols-[170px_1fr] xl:grid-cols-[170px_minmax(0,1fr)_auto_auto_auto_170px] xl:items-end">
               <ReplyTypeField value={creatorSource} onChange={changeCreatorSource} />
               <FieldLabel label="Reply Template">
                 <select
@@ -522,6 +575,24 @@ export function CreatorOutreachAssistant() {
                 <Pencil className="size-4" />
                 Manage
               </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsEmojiPickerOpen((current) => !current)}
+                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent"
+                >
+                  <SmilePlus className="size-4" />
+                  Emoji
+                </button>
+                {isEmojiPickerOpen ? (
+                  <EmojiPicker
+                    emojis={outreachEmojis}
+                    onSelect={(emoji) => {
+                      insertEmoji(emoji);
+                    }}
+                  />
+                ) : null}
+              </div>
               <FieldLabel label="Target Language">
                 <LanguageSelect value={targetLanguage} onChange={setTargetLanguage} />
               </FieldLabel>
@@ -530,6 +601,7 @@ export function CreatorOutreachAssistant() {
             <div className="mt-3 grid min-h-[520px] gap-3 md:grid-cols-2">
               <FieldLabel label="Original Reply">
                 <textarea
+                  ref={replyEditorTextareaRef}
                   value={replyEditor}
                   onChange={(event) => setReplyEditor(event.target.value)}
                   onFocus={(event) => rememberTextTarget("replyEditor", event.currentTarget)}
@@ -544,6 +616,7 @@ export function CreatorOutreachAssistant() {
               </FieldLabel>
               <FieldLabel label="Translated Reply">
                 <textarea
+                  ref={translatedReplyTextareaRef}
                   value={translatedReply}
                   onChange={(event) => setTranslatedReply(event.target.value)}
                   onFocus={(event) => rememberTextTarget("translatedReply", event.currentTarget)}
@@ -1270,6 +1343,34 @@ function resolveReplyTargetLanguage(
 
 function isTemplateCompatibleWithSource(template: OutreachTemplate, source: CreatorMessageSource) {
   return template.channelType === source;
+}
+
+function EmojiPicker({
+  emojis,
+  onSelect,
+}: {
+  emojis: readonly string[];
+  onSelect: (emoji: string) => void;
+}) {
+  return (
+    <div className="absolute right-0 top-11 z-40 w-56 rounded-xl border border-border bg-card p-3 shadow-2xl">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">Quick emojis</p>
+      <div className="grid grid-cols-6 gap-1.5">
+        {emojis.map((emoji) => (
+          <button
+            key={emoji}
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => onSelect(emoji)}
+            className="grid size-8 place-items-center rounded-md border border-transparent text-lg transition hover:border-border hover:bg-accent"
+            aria-label={`Insert ${emoji}`}
+          >
+            {emoji}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Panel({
