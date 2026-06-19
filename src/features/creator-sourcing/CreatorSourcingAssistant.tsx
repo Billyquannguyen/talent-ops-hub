@@ -160,8 +160,11 @@ export function CreatorSourcingAssistant() {
   const [errorMessage, setErrorMessage] = useState("");
   const [pendingLeaveAction, setPendingLeaveAction] = useState<PendingLeaveAction | null>(null);
   const projectsRef = useRef<SourcingProject[]>([]);
+  const activeCampaignIdRef = useRef("");
+  const templateLoadRequestRef = useRef(0);
+  const templateMutationRequestRef = useRef(0);
 
-  const activeProject = projects.find((project) => project.id === activeProjectId);
+  const activeProject = projects.find((project) => project.campaignId === activeProjectId);
   const activeTemplateId = activeProject?.activeTemplateId ?? "";
   const template = useMemo(() => draftTemplate, [draftTemplate]);
   const templateHasUnsavedChanges = activeProject
@@ -238,7 +241,7 @@ export function CreatorSourcingAssistant() {
   const activeFilterChips = getActiveFilterChips(filters);
 
   useEffect(() => {
-    let cancelled = false;
+    const requestId = ++templateLoadRequestRef.current;
 
     async function loadTemplates() {
       setIsLoadingTemplates(true);
@@ -248,21 +251,24 @@ export function CreatorSourcingAssistant() {
         const database = await loadAppDatabaseFromGoogleSheetsOnly({
           reason: "creator-sourcing:load-templates",
         });
-        if (cancelled) return;
+        if (requestId !== templateLoadRequestRef.current) return;
         const loadedProjects = loadProjects(database);
+        const nextCampaignId =
+          activeCampaignIdRef.current &&
+          loadedProjects.some((project) => project.campaignId === activeCampaignIdRef.current)
+            ? activeCampaignIdRef.current
+            : (loadedProjects[0]?.campaignId ?? "");
+        const selectedProject =
+          loadedProjects.find((project) => project.campaignId === nextCampaignId) ??
+          loadedProjects[0];
         setProjects(loadedProjects);
-        setActiveProjectId((current) =>
-          loadedProjects.some((project) => project.id === current)
-            ? current
-            : (loadedProjects[0]?.id ?? ""),
-        );
-        const selectedProject = loadedProjects[0];
+        setActiveProjectId(nextCampaignId);
         setFilters(selectedProject?.filters ?? { ...emptyFilters });
         setDraftTemplate(cloneTemplate(selectedProject?.template ?? []));
         setDraftTemplateName(selectedProject?.templateName ?? "");
         setProjectsLoaded(true);
       } catch (error) {
-        if (cancelled) return;
+        if (requestId !== templateLoadRequestRef.current) return;
         const message =
           error instanceof Error
             ? error.message
@@ -275,14 +281,11 @@ export function CreatorSourcingAssistant() {
         setDraftTemplateName("");
         setProjectsLoaded(true);
       } finally {
-        if (!cancelled) setIsLoadingTemplates(false);
+        if (requestId === templateLoadRequestRef.current) setIsLoadingTemplates(false);
       }
     }
 
     void loadTemplates();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   useEffect(() => {
@@ -290,7 +293,11 @@ export function CreatorSourcingAssistant() {
   }, [projects]);
 
   useEffect(() => {
-    const project = projectsRef.current.find((item) => item.id === activeProjectId);
+    activeCampaignIdRef.current = activeProjectId;
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    const project = projectsRef.current.find((item) => item.campaignId === activeProjectId);
     if (!project) return;
     setFilters((current) => (filtersEqual(current, project.filters) ? current : project.filters));
   }, [activeProjectId, projects]);
@@ -301,7 +308,7 @@ export function CreatorSourcingAssistant() {
       setTemplateMessage("");
       return;
     }
-    const project = projectsRef.current.find((item) => item.id === activeProjectId);
+    const project = projectsRef.current.find((item) => item.campaignId === activeProjectId);
     if (!project) return;
     setDraftTemplate(cloneTemplate(project.template));
     setDraftTemplateName(project.templateName);
@@ -312,7 +319,7 @@ export function CreatorSourcingAssistant() {
     if (!activeProjectId) return;
     setProjects((current) =>
       current.map((project) =>
-        project.id === activeProjectId && !filtersEqual(project.filters, filters)
+        project.campaignId === activeProjectId && !filtersEqual(project.filters, filters)
           ? { ...project, filters }
           : project,
       ),
@@ -356,11 +363,11 @@ export function CreatorSourcingAssistant() {
   }
 
   function switchProject(projectId: string) {
-    clearWorkingData();
+    const nextProject = projectsRef.current.find((project) => project.campaignId === projectId);
+    activeCampaignIdRef.current = projectId;
+    resetForCampaignChange(nextProject);
     setActiveProjectId(projectId);
     setStatusMessage("Campaign changed.");
-    setErrorMessage("");
-    setCopyMessage("");
   }
 
   function requestTemplateChange(templateId: string) {
@@ -373,39 +380,51 @@ export function CreatorSourcingAssistant() {
   }
 
   function switchTemplate(templateId: string) {
-    clearWorkingData();
+    resetWorkingData({
+      resetDraft: false,
+      resetFilters: false,
+      clearMessages: true,
+      closeTemplateUi: false,
+    });
     setProjects((current) =>
       current.map((project) =>
-        project.id === activeProjectId ? activateProjectTemplate(project, templateId) : project,
+        project.campaignId === activeProjectId
+          ? activateProjectTemplate(project, templateId)
+          : project,
       ),
     );
     setStatusMessage("Template changed.");
-    setErrorMessage("");
-    setCopyMessage("");
   }
 
   async function persistSourcingTemplate(template: SourcingTemplate, successMessage: string) {
+    const requestId = ++templateMutationRequestRef.current;
+    const targetCampaignId = template.campaignId;
     setIsSavingTemplates(true);
     setErrorMessage("");
     try {
       const record = toSourcingTemplateRecord(template, activeProject?.name ?? "");
       const savedDatabase = await saveSourcingTemplateToGoogleSheetsOnly(record);
+      if (requestId !== templateMutationRequestRef.current) return true;
       const loadedProjects = loadProjects(savedDatabase);
       const nextProjects = loadedProjects.map((project) =>
-        project.id === template.campaignId
+        project.campaignId === targetCampaignId
           ? activateProjectTemplate(project, template.id)
           : project,
       );
-      const nextProject =
-        nextProjects.find((project) => project.id === template.campaignId) ?? nextProjects[0];
       setProjects(nextProjects);
-      setActiveProjectId(nextProject?.id ?? "");
-      setFilters(nextProject?.filters ?? { ...emptyFilters });
-      setDraftTemplate(cloneTemplate(nextProject?.template ?? []));
-      setDraftTemplateName(nextProject?.templateName ?? "");
-      setTemplateMessage(successMessage);
+      if (activeCampaignIdRef.current === targetCampaignId) {
+        const nextProject =
+          nextProjects.find((project) => project.campaignId === targetCampaignId) ??
+          nextProjects[0];
+        setActiveProjectId(nextProject?.campaignId ?? "");
+        setFilters(nextProject?.filters ?? { ...emptyFilters });
+        setDraftTemplate(cloneTemplate(nextProject?.template ?? []));
+        setDraftTemplateName(nextProject?.templateName ?? "");
+        setTemplateMessage(successMessage);
+      }
       return true;
     } catch (error) {
+      if (requestId !== templateMutationRequestRef.current) return false;
       const message =
         error instanceof Error
           ? error.message
@@ -415,26 +434,33 @@ export function CreatorSourcingAssistant() {
       setTemplateMessage("Template was not saved to Google Sheets.");
       return false;
     } finally {
-      setIsSavingTemplates(false);
+      if (requestId === templateMutationRequestRef.current) setIsSavingTemplates(false);
     }
   }
 
   async function deleteSourcingTemplateFromSheets(templateId: string) {
+    const requestId = ++templateMutationRequestRef.current;
+    const targetCampaignId = activeCampaignIdRef.current;
     setIsSavingTemplates(true);
     setErrorMessage("");
     try {
       const savedDatabase = await deleteSourcingTemplateFromGoogleSheetsOnly(templateId);
+      if (requestId !== templateMutationRequestRef.current) return true;
       const loadedProjects = loadProjects(savedDatabase);
       const nextProject =
-        loadedProjects.find((project) => project.id === activeProjectId) ?? loadedProjects[0];
+        loadedProjects.find((project) => project.campaignId === targetCampaignId) ??
+        loadedProjects[0];
       setProjects(loadedProjects);
-      setActiveProjectId(nextProject?.id ?? "");
-      setFilters(nextProject?.filters ?? { ...emptyFilters });
-      setDraftTemplate(cloneTemplate(nextProject?.template ?? []));
-      setDraftTemplateName(nextProject?.templateName ?? "");
-      setTemplateMessage("Template deleted from Google Sheets.");
+      if (activeCampaignIdRef.current === targetCampaignId) {
+        setActiveProjectId(nextProject?.campaignId ?? "");
+        setFilters(nextProject?.filters ?? { ...emptyFilters });
+        setDraftTemplate(cloneTemplate(nextProject?.template ?? []));
+        setDraftTemplateName(nextProject?.templateName ?? "");
+        setTemplateMessage("Template deleted from Google Sheets.");
+      }
       return true;
     } catch (error) {
+      if (requestId !== templateMutationRequestRef.current) return false;
       const message =
         error instanceof Error
           ? error.message
@@ -444,7 +470,7 @@ export function CreatorSourcingAssistant() {
       setTemplateMessage("Template was not deleted from Google Sheets.");
       return false;
     } finally {
-      setIsSavingTemplates(false);
+      if (requestId === templateMutationRequestRef.current) setIsSavingTemplates(false);
     }
   }
 
@@ -453,17 +479,22 @@ export function CreatorSourcingAssistant() {
     const now = new Date().toISOString();
     const nextTemplate: SourcingTemplate = {
       id: createId("sourcing-template"),
-      campaignId: activeProject.id,
+      campaignId: activeProject.campaignId,
       templateName: getNextTemplateName(activeProject.templates),
       columns: defaultTemplate(),
       createdAt: now,
       updatedAt: now,
     };
 
-    clearWorkingData();
+    resetWorkingData({
+      resetDraft: false,
+      resetFilters: false,
+      clearMessages: true,
+      closeTemplateUi: false,
+    });
     setProjects((current) =>
       current.map((project) => {
-        if (project.id !== activeProject.id) return project;
+        if (project.campaignId !== activeProject.campaignId) return project;
         return activateProjectTemplate(
           {
             ...project,
@@ -512,7 +543,20 @@ export function CreatorSourcingAssistant() {
     await deleteSourcingTemplateFromSheets(templateId);
   }
 
-  function clearWorkingData() {
+  function resetWorkingData(
+    options: {
+      resetDraft?: boolean;
+      resetFilters?: boolean;
+      clearMessages?: boolean;
+      closeTemplateUi?: boolean;
+    } = {},
+  ) {
+    const {
+      resetDraft = false,
+      resetFilters = false,
+      clearMessages = false,
+      closeTemplateUi = false,
+    } = options;
     setHeaders([]);
     setCreators([]);
     setSourceFileName("");
@@ -523,6 +567,43 @@ export function CreatorSourcingAssistant() {
     setContactInfoByCreatorId({});
     setEnrichmentReport(null);
     setOpenFilterSections(filterSectionDefaults);
+    setCustomRanges({
+      followersMin: "",
+      followersMax: "",
+      averageViewsMin: "",
+      averageViewsMax: "",
+    });
+    setIsUploading(false);
+    setIsProcessing(false);
+    setIsEnrichingContacts(false);
+    if (resetFilters) setFilters({ ...emptyFilters });
+    if (resetDraft) {
+      setDraftTemplate([]);
+      setDraftTemplateName("");
+    }
+    if (clearMessages) {
+      setStatusMessage("");
+      setCopyMessage("");
+      setErrorMessage("");
+      setTemplateMessage("");
+    }
+    if (closeTemplateUi) {
+      setIsTemplateModalOpen(false);
+      setIsTemplateManagerOpen(false);
+    }
+  }
+
+  function resetForCampaignChange(nextProject?: SourcingProject) {
+    resetWorkingData({
+      resetDraft: true,
+      resetFilters: true,
+      clearMessages: true,
+      closeTemplateUi: true,
+    });
+    if (!nextProject) return;
+    setFilters(nextProject.filters);
+    setDraftTemplate(cloneTemplate(nextProject.template));
+    setDraftTemplateName(nextProject.templateName);
   }
 
   function confirmPendingLeave() {
@@ -537,7 +618,12 @@ export function CreatorSourcingAssistant() {
   }
 
   function confirmRouteLeave() {
-    clearWorkingData();
+    resetWorkingData({
+      resetDraft: true,
+      resetFilters: true,
+      clearMessages: true,
+      closeTemplateUi: true,
+    });
     routeBlocker.proceed?.();
   }
 
@@ -808,9 +894,9 @@ export function CreatorSourcingAssistant() {
     const savedTemplate = cloneTemplate(draftTemplate);
     const savedTemplateName = draftTemplateName.trim() || activeProject.templateName;
     const templateToSave: SourcingTemplate = {
-      ...(activeTemplate ?? createDefaultSourcingTemplate(activeProject.id)),
+      ...(activeTemplate ?? createDefaultSourcingTemplate(activeProject.campaignId)),
       id: activeProject.activeTemplateId || activeTemplate?.id || createId("sourcing-template"),
-      campaignId: activeProject.id,
+      campaignId: activeProject.campaignId,
       templateName: savedTemplateName,
       columns: savedTemplate,
       createdAt: activeTemplate?.createdAt || savedAt,
@@ -829,7 +915,7 @@ export function CreatorSourcingAssistant() {
     const baseName = draftTemplateName.trim() || activeProject.templateName || "Template";
     const nextTemplate: SourcingTemplate = {
       id: createId("sourcing-template"),
-      campaignId: activeProject.id,
+      campaignId: activeProject.campaignId,
       templateName: getDuplicateTemplateName(baseName, activeProject.templates),
       columns: cloneTemplate(draftTemplate),
       createdAt: savedAt,
@@ -851,9 +937,9 @@ export function CreatorSourcingAssistant() {
     const templateForProject = defaultTemplate();
     const savedAt = new Date().toISOString();
     const templateToSave: SourcingTemplate = {
-      ...(activeTemplate ?? createDefaultSourcingTemplate(activeProject.id)),
+      ...(activeTemplate ?? createDefaultSourcingTemplate(activeProject.campaignId)),
       id: activeProject.activeTemplateId || activeTemplate?.id || createId("sourcing-template"),
-      campaignId: activeProject.id,
+      campaignId: activeProject.campaignId,
       templateName:
         activeTemplate?.templateName || activeProject.templateName || "Default Template",
       columns: templateForProject,
@@ -1006,7 +1092,7 @@ export function CreatorSourcingAssistant() {
                       className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
                     >
                       {projects.map((project) => (
-                        <option key={project.id} value={project.id}>
+                        <option key={project.campaignId} value={project.campaignId}>
                           {project.name}
                         </option>
                       ))}
@@ -2894,6 +2980,7 @@ function createProjectFromCampaign(
   return activateProjectTemplate(
     {
       id: campaign.campaignId,
+      campaignId: campaign.campaignId,
       name: campaign.campaignName,
       createdAt: campaign.createdAt,
       filters: normalizeFilters(filters),
@@ -2951,7 +3038,9 @@ function createDefaultSourcingTemplate(campaignId: string): SourcingTemplate {
 
 function activateProjectTemplate(project: SourcingProject, templateId: string): SourcingProject {
   const templates =
-    project.templates.length > 0 ? project.templates : [createDefaultSourcingTemplate(project.id)];
+    project.templates.length > 0
+      ? project.templates
+      : [createDefaultSourcingTemplate(project.campaignId)];
   const activeTemplate = templates.find((template) => template.id === templateId) ?? templates[0];
 
   if (!activeTemplate) {

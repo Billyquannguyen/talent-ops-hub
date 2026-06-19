@@ -73,6 +73,7 @@ export type SourcingTemplate = {
 
 export type SourcingProject = {
   id: string;
+  campaignId: string;
   name: string;
   createdAt: string;
   filters: FilterSettings;
