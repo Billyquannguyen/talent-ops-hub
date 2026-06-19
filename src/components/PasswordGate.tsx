@@ -4,7 +4,7 @@ import { useState } from "react";
 import { verifyPasswordGate, type PasswordGateStatus } from "@/lib/passwordGate.functions";
 import { InteractiveRobotSpline } from "@/components/ui/interactive-3d-robot";
 
-const robotSceneUrl = "https://prod.spline.design/PyzDhpQ9E5f1E3MT/scene.splinecode";
+const robotSceneUrl = "https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode";
 
 type PasswordGateProps = {
   status: PasswordGateStatus;
