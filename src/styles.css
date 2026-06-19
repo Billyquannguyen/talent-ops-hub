@@ -120,6 +120,18 @@
 }
 
 .katlas-spline-mascot-mask {
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 41%, transparent 54%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 41%, transparent 54%);
+  -webkit-mask-image: radial-gradient(
+    ellipse 18% 64% at 50% 52%,
+    #000 0%,
+    #000 72%,
+    rgb(0 0 0 / 0.32) 88%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 18% 64% at 50% 52%,
+    #000 0%,
+    #000 72%,
+    rgb(0 0 0 / 0.32) 88%,
+    transparent 100%
+  );
 }

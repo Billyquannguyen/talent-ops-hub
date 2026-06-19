@@ -105,10 +105,10 @@ export function PasswordGate({ status, onUnlocked }: PasswordGateProps) {
             <InteractiveRobotSpline
               scene={robotSceneUrl}
               className="pointer-events-none h-full w-full"
-              sceneClassName="katlas-spline-mascot-mask left-1/2 top-[53%] h-[138%] w-[138%] -translate-x-1/2 -translate-y-1/2 scale-[1.28] md:scale-[1.32] lg:scale-[1.38]"
-              viewerClassName="scale-[1.06]"
+              sceneClassName="katlas-spline-mascot-mask left-1/2 top-[46%] h-[132%] w-[132%] -translate-x-1/2 -translate-y-1/2 scale-[1.18] md:scale-[1.2] lg:scale-[1.24]"
+              viewerClassName="scale-[1.02]"
             />
-            <div className="pointer-events-none absolute bottom-[43%] left-1/2 h-7 w-[22%] -translate-x-1/2 rounded-full bg-cyan-200/10 blur-xl" />
+            <div className="pointer-events-none absolute bottom-[15%] left-1/2 h-9 w-[30%] -translate-x-1/2 rounded-full bg-cyan-200/10 blur-xl" />
           </div>
         </section>
       </div>
