@@ -84,6 +84,15 @@ let databaseReadPromise: {
   spreadsheetId: string;
   promise: Promise<CentralAppDatabase>;
 } | null = null;
+let creatorSourcingReadCache: {
+  spreadsheetId: string;
+  database: CentralAppDatabase;
+  expiresAt: number;
+} | null = null;
+let creatorSourcingReadPromise: {
+  spreadsheetId: string;
+  promise: Promise<CentralAppDatabase>;
+} | null = null;
 let databaseShapeCache: { spreadsheetId: string; expiresAt: number } | null = null;
 
 export function getGoogleSheetsServerStatus() {
@@ -201,6 +210,41 @@ export async function writeCentralDatabaseToGoogleSheets(database: CentralAppDat
   return cloneDatabase(savedDatabase);
 }
 
+export async function readCreatorSourcingDatabaseFromGoogleSheets(
+  options: { reason?: string } = {},
+) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  const now = Date.now();
+  const reason = options.reason ?? "creator-sourcing";
+
+  if (
+    creatorSourcingReadCache &&
+    creatorSourcingReadCache.spreadsheetId === spreadsheetId &&
+    creatorSourcingReadCache.expiresAt > now
+  ) {
+    logGoogleSheetsCache("creator-sourcing-cache-hit", {
+      reason,
+      ttlMs: creatorSourcingReadCache.expiresAt - now,
+    });
+    return cloneDatabase(creatorSourcingReadCache.database);
+  }
+
+  if (creatorSourcingReadPromise && creatorSourcingReadPromise.spreadsheetId === spreadsheetId) {
+    logGoogleSheetsCache("creator-sourcing-inflight-reuse", { reason });
+    return cloneDatabase(await creatorSourcingReadPromise.promise);
+  }
+
+  const promise = readCreatorSourcingDatabaseFromGoogleSheetsUncached(
+    spreadsheetId,
+    reason,
+  ).finally(() => {
+    if (creatorSourcingReadPromise?.promise === promise) creatorSourcingReadPromise = null;
+  });
+  creatorSourcingReadPromise = { spreadsheetId, promise };
+  return cloneDatabase(await promise);
+}
+
 export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTemplateRecord) {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
@@ -233,6 +277,7 @@ export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTempl
   await writeChangedWorksheetRows(spreadsheetId, "AppSettings", appSettingRows, appSettings);
 
   invalidateDatabaseReadCache("sourcing-template-targeted-write");
+  invalidateCreatorSourcingReadCache("sourcing-template-targeted-write");
 
   return readCreatorSourcingDatabaseSubset(spreadsheetId, {
     SourcingTemplates: sourcingCleanup.records,
@@ -286,6 +331,7 @@ export async function deactivateSourcingTemplateInGoogleSheets(templateId: strin
   }
 
   invalidateDatabaseReadCache("sourcing-template-targeted-delete");
+  invalidateCreatorSourcingReadCache("sourcing-template-targeted-delete");
 
   return readCreatorSourcingDatabaseSubset(spreadsheetId, {
     SourcingTemplates: sourcingCleanup.records,
@@ -558,6 +604,49 @@ function worksheetRecordChanged(
   );
 }
 
+async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
+  spreadsheetId: string,
+  reason: string,
+) {
+  logGoogleSheetsCache("creator-sourcing-cache-miss", { reason });
+  await ensureDatabaseShape(spreadsheetId);
+
+  const [campaignProfiles, sourcingRows, appSettingRows] = await Promise.all([
+    readWorksheetRows(spreadsheetId, "CampaignProfiles") as Promise<CampaignProfileRecord[]>,
+    readWorksheetRecordsWithRowNumbers<SourcingTemplateRecord>(spreadsheetId, "SourcingTemplates"),
+    readWorksheetRecordsWithRowNumbers<AppSettingRecord>(spreadsheetId, "AppSettings"),
+  ]);
+  const cleanup = cleanupSourcingTemplateRecords(sourcingRows.rows.map((row) => row.record));
+
+  if (cleanup.inactiveCount > 0) {
+    console.info("[SourcingTemplatesCleanup]", "deactivated-duplicates-during-load", {
+      duplicateIdCount: cleanup.duplicateIdCount,
+      duplicateNameCount: cleanup.duplicateNameCount,
+      at: new Date().toISOString(),
+    });
+    await writeChangedWorksheetRows(
+      spreadsheetId,
+      "SourcingTemplates",
+      sourcingRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("sourcing-template-load-cleanup");
+  }
+
+  const database = createEmptyCentralDatabase();
+  database.worksheets.CampaignProfiles = campaignProfiles;
+  database.worksheets.SourcingTemplates = cleanup.records.filter(isActiveSourcingTemplateRecord);
+  database.worksheets.AppSettings = appSettingRows.rows.map((row) => row.record);
+
+  creatorSourcingReadCache = {
+    spreadsheetId,
+    database: cloneDatabase(database),
+    expiresAt: Date.now() + databaseReadCacheTtlMs,
+  };
+
+  return database;
+}
+
 function upsertAppSettingRecord(
   settings: AppSettingRecord[],
   settingKey: string,
@@ -590,6 +679,9 @@ async function readCreatorSourcingDatabaseSubset(
   database.worksheets.SourcingTemplates =
     overrides.SourcingTemplates ??
     ((await readWorksheetRows(spreadsheetId, "SourcingTemplates")) as SourcingTemplateRecord[]);
+  database.worksheets.SourcingTemplates = database.worksheets.SourcingTemplates.filter(
+    isActiveSourcingTemplateRecord,
+  );
   database.worksheets.AppSettings =
     overrides.AppSettings ??
     ((await readWorksheetRows(spreadsheetId, "AppSettings")) as AppSettingRecord[]);
@@ -600,6 +692,12 @@ function invalidateDatabaseReadCache(reason: string) {
   databaseReadCache = null;
   databaseReadPromise = null;
   logGoogleSheetsCache("database-cache-invalidated", { reason });
+}
+
+function invalidateCreatorSourcingReadCache(reason: string) {
+  creatorSourcingReadCache = null;
+  creatorSourcingReadPromise = null;
+  logGoogleSheetsCache("creator-sourcing-cache-invalidated", { reason });
 }
 
 async function getMetadata(spreadsheetId: string): Promise<SpreadsheetMetadata> {

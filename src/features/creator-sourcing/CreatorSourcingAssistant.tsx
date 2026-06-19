@@ -28,7 +28,7 @@ import { TopBar } from "@/components/TopBar";
 import { formatCountryLabel, matchesCountryQuery } from "@/lib/countries";
 import {
   deleteSourcingTemplateFromGoogleSheetsOnly,
-  loadAppDatabaseFromGoogleSheetsOnly,
+  loadCreatorSourcingDatabaseFromGoogleSheetsOnly,
   saveSourcingTemplateToGoogleSheetsOnly,
 } from "@/storage/appRepository";
 import {
@@ -248,7 +248,7 @@ export function CreatorSourcingAssistant() {
       setProjectsLoaded(false);
       setErrorMessage("");
       try {
-        const database = await loadAppDatabaseFromGoogleSheetsOnly({
+        const database = await loadCreatorSourcingDatabaseFromGoogleSheetsOnly({
           reason: "creator-sourcing:load-templates",
         });
         if (requestId !== templateLoadRequestRef.current) return;

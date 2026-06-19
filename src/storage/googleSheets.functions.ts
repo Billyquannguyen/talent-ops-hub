@@ -50,6 +50,46 @@ export const loadGoogleSheetsDatabase = createServerFn({ method: "POST" })
     }
   });
 
+export const loadCreatorSourcingGoogleSheetsDatabase = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ reason: z.string().optional() }).optional())
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      readCreatorSourcingDatabaseFromGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          database: null,
+          status,
+        };
+      }
+
+      return {
+        ok: true,
+        database: await readCreatorSourcingDatabaseFromGoogleSheets({
+          reason: data?.reason ?? "loadCreatorSourcingGoogleSheetsDatabase",
+        }),
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        database: null,
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
 export const saveGoogleSheetsDatabase = createServerFn({ method: "POST" })
   .inputValidator(z.object({ database: z.any() }))
   .handler(async ({ data }) => {

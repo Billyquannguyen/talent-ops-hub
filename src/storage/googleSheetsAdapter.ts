@@ -11,6 +11,7 @@ import {
 import {
   deleteSourcingTemplateRecord,
   getGoogleSheetsConnectionStatus,
+  loadCreatorSourcingGoogleSheetsDatabase,
   loadGoogleSheetsDatabase,
   migrateLocalDatabaseToGoogleSheets,
   saveGoogleSheetsDatabase,
@@ -47,6 +48,14 @@ export async function loadDatabaseFromGoogleSheets(
   } = {},
 ): Promise<GoogleSheetsDatabaseResult> {
   return loadGoogleSheetsDatabase({ data: { reason: options.reason } });
+}
+
+export async function loadCreatorSourcingDatabaseFromGoogleSheets(
+  options: {
+    reason?: string;
+  } = {},
+): Promise<GoogleSheetsDatabaseResult> {
+  return loadCreatorSourcingGoogleSheetsDatabase({ data: { reason: options.reason } });
 }
 
 export async function saveDatabaseToGoogleSheets(

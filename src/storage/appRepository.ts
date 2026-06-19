@@ -5,6 +5,7 @@ import {
 import {
   deleteSourcingTemplateFromGoogleSheets,
   getGoogleSheetsStorageStatus,
+  loadCreatorSourcingDatabaseFromGoogleSheets,
   loadDatabaseFromGoogleSheets,
   migrateDatabaseToGoogleSheets,
   saveDatabaseToGoogleSheets,
@@ -48,6 +49,20 @@ export async function loadAppDatabaseFromGoogleSheetsOnly(
   const result = await loadPrimaryDatabaseResult({
     reason: options.reason ?? "loadAppDatabaseFromGoogleSheetsOnly",
     force: options.force,
+  });
+  if (!result.ok || !result.database) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  return cloneCentralDatabase(result.database);
+}
+
+export async function loadCreatorSourcingDatabaseFromGoogleSheetsOnly(
+  options: {
+    reason?: string;
+  } = {},
+): Promise<CentralAppDatabase> {
+  const result = await loadCreatorSourcingDatabaseFromGoogleSheets({
+    reason: options.reason ?? "loadCreatorSourcingDatabaseFromGoogleSheetsOnly",
   });
   if (!result.ok || !result.database) {
     throw new Error(getStorageFailureMessage(result.status));
