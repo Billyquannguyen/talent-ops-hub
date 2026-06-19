@@ -4,14 +4,17 @@ import {
   worksheetHeaderAliases,
   type CentralAppDatabase,
   type CentralWorksheetName,
+  type SourcingTemplateRecord,
   type StorageDiagnostic,
   type StorageStatus,
 } from "./schema";
 import {
+  deleteSourcingTemplateRecord,
   getGoogleSheetsConnectionStatus,
   loadGoogleSheetsDatabase,
   migrateLocalDatabaseToGoogleSheets,
   saveGoogleSheetsDatabase,
+  saveSourcingTemplateRecord,
 } from "./googleSheets.functions";
 
 export type RawSheetTable = {
@@ -50,6 +53,18 @@ export async function saveDatabaseToGoogleSheets(
   database: CentralAppDatabase,
 ): Promise<GoogleSheetsDatabaseResult> {
   return saveGoogleSheetsDatabase({ data: { database } });
+}
+
+export async function saveSourcingTemplateToGoogleSheets(
+  record: SourcingTemplateRecord,
+): Promise<GoogleSheetsDatabaseResult> {
+  return saveSourcingTemplateRecord({ data: { record } });
+}
+
+export async function deleteSourcingTemplateFromGoogleSheets(
+  templateId: string,
+): Promise<GoogleSheetsDatabaseResult> {
+  return deleteSourcingTemplateRecord({ data: { templateId } });
 }
 
 export async function migrateDatabaseToGoogleSheets(database: CentralAppDatabase): Promise<{

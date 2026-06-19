@@ -27,14 +27,13 @@ import type { LucideIcon } from "lucide-react";
 import { TopBar } from "@/components/TopBar";
 import { formatCountryLabel, matchesCountryQuery } from "@/lib/countries";
 import {
+  deleteSourcingTemplateFromGoogleSheetsOnly,
   loadAppDatabaseFromGoogleSheetsOnly,
-  saveAppDatabaseToGoogleSheetsOnly,
+  saveSourcingTemplateToGoogleSheetsOnly,
 } from "@/storage/appRepository";
 import {
   cleanupSourcingTemplateRecords,
-  deactivateSourcingTemplateRecord,
   isActiveSourcingTemplateRecord,
-  upsertSourcingTemplateRecord,
 } from "@/storage/sourcingTemplates";
 import type {
   AppSettingRecord,
@@ -389,25 +388,8 @@ export function CreatorSourcingAssistant() {
     setIsSavingTemplates(true);
     setErrorMessage("");
     try {
-      const database = await loadAppDatabaseFromGoogleSheetsOnly({
-        reason: "creator-sourcing:save-template-preload",
-        force: true,
-      });
       const record = toSourcingTemplateRecord(template, activeProject?.name ?? "");
-      const cleanup = upsertSourcingTemplateRecord(database.worksheets.SourcingTemplates, record);
-      database.worksheets.SourcingTemplates = cleanup.records;
-      if (cleanup.inactiveCount > 0) {
-        console.info("[SourcingTemplatesCleanup]", "save-template", cleanup);
-      }
-      upsertAppSetting(
-        database.worksheets.AppSettings,
-        `sourcing.activeTemplate.${template.campaignId}`,
-        template.id,
-      );
-
-      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(database, {
-        reason: "creator-sourcing:save-template",
-      });
+      const savedDatabase = await saveSourcingTemplateToGoogleSheetsOnly(record);
       const loadedProjects = loadProjects(savedDatabase);
       const nextProjects = loadedProjects.map((project) =>
         project.id === template.campaignId
@@ -441,22 +423,7 @@ export function CreatorSourcingAssistant() {
     setIsSavingTemplates(true);
     setErrorMessage("");
     try {
-      const database = await loadAppDatabaseFromGoogleSheetsOnly({
-        reason: "creator-sourcing:delete-template-preload",
-        force: true,
-      });
-      const existing = database.worksheets.SourcingTemplates.find(
-        (record) => record.id === templateId,
-      );
-      if (!existing) return true;
-      const cleanup = deactivateSourcingTemplateRecord(
-        database.worksheets.SourcingTemplates,
-        templateId,
-      );
-      database.worksheets.SourcingTemplates = cleanup.records;
-      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(database, {
-        reason: "creator-sourcing:delete-template",
-      });
+      const savedDatabase = await deleteSourcingTemplateFromGoogleSheetsOnly(templateId);
       const loadedProjects = loadProjects(savedDatabase);
       const nextProject =
         loadedProjects.find((project) => project.id === activeProjectId) ?? loadedProjects[0];
@@ -1000,14 +967,29 @@ export function CreatorSourcingAssistant() {
                 exact columns you want to paste into a sourcing sheet.
               </p>
             </div>
-            <div className="grid w-full gap-0 border-y border-border py-4 sm:grid-cols-4 lg:max-w-2xl">
-              <Metric label="Imported" value={creators.length.toLocaleString()} />
-              <Metric label="Filtered" value={filteredCreators.length.toLocaleString()} />
-              <Metric label="With contact" value={creatorsWithContact.toLocaleString()} />
-              <Metric label="Without contact" value={creatorsWithoutContact.toLocaleString()} />
-            </div>
           </div>
         </section>
+
+        {statusMessage || copyMessage || errorMessage ? (
+          <section className="space-y-2">
+            {statusMessage ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+                <Check className="size-4 text-emerald-400" />
+                {statusMessage}
+              </div>
+            ) : null}
+            {copyMessage ? (
+              <div className="rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+                {copyMessage}
+              </div>
+            ) : null}
+            {errorMessage ? (
+              <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {errorMessage}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
           <aside className="flex min-w-0 flex-col gap-5">
@@ -1183,7 +1165,11 @@ export function CreatorSourcingAssistant() {
           </aside>
 
           <div className="flex min-w-0 flex-col gap-5">
-            <Panel title="Preview" icon={Sparkles}>
+            <Panel
+              key={`${activeProjectId}:${activeTemplateId}:preview`}
+              title="Preview"
+              icon={Sparkles}
+            >
               {activeFilterChips.length > 0 ? (
                 <ActiveFilterChips chips={activeFilterChips} onClear={clearFilterChip} />
               ) : null}
@@ -1252,23 +1238,6 @@ export function CreatorSourcingAssistant() {
                   </button>
                 </div>
               </div>
-
-              {statusMessage && (
-                <div className="mt-4 flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
-                  <Check className="size-4 text-emerald-400" />
-                  {statusMessage}
-                </div>
-              )}
-              {copyMessage && (
-                <div className="mt-3 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
-                  {copyMessage}
-                </div>
-              )}
-              {errorMessage && (
-                <div className="mt-3 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {errorMessage}
-                </div>
-              )}
 
               <PreviewMetrics
                 imported={creators.length}
@@ -2540,15 +2509,6 @@ function Panel({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border-r border-border px-4 first:pl-0 last:border-r-0">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
-    </div>
-  );
-}
-
 function SmallMetric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md border border-border bg-background px-3 py-2">
@@ -2912,7 +2872,11 @@ function loadProjects(database: {
   const templatesByCampaign = groupSourcingTemplates(database.worksheets.SourcingTemplates);
 
   return campaigns.map((campaign) =>
-    createProjectFromCampaign(campaign, templatesByCampaign.get(campaign.id) ?? [], settings),
+    createProjectFromCampaign(
+      campaign,
+      templatesByCampaign.get(campaign.campaignId) ?? [],
+      settings,
+    ),
   );
 }
 
@@ -3036,23 +3000,6 @@ function parseJsonSetting(value: unknown): unknown {
   } catch {
     return {};
   }
-}
-
-function upsertAppSetting(settings: AppSettingRecord[], settingKey: string, settingValue: string) {
-  const now = new Date().toISOString();
-  const index = settings.findIndex((setting) => setting.settingKey === settingKey);
-  const nextSetting: AppSettingRecord = {
-    settingKey,
-    settingValue,
-    updatedAt: now,
-  };
-
-  if (index >= 0) {
-    settings[index] = nextSetting;
-    return;
-  }
-
-  settings.push(nextSetting);
 }
 
 function getNextTemplateName(templates: SourcingTemplate[]): string {

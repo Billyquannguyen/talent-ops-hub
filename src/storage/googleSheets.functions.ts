@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import type { CentralAppDatabase } from "./schema";
+import type { CentralAppDatabase, SourcingTemplateRecord } from "./schema";
 
 export const getGoogleSheetsConnectionStatus = createServerFn({ method: "GET" }).handler(
   async () => {
@@ -72,6 +72,82 @@ export const saveGoogleSheetsDatabase = createServerFn({ method: "POST" })
       return {
         ok: true,
         database: await writeCentralDatabaseToGoogleSheets(data.database as CentralAppDatabase),
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        database: null,
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const saveSourcingTemplateRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertSourcingTemplateInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          database: null,
+          status,
+        };
+      }
+
+      return {
+        ok: true,
+        database: await upsertSourcingTemplateInGoogleSheets(data.record as SourcingTemplateRecord),
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        database: null,
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const deleteSourcingTemplateRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ templateId: z.string() }))
+  .handler(async ({ data }) => {
+    const {
+      deactivateSourcingTemplateInGoogleSheets,
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          database: null,
+          status,
+        };
+      }
+
+      return {
+        ok: true,
+        database: await deactivateSourcingTemplateInGoogleSheets(data.templateId),
         status,
       };
     } catch (error) {

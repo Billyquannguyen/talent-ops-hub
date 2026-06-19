@@ -3,10 +3,12 @@ import {
   saveCentralDatabaseToLocalStorage,
 } from "./localStorageAdapter";
 import {
+  deleteSourcingTemplateFromGoogleSheets,
   getGoogleSheetsStorageStatus,
   loadDatabaseFromGoogleSheets,
   migrateDatabaseToGoogleSheets,
   saveDatabaseToGoogleSheets,
+  saveSourcingTemplateToGoogleSheets,
   type GoogleSheetsDatabaseResult,
   type MigrationReport,
 } from "./googleSheetsAdapter";
@@ -66,6 +68,37 @@ export async function saveAppDatabaseToGoogleSheetsOnly(
     throw new Error(getStorageFailureMessage(result.status));
   }
   rememberPrimaryDatabase(result.database, result.status);
+  return cloneCentralDatabase(result.database);
+}
+
+export async function saveSourcingTemplateToGoogleSheetsOnly(
+  record: SourcingTemplateRecord,
+): Promise<CentralAppDatabase> {
+  console.info("[AppRepositoryGoogleSheets]", "save-sourcing-template-start", {
+    templateId: record.id,
+    campaignId: record.campaignId,
+    at: new Date().toISOString(),
+  });
+  const result = await saveSourcingTemplateToGoogleSheets(record);
+  if (!result.ok || !result.database) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  return cloneCentralDatabase(result.database);
+}
+
+export async function deleteSourcingTemplateFromGoogleSheetsOnly(
+  templateId: string,
+): Promise<CentralAppDatabase> {
+  console.info("[AppRepositoryGoogleSheets]", "delete-sourcing-template-start", {
+    templateId,
+    at: new Date().toISOString(),
+  });
+  const result = await deleteSourcingTemplateFromGoogleSheets(templateId);
+  if (!result.ok || !result.database) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
   return cloneCentralDatabase(result.database);
 }
 
@@ -247,6 +280,11 @@ function rememberPrimaryDatabase(database: CentralAppDatabase, status: StorageSt
     status,
     expiresAt: Date.now() + primaryDatabaseCacheTtlMs,
   };
+}
+
+function clearPrimaryDatabaseCache() {
+  primaryDatabaseCache = null;
+  primaryDatabaseLoadPromise = null;
 }
 
 function cloneGoogleSheetsResult(result: GoogleSheetsDatabaseResult): GoogleSheetsDatabaseResult {

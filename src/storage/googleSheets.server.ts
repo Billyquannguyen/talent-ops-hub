@@ -21,7 +21,12 @@ import {
   type SourcingTemplateRecord,
   type StorageDiagnostic,
 } from "./schema";
-import { cleanupSourcingTemplateRecords } from "./sourcingTemplates";
+import {
+  cleanupSourcingTemplateRecords,
+  deactivateSourcingTemplateRecord,
+  isActiveSourcingTemplateRecord,
+  upsertSourcingTemplateRecord,
+} from "./sourcingTemplates";
 
 type GoogleSheetsConfig = {
   spreadsheetId: string;
@@ -44,6 +49,10 @@ type SpreadsheetMetadata = {
 };
 
 type SheetRows = Record<string, string>[];
+type SheetRecordWithRowNumber<T> = {
+  record: T;
+  rowNumber: number;
+};
 
 const scopes = [
   "https://www.googleapis.com/auth/spreadsheets",
@@ -190,6 +199,98 @@ export async function writeCentralDatabaseToGoogleSheets(database: CentralAppDat
     worksheets: centralWorksheetNames.length,
   });
   return cloneDatabase(savedDatabase);
+}
+
+export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTemplateRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const sourcingRows = await readWorksheetRecordsWithRowNumbers<SourcingTemplateRecord>(
+    spreadsheetId,
+    "SourcingTemplates",
+  );
+  const sourcingCleanup = upsertSourcingTemplateRecord(
+    sourcingRows.rows.map((row) => row.record),
+    record,
+  );
+  await writeChangedWorksheetRows(
+    spreadsheetId,
+    "SourcingTemplates",
+    sourcingRows,
+    sourcingCleanup.records,
+  );
+
+  const appSettingRows = await readWorksheetRecordsWithRowNumbers<AppSettingRecord>(
+    spreadsheetId,
+    "AppSettings",
+  );
+  const appSettings = upsertAppSettingRecord(
+    appSettingRows.rows.map((row) => row.record),
+    `sourcing.activeTemplate.${record.campaignId}`,
+    record.id,
+  );
+  await writeChangedWorksheetRows(spreadsheetId, "AppSettings", appSettingRows, appSettings);
+
+  invalidateDatabaseReadCache("sourcing-template-targeted-write");
+
+  return readCreatorSourcingDatabaseSubset(spreadsheetId, {
+    SourcingTemplates: sourcingCleanup.records,
+    AppSettings: appSettings,
+  });
+}
+
+export async function deactivateSourcingTemplateInGoogleSheets(templateId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const sourcingRows = await readWorksheetRecordsWithRowNumbers<SourcingTemplateRecord>(
+    spreadsheetId,
+    "SourcingTemplates",
+  );
+  const currentTemplates = sourcingRows.rows.map((row) => row.record);
+  const existing = currentTemplates.find((template) => template.id === templateId);
+  if (!existing) {
+    return readCreatorSourcingDatabaseSubset(spreadsheetId, {
+      SourcingTemplates: currentTemplates,
+    });
+  }
+
+  const sourcingCleanup = deactivateSourcingTemplateRecord(currentTemplates, templateId);
+  await writeChangedWorksheetRows(
+    spreadsheetId,
+    "SourcingTemplates",
+    sourcingRows,
+    sourcingCleanup.records,
+  );
+
+  const appSettingRows = await readWorksheetRecordsWithRowNumbers<AppSettingRecord>(
+    spreadsheetId,
+    "AppSettings",
+  );
+  const settingKey = `sourcing.activeTemplate.${existing.campaignId}`;
+  const currentSetting = appSettingRows.rows
+    .map((row) => row.record)
+    .find((setting) => setting.settingKey === settingKey);
+  let appSettings = appSettingRows.rows.map((row) => row.record);
+
+  if (currentSetting?.settingValue === templateId) {
+    const nextTemplate =
+      sourcingCleanup.records.find(
+        (template) =>
+          template.campaignId === existing.campaignId && isActiveSourcingTemplateRecord(template),
+      ) ?? null;
+    appSettings = upsertAppSettingRecord(appSettings, settingKey, nextTemplate?.id ?? "");
+    await writeChangedWorksheetRows(spreadsheetId, "AppSettings", appSettingRows, appSettings);
+  }
+
+  invalidateDatabaseReadCache("sourcing-template-targeted-delete");
+
+  return readCreatorSourcingDatabaseSubset(spreadsheetId, {
+    SourcingTemplates: sourcingCleanup.records,
+    AppSettings: appSettings,
+  });
 }
 
 export async function mergeCentralDatabaseIntoGoogleSheets(localDatabase: CentralAppDatabase) {
@@ -364,6 +465,141 @@ async function replaceWorksheetRows(
     `${quoteSheetName(worksheetName)}!A1:${lastColumn}${rows.length + 1}`,
     [headers, ...rows.map((row) => headers.map((header) => row[header] ?? ""))],
   );
+}
+
+async function readWorksheetRecordsWithRowNumbers<T>(
+  spreadsheetId: string,
+  worksheetName: CentralWorksheetName,
+): Promise<{
+  rows: Array<SheetRecordWithRowNumber<T>>;
+  nextRowNumber: number;
+}> {
+  const values = await readValues(spreadsheetId, `${quoteSheetName(worksheetName)}!A1:Z1000`);
+  const headers = (values[0] ?? []).map(stringValue);
+  const headerMap = buildHeaderMap(headers, requiredWorksheetHeaders[worksheetName]);
+  const missingHeaders = requiredWorksheetHeaders[worksheetName].filter(
+    (header) => headerMap[header] === undefined,
+  );
+  if (missingHeaders.length > 0) {
+    throw new Error(`${worksheetName} is missing required headers: ${missingHeaders.join(", ")}`);
+  }
+
+  const idField = rowIdFields[worksheetName];
+  const rows = values.slice(1).flatMap((row, index) => {
+    const record = Object.fromEntries(
+      requiredWorksheetHeaders[worksheetName].map((header) => [
+        header,
+        stringValue(row[headerMap[header] ?? -1]),
+      ]),
+    ) as T;
+
+    return (record as Record<string, unknown>)[idField] ? [{ record, rowNumber: index + 2 }] : [];
+  });
+
+  return {
+    rows,
+    nextRowNumber: Math.max(values.length + 1, 2),
+  };
+}
+
+async function writeChangedWorksheetRows<T>(
+  spreadsheetId: string,
+  worksheetName: CentralWorksheetName,
+  currentRows: {
+    rows: Array<SheetRecordWithRowNumber<T>>;
+    nextRowNumber: number;
+  },
+  nextRows: T[],
+) {
+  const headers = requiredWorksheetHeaders[worksheetName];
+  let nextAppendRowNumber = currentRows.nextRowNumber;
+
+  for (let index = 0; index < nextRows.length; index += 1) {
+    const nextRecord = nextRows[index];
+    const currentRow = currentRows.rows[index];
+    const rowValues = headers.map(
+      (header) => (nextRecord as Record<string, unknown>)[header] ?? "",
+    );
+
+    if (currentRow) {
+      if (
+        !worksheetRecordChanged(
+          currentRow.record as Record<string, unknown>,
+          nextRecord as Record<string, unknown>,
+          headers,
+        )
+      ) {
+        continue;
+      }
+      await updateValues(
+        spreadsheetId,
+        `${quoteSheetName(worksheetName)}!A${currentRow.rowNumber}:${columnName(headers.length)}${currentRow.rowNumber}`,
+        [rowValues],
+      );
+      continue;
+    }
+
+    await updateValues(
+      spreadsheetId,
+      `${quoteSheetName(worksheetName)}!A${nextAppendRowNumber}:${columnName(headers.length)}${nextAppendRowNumber}`,
+      [rowValues],
+    );
+    nextAppendRowNumber += 1;
+  }
+}
+
+function worksheetRecordChanged(
+  currentRecord: Record<string, unknown>,
+  nextRecord: Record<string, unknown>,
+  headers: string[],
+) {
+  return headers.some(
+    (header) => stringValue(currentRecord[header]) !== stringValue(nextRecord[header]),
+  );
+}
+
+function upsertAppSettingRecord(
+  settings: AppSettingRecord[],
+  settingKey: string,
+  settingValue: string,
+) {
+  const now = new Date().toISOString();
+  const nextSetting: AppSettingRecord = {
+    settingKey,
+    settingValue,
+    updatedAt: now,
+  };
+  const index = settings.findIndex((setting) => setting.settingKey === settingKey);
+  if (index < 0) return [...settings, nextSetting];
+
+  return settings.map((setting, settingIndex) => (settingIndex === index ? nextSetting : setting));
+}
+
+async function readCreatorSourcingDatabaseSubset(
+  spreadsheetId: string,
+  overrides: Partial<{
+    SourcingTemplates: SourcingTemplateRecord[];
+    AppSettings: AppSettingRecord[];
+  }> = {},
+) {
+  const database = createEmptyCentralDatabase();
+  database.worksheets.CampaignProfiles = (await readWorksheetRows(
+    spreadsheetId,
+    "CampaignProfiles",
+  )) as CampaignProfileRecord[];
+  database.worksheets.SourcingTemplates =
+    overrides.SourcingTemplates ??
+    ((await readWorksheetRows(spreadsheetId, "SourcingTemplates")) as SourcingTemplateRecord[]);
+  database.worksheets.AppSettings =
+    overrides.AppSettings ??
+    ((await readWorksheetRows(spreadsheetId, "AppSettings")) as AppSettingRecord[]);
+  return database;
+}
+
+function invalidateDatabaseReadCache(reason: string) {
+  databaseReadCache = null;
+  databaseReadPromise = null;
+  logGoogleSheetsCache("database-cache-invalidated", { reason });
 }
 
 async function getMetadata(spreadsheetId: string): Promise<SpreadsheetMetadata> {
