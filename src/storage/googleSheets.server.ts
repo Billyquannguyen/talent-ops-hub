@@ -21,6 +21,7 @@ import {
   type SourcingTemplateRecord,
   type StorageDiagnostic,
 } from "./schema";
+import { cleanupSourcingTemplateRecords } from "./sourcingTemplates";
 
 type GoogleSheetsConfig = {
   spreadsheetId: string;
@@ -158,16 +159,28 @@ export async function writeCentralDatabaseToGoogleSheets(database: CentralAppDat
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
+  const databaseToSave = cloneDatabase(database);
+  const sourcingCleanup = cleanupSourcingTemplateRecords(
+    databaseToSave.worksheets.SourcingTemplates,
+  );
+  databaseToSave.worksheets.SourcingTemplates = sourcingCleanup.records;
+  if (sourcingCleanup.inactiveCount > 0) {
+    console.info("[SourcingTemplatesCleanup]", "deactivated-duplicates-before-write", {
+      duplicateIdCount: sourcingCleanup.duplicateIdCount,
+      duplicateNameCount: sourcingCleanup.duplicateNameCount,
+      at: new Date().toISOString(),
+    });
+  }
 
   for (const worksheetName of centralWorksheetNames) {
     await replaceWorksheetRows(
       spreadsheetId,
       worksheetName,
-      getRowsForWorksheet(database, worksheetName),
+      getRowsForWorksheet(databaseToSave, worksheetName),
     );
   }
 
-  const savedDatabase = cloneDatabase(database);
+  const savedDatabase = cloneDatabase(databaseToSave);
   databaseReadCache = {
     spreadsheetId,
     database: savedDatabase,
@@ -510,6 +523,7 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         campaignName: stringValue(row.campaignName),
         templateName: stringValue(row.templateName),
         columnsJson: stringValue(row.columnsJson),
+        isActive: stringValue(row.isActive) || "TRUE",
         createdAt: stringValue(row.createdAt),
         updatedAt: stringValue(row.updatedAt),
         createdBy: stringValue(row.createdBy),

@@ -30,6 +30,12 @@ import {
   loadAppDatabaseFromGoogleSheetsOnly,
   saveAppDatabaseToGoogleSheetsOnly,
 } from "@/storage/appRepository";
+import {
+  cleanupSourcingTemplateRecords,
+  deactivateSourcingTemplateRecord,
+  isActiveSourcingTemplateRecord,
+  upsertSourcingTemplateRecord,
+} from "@/storage/sourcingTemplates";
 import type {
   AppSettingRecord,
   CampaignProfileRecord,
@@ -385,17 +391,13 @@ export function CreatorSourcingAssistant() {
     try {
       const database = await loadAppDatabaseFromGoogleSheetsOnly({
         reason: "creator-sourcing:save-template-preload",
+        force: true,
       });
-      const existing = database.worksheets.SourcingTemplates.find(
-        (record) => record.id === template.id,
-      );
       const record = toSourcingTemplateRecord(template, activeProject?.name ?? "");
-      if (existing) {
-        database.worksheets.SourcingTemplates = database.worksheets.SourcingTemplates.map((item) =>
-          item.id === record.id ? record : item,
-        );
-      } else {
-        database.worksheets.SourcingTemplates.push(record);
+      const cleanup = upsertSourcingTemplateRecord(database.worksheets.SourcingTemplates, record);
+      database.worksheets.SourcingTemplates = cleanup.records;
+      if (cleanup.inactiveCount > 0) {
+        console.info("[SourcingTemplatesCleanup]", "save-template", cleanup);
       }
       upsertAppSetting(
         database.worksheets.AppSettings,
@@ -441,14 +443,17 @@ export function CreatorSourcingAssistant() {
     try {
       const database = await loadAppDatabaseFromGoogleSheetsOnly({
         reason: "creator-sourcing:delete-template-preload",
+        force: true,
       });
       const existing = database.worksheets.SourcingTemplates.find(
         (record) => record.id === templateId,
       );
       if (!existing) return true;
-      database.worksheets.SourcingTemplates = database.worksheets.SourcingTemplates.filter(
-        (record) => record.id !== templateId,
+      const cleanup = deactivateSourcingTemplateRecord(
+        database.worksheets.SourcingTemplates,
+        templateId,
       );
+      database.worksheets.SourcingTemplates = cleanup.records;
       const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(database, {
         reason: "creator-sourcing:delete-template",
       });
@@ -658,6 +663,15 @@ export function CreatorSourcingAssistant() {
     }
     if (template.length === 0) {
       setErrorMessage("Add at least one output column to the selected sourcing template.");
+      return;
+    }
+    const missingTemplateFields = getMissingTemplateSourceFields(template, columnMap);
+    if (missingTemplateFields.length > 0) {
+      setErrorMessage(
+        `The selected template uses source fields that were not found in this EasyKOL file: ${missingTemplateFields.join(
+          ", ",
+        )}. Check the uploaded headers or edit the template mapping.`,
+      );
       return;
     }
 
@@ -2616,6 +2630,37 @@ function getMetricRangeCounts(
   }));
 }
 
+function getMissingTemplateSourceFields(
+  template: TemplateColumn[],
+  columnMap: ReturnType<typeof inferColumnMap>,
+): string[] {
+  const missing = new Set<string>();
+
+  template.forEach((column) => {
+    if (column.blockType !== "field" || !column.fieldKey) return;
+    if (!columnMap[column.fieldKey]) missing.add(formatEasyKolFieldLabel(column.fieldKey));
+  });
+
+  const usesContacts = template.some((column) => column.blockType === "contacts");
+  const hasContactSource = ["Email", "Description", "URL"].some(
+    (field) => columnMap[field as EasyKolField],
+  );
+  if (usesContacts && !hasContactSource) {
+    missing.add("Email, Description, or URL for Contacts");
+  }
+
+  return Array.from(missing);
+}
+
+function formatEasyKolFieldLabel(field: EasyKolField): string {
+  const labels: Partial<Record<EasyKolField, string>> = {
+    "Avg. Views": "Avg Views",
+    "Posts (7d)": "Posts 7d",
+    "Posts (30d)": "Posts 30d",
+  };
+  return labels[field] ?? field;
+}
+
 function valueInRange(value: unknown, range: { min: string; max: string }): boolean {
   const metric = parseMetric(value);
   if (metric == null) return false;
@@ -2900,7 +2945,11 @@ function createProjectFromCampaign(
 
 function groupSourcingTemplates(records: SourcingTemplateRecord[]) {
   const grouped = new Map<string, SourcingTemplate[]>();
-  records.forEach((record) => {
+  const cleanup = cleanupSourcingTemplateRecords(records);
+  if (cleanup.inactiveCount > 0) {
+    console.info("[SourcingTemplatesCleanup]", "load-templates", cleanup);
+  }
+  cleanup.records.filter(isActiveSourcingTemplateRecord).forEach((record) => {
     const template = normalizeSourcingTemplateRecord(record);
     const templates = grouped.get(template.campaignId) ?? [];
     templates.push(template);
@@ -2972,6 +3021,7 @@ function toSourcingTemplateRecord(
     campaignName,
     templateName: template.templateName,
     columnsJson: JSON.stringify(template.columns),
+    isActive: "TRUE",
     createdAt: template.createdAt,
     updatedAt: template.updatedAt,
     createdBy: "",
@@ -3060,27 +3110,77 @@ function normalizeFilters(value: unknown): FilterSettings {
 function normalizeTemplate(value: unknown): TemplateColumn[] {
   if (!Array.isArray(value) || value.length === 0) return defaultTemplate();
 
-  return value.map((item, index) => {
-    const column = isRecord(item) ? item : {};
-    const blockType = normalizeBlockType(column.blockType);
-    const fieldKey = easyKolFields.includes(column.fieldKey as EasyKolField)
-      ? (column.fieldKey as EasyKolField)
-      : undefined;
+  return [...value]
+    .sort((first, second) => getTemplateColumnOrder(first) - getTemplateColumnOrder(second))
+    .map((item, index) => {
+      const column = isRecord(item) ? item : {};
+      const fieldKey = normalizeEasyKolFieldKey(
+        column.fieldKey ?? column.sourceField ?? column.sourceEasyKolField ?? column.sourceBlock,
+      );
+      const blockType = normalizeBlockType(
+        column.blockType ?? column.type ?? column.sourceType ?? column.sourceBlock,
+        fieldKey,
+      );
 
-    return {
-      id: String(column.id || createId("column")),
-      label: stringValue(column.label) || `Column ${index + 1}`,
-      blockType: blockType === "field" && !fieldKey ? "blank" : blockType,
-      fieldKey,
-      customValue: stringValue(column.customValue),
-    };
+      return {
+        id: String(column.id || createId("column")),
+        label:
+          stringValue(column.label) ||
+          stringValue(column.outputColumnName) ||
+          stringValue(column.outputName) ||
+          stringValue(column.name) ||
+          `Column ${index + 1}`,
+        blockType: blockType === "field" && !fieldKey ? "blank" : blockType,
+        fieldKey,
+        customValue: stringValue(column.customValue) || stringValue(column.value),
+      };
+    });
+}
+
+function normalizeBlockType(value: unknown, fieldKey?: EasyKolField): TemplateBlockType {
+  const normalized = stringValue(value).trim().toLowerCase();
+  if (fieldKey) return "field";
+  if (normalized === "field" || normalized === "easykol" || normalized === "source") return "field";
+  if (normalized === "contacts" || normalized === "contact") return "contacts";
+  if (normalized === "blank" || normalized === "empty") return "blank";
+  if (normalized === "custom" || normalized === "fixed") return "custom";
+  return "blank";
+}
+
+function normalizeEasyKolFieldKey(value: unknown): EasyKolField | undefined {
+  const normalized = normalizeFieldLookupValue(value);
+  if (!normalized) return undefined;
+  return easyKolFields.find((field) => {
+    const fieldAliases = getEasyKolFieldAliases(field).map(normalizeFieldLookupValue);
+    return normalizeFieldLookupValue(field) === normalized || fieldAliases.includes(normalized);
   });
 }
 
-function normalizeBlockType(value: unknown): TemplateBlockType {
-  return value === "field" || value === "contacts" || value === "blank" || value === "custom"
-    ? value
-    : "blank";
+function getEasyKolFieldAliases(field: EasyKolField): string[] {
+  const aliases: Partial<Record<EasyKolField, string[]>> = {
+    "@Username": ["Username", "Handle", "Account"],
+    "Avg. Views": ["Avg Views", "Average Views"],
+    "Median Views": ["Median View"],
+    "Posts (7d)": ["Posts 7d", "7d Posts", "Posts Last 7 Days"],
+    "Posts (30d)": ["Posts 30d", "30d Posts", "Posts Last 30 Days"],
+    URL: ["Profile URL", "Profile Link", "Link"],
+  };
+  return aliases[field] ?? [];
+}
+
+function getTemplateColumnOrder(value: unknown): number {
+  const record = isRecord(value) ? value : {};
+  const order = Number(
+    record.order ?? record.columnNumber ?? record.index ?? Number.MAX_SAFE_INTEGER,
+  );
+  return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
+}
+
+function normalizeFieldLookupValue(value: unknown): string {
+  return stringValue(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9@]+/g, "");
 }
 
 function normalizeStringArray(value: unknown, legacyValue = ""): string[] {

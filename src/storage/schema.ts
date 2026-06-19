@@ -32,6 +32,7 @@ export type SourcingTemplateRecord = {
   campaignName: string;
   templateName: string;
   columnsJson: string;
+  isActive: string;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -193,6 +194,7 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "campaignName",
     "templateName",
     "columnsJson",
+    "isActive",
     "createdAt",
     "updatedAt",
     "createdBy",
@@ -296,6 +298,7 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   id: ["templateId", "template id", "template_id"],
   templateName: ["template name", "name", "template_name"],
   columnsJson: ["columns", "columns json", "columns_json"],
+  isActive: ["active", "is active", "is_active", "status"],
   createdBy: ["created by", "created_by"],
   updatedBy: ["updated by", "updated_by"],
   cardId: ["id", "card id", "card_id"],
