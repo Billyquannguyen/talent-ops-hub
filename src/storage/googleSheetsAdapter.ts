@@ -38,8 +38,12 @@ export async function getGoogleSheetsStorageStatus(): Promise<StorageStatus> {
   return getGoogleSheetsConnectionStatus();
 }
 
-export async function loadDatabaseFromGoogleSheets(): Promise<GoogleSheetsDatabaseResult> {
-  return loadGoogleSheetsDatabase();
+export async function loadDatabaseFromGoogleSheets(
+  options: {
+    reason?: string;
+  } = {},
+): Promise<GoogleSheetsDatabaseResult> {
+  return loadGoogleSheetsDatabase({ data: { reason: options.reason } });
 }
 
 export async function saveDatabaseToGoogleSheets(

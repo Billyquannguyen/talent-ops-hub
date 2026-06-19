@@ -63,6 +63,18 @@ const rowIdFields: Record<CentralWorksheetName, string> = {
 };
 
 let tokenCache: { accessToken: string; expiresAt: number } | null = null;
+const databaseReadCacheTtlMs = 45_000;
+const databaseShapeCacheTtlMs = 5 * 60_000;
+let databaseReadCache: {
+  spreadsheetId: string;
+  database: CentralAppDatabase;
+  expiresAt: number;
+} | null = null;
+let databaseReadPromise: {
+  spreadsheetId: string;
+  promise: Promise<CentralAppDatabase>;
+} | null = null;
+let databaseShapeCache: { spreadsheetId: string; expiresAt: number } | null = null;
 
 export function getGoogleSheetsServerStatus() {
   const config = readConfig();
@@ -90,9 +102,38 @@ export function getGoogleSheetsServerStatus() {
   };
 }
 
-export async function readCentralDatabaseFromGoogleSheets() {
+export async function readCentralDatabaseFromGoogleSheets(options: { reason?: string } = {}) {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
+  const now = Date.now();
+  const reason = options.reason ?? "unspecified";
+
+  if (
+    databaseReadCache &&
+    databaseReadCache.spreadsheetId === spreadsheetId &&
+    databaseReadCache.expiresAt > now
+  ) {
+    logGoogleSheetsCache("database-cache-hit", {
+      reason,
+      ttlMs: databaseReadCache.expiresAt - now,
+    });
+    return cloneDatabase(databaseReadCache.database);
+  }
+
+  if (databaseReadPromise && databaseReadPromise.spreadsheetId === spreadsheetId) {
+    logGoogleSheetsCache("database-inflight-reuse", { reason });
+    return cloneDatabase(await databaseReadPromise.promise);
+  }
+
+  const promise = readCentralDatabaseFromGoogleSheetsUncached(spreadsheetId, reason).finally(() => {
+    if (databaseReadPromise?.promise === promise) databaseReadPromise = null;
+  });
+  databaseReadPromise = { spreadsheetId, promise };
+  return cloneDatabase(await promise);
+}
+
+async function readCentralDatabaseFromGoogleSheetsUncached(spreadsheetId: string, reason: string) {
+  logGoogleSheetsCache("database-cache-miss", { reason });
   await ensureDatabaseShape(spreadsheetId);
 
   const rowsBySheet = Object.fromEntries(
@@ -104,7 +145,13 @@ export async function readCentralDatabaseFromGoogleSheets() {
     ),
   ) as Record<CentralWorksheetName, SheetRows>;
 
-  return rowsToDatabase(rowsBySheet);
+  const database = rowsToDatabase(rowsBySheet);
+  databaseReadCache = {
+    spreadsheetId,
+    database: cloneDatabase(database),
+    expiresAt: Date.now() + databaseReadCacheTtlMs,
+  };
+  return database;
 }
 
 export async function writeCentralDatabaseToGoogleSheets(database: CentralAppDatabase) {
@@ -120,11 +167,22 @@ export async function writeCentralDatabaseToGoogleSheets(database: CentralAppDat
     );
   }
 
-  return readCentralDatabaseFromGoogleSheets();
+  const savedDatabase = cloneDatabase(database);
+  databaseReadCache = {
+    spreadsheetId,
+    database: savedDatabase,
+    expiresAt: Date.now() + databaseReadCacheTtlMs,
+  };
+  logGoogleSheetsCache("database-cache-refreshed-after-write", {
+    worksheets: centralWorksheetNames.length,
+  });
+  return cloneDatabase(savedDatabase);
 }
 
 export async function mergeCentralDatabaseIntoGoogleSheets(localDatabase: CentralAppDatabase) {
-  const remoteDatabase = await readCentralDatabaseFromGoogleSheets();
+  const remoteDatabase = await readCentralDatabaseFromGoogleSheets({
+    reason: "merge-local-database",
+  });
   const report = {
     CampaignProfiles: 0,
     SourcingTemplates: 0,
@@ -185,6 +243,17 @@ async function resolveSpreadsheetId(config: GoogleSheetsConfig) {
 }
 
 async function ensureDatabaseShape(spreadsheetId: string) {
+  if (
+    databaseShapeCache &&
+    databaseShapeCache.spreadsheetId === spreadsheetId &&
+    databaseShapeCache.expiresAt > Date.now()
+  ) {
+    logGoogleSheetsCache("database-shape-cache-hit", {
+      ttlMs: databaseShapeCache.expiresAt - Date.now(),
+    });
+    return;
+  }
+
   let metadata = await getMetadata(spreadsheetId);
   const existingSheets = new Map(
     (metadata.sheets ?? []).map((sheet) => [sheet.properties.title, sheet.properties.sheetId]),
@@ -223,6 +292,11 @@ async function ensureDatabaseShape(spreadsheetId: string) {
   for (const worksheetName of centralWorksheetNames) {
     await ensureHeaders(spreadsheetId, worksheetName);
   }
+
+  databaseShapeCache = {
+    spreadsheetId,
+    expiresAt: Date.now() + databaseShapeCacheTtlMs,
+  };
 }
 
 async function ensureHeaders(spreadsheetId: string, worksheetName: CentralWorksheetName) {
@@ -284,11 +358,13 @@ async function getMetadata(spreadsheetId: string): Promise<SpreadsheetMetadata> 
     fields:
       "spreadsheetId,spreadsheetUrl,properties(title),sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))",
   });
+  logGoogleSheetsRead("spreadsheets.get", { spreadsheetId });
   return googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?${params}`);
 }
 
 async function readValues(spreadsheetId: string, range: string): Promise<unknown[][]> {
   const encodedRange = encodeURIComponent(range);
+  logGoogleSheetsRead("values.get", { spreadsheetId, range });
   const result = (await googleFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}?valueRenderOption=UNFORMATTED_VALUE`,
   )) as { values?: unknown[][] };
@@ -659,6 +735,24 @@ function numberValue(value: unknown) {
 
 function stringValue(value: unknown) {
   return value == null ? "" : String(value);
+}
+
+function cloneDatabase(database: CentralAppDatabase): CentralAppDatabase {
+  return JSON.parse(JSON.stringify(database)) as CentralAppDatabase;
+}
+
+function logGoogleSheetsRead(operation: string, detail: Record<string, unknown>) {
+  console.info("[GoogleSheetsRead]", operation, {
+    ...detail,
+    at: new Date().toISOString(),
+  });
+}
+
+function logGoogleSheetsCache(operation: string, detail: Record<string, unknown>) {
+  console.info("[GoogleSheetsCache]", operation, {
+    ...detail,
+    at: new Date().toISOString(),
+  });
 }
 
 export function diagnosticsFromError(error: unknown): StorageDiagnostic[] {

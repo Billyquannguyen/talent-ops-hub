@@ -19,6 +19,7 @@ export const campaignMemoryLanguages = [
   "Filipino",
   "Vietnamese",
   "Indonesian",
+  "Korean",
   "Spanish",
 ] as const;
 
@@ -480,6 +481,7 @@ function inferPreferredLanguages(campaignName: string): CampaignMemoryLanguage[]
   }
   if (value.includes("vietnam")) return ["Vietnamese", "English"];
   if (value.includes("indo")) return ["Indonesian", "English"];
+  if (value.includes("korea")) return ["Korean", "English"];
   return ["English"];
 }
 

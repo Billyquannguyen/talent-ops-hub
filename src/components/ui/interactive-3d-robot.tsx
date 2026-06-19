@@ -60,8 +60,8 @@ export function InteractiveRobotSpline({ scene, className }: InteractiveRobotSpl
   }, []);
 
   return (
-    <div className={cn("relative overflow-hidden rounded-2xl bg-background", className)}>
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_45%_20%,rgba(34,211,238,0.28),transparent_34%),linear-gradient(145deg,rgba(20,184,166,0.18),rgba(15,23,42,0.94))]" />
+    <div className={cn("relative overflow-hidden bg-transparent", className)}>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_48%_22%,rgba(34,211,238,0.16),transparent_36%),radial-gradient(circle_at_50%_72%,rgba(16,185,129,0.08),transparent_40%)]" />
       {ready && !failed ? (
         // Spline ships as a web component, so we create it directly instead of adding
         // a package that would make local preview depend on a fresh npm install.

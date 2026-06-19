@@ -240,7 +240,9 @@ export function CreatorSourcingAssistant() {
       setProjectsLoaded(false);
       setErrorMessage("");
       try {
-        const database = await loadAppDatabaseFromGoogleSheetsOnly();
+        const database = await loadAppDatabaseFromGoogleSheetsOnly({
+          reason: "creator-sourcing:load-templates",
+        });
         if (cancelled) return;
         const loadedProjects = loadProjects(database);
         setProjects(loadedProjects);
@@ -381,7 +383,9 @@ export function CreatorSourcingAssistant() {
     setIsSavingTemplates(true);
     setErrorMessage("");
     try {
-      const database = await loadAppDatabaseFromGoogleSheetsOnly();
+      const database = await loadAppDatabaseFromGoogleSheetsOnly({
+        reason: "creator-sourcing:save-template-preload",
+      });
       const existing = database.worksheets.SourcingTemplates.find(
         (record) => record.id === template.id,
       );
@@ -399,7 +403,9 @@ export function CreatorSourcingAssistant() {
         template.id,
       );
 
-      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(database);
+      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(database, {
+        reason: "creator-sourcing:save-template",
+      });
       const loadedProjects = loadProjects(savedDatabase);
       const nextProjects = loadedProjects.map((project) =>
         project.id === template.campaignId
@@ -433,7 +439,9 @@ export function CreatorSourcingAssistant() {
     setIsSavingTemplates(true);
     setErrorMessage("");
     try {
-      const database = await loadAppDatabaseFromGoogleSheetsOnly();
+      const database = await loadAppDatabaseFromGoogleSheetsOnly({
+        reason: "creator-sourcing:delete-template-preload",
+      });
       const existing = database.worksheets.SourcingTemplates.find(
         (record) => record.id === templateId,
       );
@@ -441,7 +449,9 @@ export function CreatorSourcingAssistant() {
       database.worksheets.SourcingTemplates = database.worksheets.SourcingTemplates.filter(
         (record) => record.id !== templateId,
       );
-      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(database);
+      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(database, {
+        reason: "creator-sourcing:delete-template",
+      });
       const loadedProjects = loadProjects(savedDatabase);
       const nextProject =
         loadedProjects.find((project) => project.id === activeProjectId) ?? loadedProjects[0];

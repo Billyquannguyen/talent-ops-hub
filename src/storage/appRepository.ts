@@ -7,6 +7,7 @@ import {
   loadDatabaseFromGoogleSheets,
   migrateDatabaseToGoogleSheets,
   saveDatabaseToGoogleSheets,
+  type GoogleSheetsDatabaseResult,
   type MigrationReport,
 } from "./googleSheetsAdapter";
 
@@ -24,28 +25,48 @@ import {
   type StorageStatus,
 } from "./schema";
 
+const primaryDatabaseCacheTtlMs = 45_000;
+let primaryDatabaseCache: {
+  database: CentralAppDatabase;
+  status: StorageStatus;
+  expiresAt: number;
+} | null = null;
+let primaryDatabaseLoadPromise: Promise<GoogleSheetsDatabaseResult> | null = null;
+
 export function loadAppDatabase(): CentralAppDatabase {
   return loadCentralDatabaseFromLocalStorage().database;
 }
 
-export async function loadAppDatabaseFromGoogleSheetsOnly(): Promise<CentralAppDatabase> {
-  const result = await loadDatabaseFromGoogleSheets();
+export async function loadAppDatabaseFromGoogleSheetsOnly(
+  options: {
+    reason?: string;
+    force?: boolean;
+  } = {},
+): Promise<CentralAppDatabase> {
+  const result = await loadPrimaryDatabaseResult({
+    reason: options.reason ?? "loadAppDatabaseFromGoogleSheetsOnly",
+    force: options.force,
+  });
   if (!result.ok || !result.database) {
     throw new Error(getStorageFailureMessage(result.status));
   }
-  saveCentralDatabaseToLocalStorage(result.database);
-  return result.database;
+  return cloneCentralDatabase(result.database);
 }
 
 export async function saveAppDatabaseToGoogleSheetsOnly(
   database: CentralAppDatabase,
+  options: { reason?: string } = {},
 ): Promise<CentralAppDatabase> {
+  console.info("[AppRepositoryGoogleSheets]", "save-start", {
+    reason: options.reason ?? "saveAppDatabaseToGoogleSheetsOnly",
+    at: new Date().toISOString(),
+  });
   const result = await saveDatabaseToGoogleSheets(database);
   if (!result.ok || !result.database) {
     throw new Error(getStorageFailureMessage(result.status));
   }
-  saveCentralDatabaseToLocalStorage(result.database);
-  return result.database;
+  rememberPrimaryDatabase(result.database, result.status);
+  return cloneCentralDatabase(result.database);
 }
 
 export function saveAppDatabase(database: CentralAppDatabase) {
@@ -53,7 +74,10 @@ export function saveAppDatabase(database: CentralAppDatabase) {
   if (typeof window !== "undefined") {
     void saveDatabaseToGoogleSheets(database)
       .then((result) => {
-        if (result.ok) return;
+        if (result.ok && result.database) {
+          rememberPrimaryDatabase(result.database, result.status);
+          return;
+        }
         reportGoogleSheetsWriteFailure(result.status.diagnostics);
       })
       .catch((error) => {
@@ -134,9 +158,10 @@ export async function getAppStorageStatusAsync(): Promise<StorageStatus> {
 
 export async function refreshAppDatabaseFromPrimary(): Promise<StorageStatus> {
   try {
-    const result = await loadDatabaseFromGoogleSheets();
+    const result = await loadPrimaryDatabaseResult({
+      reason: "refreshAppDatabaseFromPrimary",
+    });
     if (result.ok && result.database) {
-      saveCentralDatabaseToLocalStorage(result.database);
       return {
         ...result.status,
         source: "googleSheets",
@@ -167,6 +192,74 @@ export async function refreshAppDatabaseFromPrimary(): Promise<StorageStatus> {
   }
 }
 
+async function loadPrimaryDatabaseResult({
+  reason,
+  force = false,
+}: {
+  reason: string;
+  force?: boolean;
+}): Promise<GoogleSheetsDatabaseResult> {
+  const now = Date.now();
+  if (!force && primaryDatabaseCache && primaryDatabaseCache.expiresAt > now) {
+    console.info("[AppRepositoryGoogleSheets]", "client-cache-hit", {
+      reason,
+      ttlMs: primaryDatabaseCache.expiresAt - now,
+      at: new Date().toISOString(),
+    });
+    return {
+      ok: true,
+      database: cloneCentralDatabase(primaryDatabaseCache.database),
+      status: primaryDatabaseCache.status,
+    };
+  }
+
+  if (!force && primaryDatabaseLoadPromise) {
+    console.info("[AppRepositoryGoogleSheets]", "client-inflight-reuse", {
+      reason,
+      at: new Date().toISOString(),
+    });
+    const result = await primaryDatabaseLoadPromise;
+    return cloneGoogleSheetsResult(result);
+  }
+
+  console.info("[AppRepositoryGoogleSheets]", "client-cache-miss", {
+    reason,
+    at: new Date().toISOString(),
+  });
+  primaryDatabaseLoadPromise = loadDatabaseFromGoogleSheets({ reason })
+    .then((result) => {
+      if (result.ok && result.database) rememberPrimaryDatabase(result.database, result.status);
+      return result;
+    })
+    .finally(() => {
+      primaryDatabaseLoadPromise = null;
+    });
+
+  const result = await primaryDatabaseLoadPromise;
+  return cloneGoogleSheetsResult(result);
+}
+
+function rememberPrimaryDatabase(database: CentralAppDatabase, status: StorageStatus) {
+  const databaseCopy = cloneCentralDatabase(database);
+  saveCentralDatabaseToLocalStorage(databaseCopy);
+  primaryDatabaseCache = {
+    database: databaseCopy,
+    status,
+    expiresAt: Date.now() + primaryDatabaseCacheTtlMs,
+  };
+}
+
+function cloneGoogleSheetsResult(result: GoogleSheetsDatabaseResult): GoogleSheetsDatabaseResult {
+  return {
+    ...result,
+    database: result.database ? cloneCentralDatabase(result.database) : null,
+  };
+}
+
+function cloneCentralDatabase(database: CentralAppDatabase): CentralAppDatabase {
+  return JSON.parse(JSON.stringify(database)) as CentralAppDatabase;
+}
+
 export async function migrateLocalDatabaseToPrimary(): Promise<{
   ok: boolean;
   report: MigrationReport | null;
@@ -175,7 +268,7 @@ export async function migrateLocalDatabaseToPrimary(): Promise<{
   const localDatabase = loadAppDatabase();
   const result = await migrateDatabaseToGoogleSheets(localDatabase);
   if (result.ok && result.database) {
-    saveCentralDatabaseToLocalStorage(result.database);
+    rememberPrimaryDatabase(result.database, result.status);
   }
   return {
     ok: result.ok,

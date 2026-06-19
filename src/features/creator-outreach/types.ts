@@ -10,6 +10,7 @@ export const outreachLanguages = [
   { code: "vietnamese", label: "Vietnamese" },
   { code: "filipino", label: "Filipino" },
   { code: "indonesian", label: "Indonesian" },
+  { code: "korean", label: "Korean" },
   { code: "spanish", label: "Spanish" },
 ] as const;
 

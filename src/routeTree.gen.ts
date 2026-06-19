@@ -26,6 +26,7 @@ import { Route as ActiveCampaignsRouteImport } from './routes/active-campaigns'
 import { Route as AboutKatlasMediaRouteImport } from './routes/about-katlas-media'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ActiveCampaignsIndexRouteImport } from './routes/active-campaigns.index'
+import { Route as ApiTranslateRouteImport } from './routes/api/translate'
 import { Route as ActiveCampaignsCampaignIdRouteImport } from './routes/active-campaigns.$campaignId'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -113,6 +114,11 @@ const ActiveCampaignsIndexRoute = ActiveCampaignsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ActiveCampaignsRoute,
 } as any)
+const ApiTranslateRoute = ApiTranslateRouteImport.update({
+  id: '/api/translate',
+  path: '/api/translate',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ActiveCampaignsCampaignIdRoute =
   ActiveCampaignsCampaignIdRouteImport.update({
     id: '/$campaignId',
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
+  '/api/translate': typeof ApiTranslateRoute
   '/active-campaigns/': typeof ActiveCampaignsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -157,6 +164,7 @@ export interface FileRoutesByTo {
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
+  '/api/translate': typeof ApiTranslateRoute
   '/active-campaigns': typeof ActiveCampaignsIndexRoute
 }
 export interface FileRoutesById {
@@ -178,6 +186,7 @@ export interface FileRoutesById {
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
+  '/api/translate': typeof ApiTranslateRoute
   '/active-campaigns/': typeof ActiveCampaignsIndexRoute
 }
 export interface FileRouteTypes {
@@ -200,6 +209,7 @@ export interface FileRouteTypes {
     | '/roster'
     | '/settings'
     | '/active-campaigns/$campaignId'
+    | '/api/translate'
     | '/active-campaigns/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -219,6 +229,7 @@ export interface FileRouteTypes {
     | '/roster'
     | '/settings'
     | '/active-campaigns/$campaignId'
+    | '/api/translate'
     | '/active-campaigns'
   id:
     | '__root__'
@@ -239,6 +250,7 @@ export interface FileRouteTypes {
     | '/roster'
     | '/settings'
     | '/active-campaigns/$campaignId'
+    | '/api/translate'
     | '/active-campaigns/'
   fileRoutesById: FileRoutesById
 }
@@ -259,6 +271,7 @@ export interface RootRouteChildren {
   OutreachRoute: typeof OutreachRoute
   RosterRoute: typeof RosterRoute
   SettingsRoute: typeof SettingsRoute
+  ApiTranslateRoute: typeof ApiTranslateRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -382,6 +395,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ActiveCampaignsIndexRouteImport
       parentRoute: typeof ActiveCampaignsRoute
     }
+    '/api/translate': {
+      id: '/api/translate'
+      path: '/api/translate'
+      fullPath: '/api/translate'
+      preLoaderRoute: typeof ApiTranslateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/active-campaigns/$campaignId': {
       id: '/active-campaigns/$campaignId'
       path: '/$campaignId'
@@ -423,6 +443,7 @@ const rootRouteChildren: RootRouteChildren = {
   OutreachRoute: OutreachRoute,
   RosterRoute: RosterRoute,
   SettingsRoute: SettingsRoute,
+  ApiTranslateRoute: ApiTranslateRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
