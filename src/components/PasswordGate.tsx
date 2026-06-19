@@ -39,8 +39,8 @@ export function PasswordGate({ status, onUnlocked }: PasswordGateProps) {
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#020604] text-foreground">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_20%,rgba(34,197,94,0.18),transparent_32%),radial-gradient(circle_at_78%_45%,rgba(34,211,238,0.14),transparent_34%),linear-gradient(135deg,#020604_0%,#06110d_42%,#010302_100%)]" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-background/80 to-transparent" />
-      <div className="relative mx-auto grid min-h-screen w-full max-w-7xl items-center gap-8 px-6 py-10 md:px-10 lg:grid-cols-[0.88fr_1.12fr] lg:gap-4">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#020604] to-transparent" />
+      <div className="relative mx-auto grid min-h-screen w-full max-w-7xl items-center gap-8 px-6 py-10 md:px-10 lg:grid-cols-[0.92fr_1.08fr] lg:gap-0">
         <section className="z-10 mx-auto w-full max-w-xl lg:mx-0">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs font-medium text-emerald-100 shadow-[0_0_32px_rgba(16,185,129,0.12)] backdrop-blur">
             <ShieldCheck className="size-3.5" />
@@ -99,14 +99,16 @@ export function PasswordGate({ status, onUnlocked }: PasswordGateProps) {
           ) : null}
         </section>
 
-        <section className="relative min-h-[360px] lg:min-h-[720px]">
-          <div className="pointer-events-none absolute left-1/2 top-1/2 size-[560px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/10 blur-3xl lg:size-[760px]" />
-          <div className="relative mx-auto h-[360px] w-full max-w-[620px] translate-y-4 md:h-[480px] lg:h-[720px] lg:max-w-none lg:translate-x-6 lg:translate-y-0">
+        <section className="relative flex min-h-[360px] items-center justify-center overflow-hidden lg:min-h-[720px]">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 size-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/10 blur-3xl md:size-[520px] lg:size-[640px]" />
+          <div className="katlas-mascot-float relative mx-auto h-[min(66vh,640px)] min-h-[340px] w-full max-w-[620px] overflow-hidden md:min-h-[430px] lg:max-w-[700px]">
             <InteractiveRobotSpline
               scene={robotSceneUrl}
-              className="h-full w-full scale-[1.08] md:scale-110 lg:scale-[1.16]"
+              className="pointer-events-none h-full w-full"
+              sceneClassName="katlas-spline-mascot-mask left-1/2 top-[53%] h-[138%] w-[138%] -translate-x-1/2 -translate-y-1/2 scale-[1.28] md:scale-[1.32] lg:scale-[1.38]"
+              viewerClassName="scale-[1.06]"
             />
-            <div className="pointer-events-none absolute bottom-0 right-0 h-24 w-48 bg-gradient-to-tl from-[#020604] via-[#020604]/82 to-transparent" />
+            <div className="pointer-events-none absolute bottom-[43%] left-1/2 h-7 w-[22%] -translate-x-1/2 rounded-full bg-cyan-200/10 blur-xl" />
           </div>
         </section>
       </div>
