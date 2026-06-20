@@ -1,4 +1,11 @@
-import { loadAppDatabase, saveAppDatabase } from "@/storage/appRepository";
+import {
+  loadAppDatabase,
+  loadAppDatabaseFromGoogleSheetsOnly,
+  listCampaignMemoryCardsFromGoogleSheetsOnly,
+  replaceCampaignMemoryCardsForCampaignInGoogleSheetsOnly,
+  saveAppDatabase,
+} from "@/storage/appRepository";
+import type { CampaignMemoryCardRecord, CentralAppDatabase } from "@/storage/schema";
 
 export const selectedCreatorStatuses = [
   "Contract Signed",
@@ -93,49 +100,50 @@ export function loadCampaignRegistry(): GlobalCampaignRegistry {
 
   try {
     const database = loadAppDatabase();
-    const campaigns = database.worksheets.CampaignProfiles.map((campaign) =>
-      normalizeCampaign({
-        id: campaign.campaignId,
-        campaignName: campaign.campaignName,
-        campaignCode: campaign.campaignCode,
-        country: campaign.country,
-        status: campaign.status,
-        preferredLanguages: campaign.preferredLanguages,
-        memoryCards: database.worksheets.CampaignMemoryCards.filter(
-          (card) => card.campaignId === campaign.campaignId,
-        ).map((card) => ({
-          id: card.cardId,
-          title: card.title,
-          content: card.content,
-        })),
-        createdAt: campaign.createdAt,
-        updatedAt: campaign.updatedAt,
-      }),
-    );
-    const campaignIds = new Set(campaigns.map((campaign) => campaign.id));
-    const creatorRecords = database.worksheets.ActiveCampaignCreators.map((record) =>
-      normalizeCreatorRecord({
-        id: record.recordId,
-        campaignRegistryId: record.campaignId,
-        creatorName: record.creatorName,
-        creatorLink: record.creatorLink,
-        avgViews: record.avgViews,
-        internalQuote: record.internalQuote,
-        externalQuote: record.externalQuote,
-        status: record.status,
-        draftLink: record.draftLink,
-        liveLink: record.liveLink,
-        notes: record.notes,
-        createdAt: record.createdAt,
-        updatedAt: record.updatedAt,
-      }),
-    ).filter((record) => campaignIds.has(record.campaignRegistryId));
+    const registry = databaseToCampaignRegistry(database);
 
-    if (!campaigns.length) return loadLegacyCampaignRegistry() ?? { campaigns, creatorRecords };
-    return { campaigns, creatorRecords };
+    if (!registry.campaigns.length) return loadLegacyCampaignRegistry() ?? registry;
+    return registry;
   } catch {
     return loadLegacyCampaignRegistry() ?? { campaigns: [], creatorRecords: [] };
   }
+}
+
+export async function loadCampaignRegistryFromGoogleSheetsOnly(options: { reason?: string } = {}) {
+  await listCampaignMemoryCardsFromGoogleSheetsOnly();
+  const database = await loadAppDatabaseFromGoogleSheetsOnly({
+    reason: options.reason ?? "loadCampaignRegistryFromGoogleSheetsOnly",
+    force: true,
+  });
+  return databaseToCampaignRegistry(database);
+}
+
+export async function saveCampaignMemoryForCampaign(
+  campaign: GlobalCampaign,
+): Promise<GlobalCampaignRegistry> {
+  const preferredLanguages = campaign.preferredLanguages.join(", ");
+  const now = new Date().toISOString();
+  const records = campaign.memoryCards
+    .filter((card) => card.title.trim() || card.content.trim())
+    .map(
+      (card, index): CampaignMemoryCardRecord => ({
+        cardId: card.id,
+        campaignId: campaign.id,
+        title: card.title.trim() || `Smart Field ${index + 1}`,
+        content: card.content,
+        preferredLanguages,
+        createdAt: campaign.createdAt || now,
+        updatedAt: now,
+      }),
+    );
+
+  await replaceCampaignMemoryCardsForCampaignInGoogleSheetsOnly({
+    campaignId: campaign.id,
+    preferredLanguages,
+    records,
+  });
+
+  return loadCampaignRegistry();
 }
 
 export function saveCampaignRegistry(registry: GlobalCampaignRegistry) {
@@ -187,6 +195,48 @@ export function saveCampaignRegistry(registry: GlobalCampaignRegistry) {
     };
   });
   saveAppDatabase(database);
+}
+
+function databaseToCampaignRegistry(database: CentralAppDatabase): GlobalCampaignRegistry {
+  const campaigns = database.worksheets.CampaignProfiles.map((campaign) =>
+    normalizeCampaign({
+      id: campaign.campaignId,
+      campaignName: campaign.campaignName,
+      campaignCode: campaign.campaignCode,
+      country: campaign.country,
+      status: campaign.status,
+      preferredLanguages: campaign.preferredLanguages,
+      memoryCards: database.worksheets.CampaignMemoryCards.filter(
+        (card) => card.campaignId === campaign.campaignId,
+      ).map((card) => ({
+        id: card.cardId,
+        title: card.title,
+        content: card.content,
+      })),
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt,
+    }),
+  );
+  const campaignIds = new Set(campaigns.map((campaign) => campaign.id));
+  const creatorRecords = database.worksheets.ActiveCampaignCreators.map((record) =>
+    normalizeCreatorRecord({
+      id: record.recordId,
+      campaignRegistryId: record.campaignId,
+      creatorName: record.creatorName,
+      creatorLink: record.creatorLink,
+      avgViews: record.avgViews,
+      internalQuote: record.internalQuote,
+      externalQuote: record.externalQuote,
+      status: record.status,
+      draftLink: record.draftLink,
+      liveLink: record.liveLink,
+      notes: record.notes,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    }),
+  ).filter((record) => campaignIds.has(record.campaignRegistryId));
+
+  return { campaigns, creatorRecords };
 }
 
 export function createCampaign(campaignName: string, campaignCode: string): GlobalCampaign {

@@ -1,5 +1,5 @@
-import { getAppSetting, readOutreachTemplates, updateDatabase } from "@/storage/appRepository";
-import type { AppSettingRecord } from "@/storage/schema";
+import { getAppSetting, readOutreachTemplates } from "@/storage/appRepository";
+import type { OutreachTemplateRecord } from "@/storage/schema";
 
 import { createId, extractTemplateFields } from "./messageComposer";
 import {
@@ -58,29 +58,46 @@ export function loadKatlasBuddyDatabase(): KatlasBuddyDatabase {
 
 export function saveKatlasBuddyDatabase(database: KatlasBuddyDatabase) {
   if (typeof window === "undefined") return;
-  updateDatabase((centralDatabase) => {
-    centralDatabase.worksheets.OutreachTemplates = database.worksheets.Templates.map(
-      (template) => ({
-        templateId: template.id,
-        templateName: template.templateName,
-        type: template.channelType === "Email" ? "Email" : "DM",
-        body: template.body,
-        createdAt: template.createdAt,
-        updatedAt: template.updatedAt,
-      }),
-    );
+  window.localStorage.setItem(
+    "katlas-outreach-settings-v1",
+    JSON.stringify(database.worksheets.Settings),
+  );
+}
 
-    upsertSetting(
-      centralDatabase.worksheets.AppSettings,
-      "outreach.defaultSource",
-      database.worksheets.Settings.defaultSource,
-    );
-    upsertSetting(
-      centralDatabase.worksheets.AppSettings,
-      "outreach.defaultTargetLanguage",
-      database.worksheets.Settings.defaultTargetLanguage,
-    );
+export function createOutreachDatabaseFromRecords(
+  records: OutreachTemplateRecord[],
+): KatlasBuddyDatabase {
+  const defaultDatabase = createDefaultDatabase();
+
+  return {
+    databaseName: katlasBuddyDatabaseName,
+    worksheets: {
+      Templates: records.map(outreachTemplateRecordToTemplate),
+      Settings: defaultDatabase.worksheets.Settings,
+    },
+  };
+}
+
+export function outreachTemplateRecordToTemplate(record: OutreachTemplateRecord): OutreachTemplate {
+  return normalizeTemplate({
+    id: record.templateId,
+    templateName: record.templateName,
+    channelType: record.type,
+    body: record.body,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
   });
+}
+
+export function outreachTemplateToRecord(template: OutreachTemplate): OutreachTemplateRecord {
+  return {
+    templateId: template.id,
+    templateName: template.templateName,
+    type: template.channelType === "Email" ? "Email" : "DM",
+    body: template.body,
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt,
+  };
 }
 
 export function createDefaultDatabase(): KatlasBuddyDatabase {
@@ -252,17 +269,6 @@ function normalizeSettings(value: unknown, fallback: OutreachSettings): Outreach
     worksheetNames: [...katlasBuddyWorksheetNames],
     updatedAt: stringValue(settings.updatedAt) || new Date().toISOString(),
   };
-}
-
-function upsertSetting(settings: AppSettingRecord[], settingKey: string, settingValue: string) {
-  const existing = settings.find((setting) => setting.settingKey === settingKey);
-  const updatedAt = new Date().toISOString();
-  if (existing && "settingValue" in existing) {
-    existing.settingValue = settingValue;
-    existing.updatedAt = updatedAt;
-    return;
-  }
-  settings.push({ settingKey, settingValue, updatedAt });
 }
 
 function normalizeCategory(value: unknown): TemplateCategory {

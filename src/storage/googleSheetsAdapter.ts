@@ -2,21 +2,36 @@ import {
   centralWorksheetNames,
   requiredWorksheetHeaders,
   worksheetHeaderAliases,
+  type CampaignMemoryCardRecord,
+  type CampaignProfileRecord,
   type CentralAppDatabase,
   type CentralWorksheetName,
+  type OutreachTemplateRecord,
   type SourcingTemplateRecord,
   type StorageDiagnostic,
   type StorageStatus,
 } from "./schema";
 import {
+  cleanupCampaignMemoryCardsRecord,
+  cleanupOutreachTemplatesRecord,
   cleanupSourcingTemplatesRecord,
+  cleanupSourcingActiveTemplateSettingsRecord,
+  createCampaignMemoryCardRecord,
+  createOutreachTemplateRecord,
+  deleteCampaignMemoryCardRecord,
+  deleteOutreachTemplateRecord,
   deleteSourcingTemplateRecord,
   getGoogleSheetsConnectionStatus,
+  listCampaignMemoryCardRecords,
+  listOutreachTemplateRecords,
   loadCreatorSourcingGoogleSheetsDatabase,
   loadGoogleSheetsDatabase,
   migrateLocalDatabaseToGoogleSheets,
+  replaceCampaignMemoryCardsForCampaignRecord,
   saveGoogleSheetsDatabase,
   saveSourcingTemplateRecord,
+  updateCampaignMemoryCardRecord,
+  updateOutreachTemplateRecord,
 } from "./googleSheets.functions";
 
 export type RawSheetTable = {
@@ -46,6 +61,42 @@ export type SourcingTemplateCleanupReport = {
   removedInactiveRows: number;
   removedDuplicateIdRows: number;
   removedDuplicateNameRows: number;
+};
+
+export type OutreachTemplateCleanupReport = {
+  beforeRows: number;
+  afterRows: number;
+  removedRows: number;
+  removedEmptyRows: number;
+  removedDuplicateIdRows: number;
+  removedDuplicateNameRows: number;
+};
+
+export type OutreachTemplatesResult = {
+  ok: boolean;
+  records: OutreachTemplateRecord[];
+  report: OutreachTemplateCleanupReport | null;
+  status: StorageStatus;
+};
+
+export type CampaignMemoryCardCleanupReport = {
+  beforeRows: number;
+  afterRows: number;
+  removedRows: number;
+  removedEmptyRows: number;
+  reassignedDuplicateCardIds: number;
+  removedDuplicateTitleRows: number;
+};
+
+export type CampaignMemoryCardsResult = {
+  ok: boolean;
+  records: CampaignMemoryCardRecord[];
+  report: CampaignMemoryCardCleanupReport | null;
+  status: StorageStatus;
+};
+
+export type CampaignMemoryCardsForCampaignResult = CampaignMemoryCardsResult & {
+  campaignProfiles: CampaignProfileRecord[];
 };
 
 export async function getGoogleSheetsStorageStatus(): Promise<StorageStatus> {
@@ -90,6 +141,81 @@ export async function cleanupSourcingTemplatesInGoogleSheets(): Promise<
   GoogleSheetsDatabaseResult & { report: SourcingTemplateCleanupReport | null }
 > {
   return cleanupSourcingTemplatesRecord();
+}
+
+export async function listOutreachTemplatesFromGoogleSheets(): Promise<OutreachTemplatesResult> {
+  return listOutreachTemplateRecords();
+}
+
+export async function createOutreachTemplateInGoogleSheets(
+  record: OutreachTemplateRecord,
+): Promise<OutreachTemplatesResult> {
+  return createOutreachTemplateRecord({ data: { record } });
+}
+
+export async function updateOutreachTemplateInGoogleSheets(
+  record: OutreachTemplateRecord,
+): Promise<OutreachTemplatesResult> {
+  return updateOutreachTemplateRecord({ data: { record } });
+}
+
+export async function deleteOutreachTemplateFromGoogleSheets(
+  templateId: string,
+): Promise<OutreachTemplatesResult> {
+  return deleteOutreachTemplateRecord({ data: { templateId } });
+}
+
+export async function cleanupOutreachTemplatesInGoogleSheets(): Promise<OutreachTemplatesResult> {
+  return cleanupOutreachTemplatesRecord();
+}
+
+export async function listCampaignMemoryCardsFromGoogleSheets(): Promise<CampaignMemoryCardsResult> {
+  return listCampaignMemoryCardRecords();
+}
+
+export async function createCampaignMemoryCardInGoogleSheets(
+  record: CampaignMemoryCardRecord,
+): Promise<CampaignMemoryCardsResult> {
+  return createCampaignMemoryCardRecord({ data: { record } });
+}
+
+export async function updateCampaignMemoryCardInGoogleSheets(
+  record: CampaignMemoryCardRecord,
+): Promise<CampaignMemoryCardsResult> {
+  return updateCampaignMemoryCardRecord({ data: { record } });
+}
+
+export async function deleteCampaignMemoryCardFromGoogleSheets(
+  cardId: string,
+): Promise<CampaignMemoryCardsResult> {
+  return deleteCampaignMemoryCardRecord({ data: { cardId } });
+}
+
+export async function replaceCampaignMemoryCardsForCampaignInGoogleSheets({
+  campaignId,
+  preferredLanguages,
+  records,
+}: {
+  campaignId: string;
+  preferredLanguages: string;
+  records: CampaignMemoryCardRecord[];
+}): Promise<CampaignMemoryCardsForCampaignResult> {
+  return replaceCampaignMemoryCardsForCampaignRecord({
+    data: { campaignId, preferredLanguages, records },
+  });
+}
+
+export async function cleanupCampaignMemoryCardsInGoogleSheets(): Promise<CampaignMemoryCardsResult> {
+  return cleanupCampaignMemoryCardsRecord();
+}
+
+export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets(): Promise<{
+  ok: boolean;
+  records: unknown[];
+  changedCount: number;
+  status: StorageStatus;
+}> {
+  return cleanupSourcingActiveTemplateSettingsRecord();
 }
 
 export async function migrateDatabaseToGoogleSheets(database: CentralAppDatabase): Promise<{

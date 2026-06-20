@@ -3,16 +3,30 @@ import {
   saveCentralDatabaseToLocalStorage,
 } from "./localStorageAdapter";
 import {
+  cleanupCampaignMemoryCardsInGoogleSheets,
+  cleanupOutreachTemplatesInGoogleSheets,
+  cleanupSourcingActiveTemplateSettingsInGoogleSheets,
   cleanupSourcingTemplatesInGoogleSheets,
+  createCampaignMemoryCardInGoogleSheets,
+  createOutreachTemplateInGoogleSheets,
+  deleteCampaignMemoryCardFromGoogleSheets,
+  deleteOutreachTemplateFromGoogleSheets,
   deleteSourcingTemplateFromGoogleSheets,
   getGoogleSheetsStorageStatus,
+  listCampaignMemoryCardsFromGoogleSheets,
+  listOutreachTemplatesFromGoogleSheets,
   loadCreatorSourcingDatabaseFromGoogleSheets,
   loadDatabaseFromGoogleSheets,
   migrateDatabaseToGoogleSheets,
+  replaceCampaignMemoryCardsForCampaignInGoogleSheets,
   saveDatabaseToGoogleSheets,
   saveSourcingTemplateToGoogleSheets,
+  updateCampaignMemoryCardInGoogleSheets,
+  updateOutreachTemplateInGoogleSheets,
+  type CampaignMemoryCardCleanupReport,
   type GoogleSheetsDatabaseResult,
   type MigrationReport,
+  type OutreachTemplateCleanupReport,
   type SourcingTemplateCleanupReport,
 } from "./googleSheetsAdapter";
 
@@ -134,6 +148,227 @@ export async function cleanupSourcingTemplatesInGoogleSheetsOnly(): Promise<{
   return {
     database: cloneCentralDatabase(result.database),
     report: result.report,
+  };
+}
+
+export async function listOutreachTemplatesFromGoogleSheetsOnly(): Promise<{
+  records: OutreachTemplateRecord[];
+  report: OutreachTemplateCleanupReport | null;
+}> {
+  console.info("[AppRepositoryGoogleSheets]", "list-outreach-templates-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listOutreachTemplatesFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  return {
+    records: result.records,
+    report: result.report,
+  };
+}
+
+export async function createOutreachTemplateInGoogleSheetsOnly(
+  record: OutreachTemplateRecord,
+): Promise<OutreachTemplateRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "create-outreach-template-start", {
+    templateId: record.templateId,
+    templateName: record.templateName,
+    at: new Date().toISOString(),
+  });
+  const result = await createOutreachTemplateInGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  return result.records;
+}
+
+export async function updateOutreachTemplateInGoogleSheetsOnly(
+  record: OutreachTemplateRecord,
+): Promise<OutreachTemplateRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "update-outreach-template-start", {
+    templateId: record.templateId,
+    templateName: record.templateName,
+    at: new Date().toISOString(),
+  });
+  const result = await updateOutreachTemplateInGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  return result.records;
+}
+
+export async function deleteOutreachTemplateFromGoogleSheetsOnly(
+  templateId: string,
+): Promise<OutreachTemplateRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "delete-outreach-template-start", {
+    templateId,
+    at: new Date().toISOString(),
+  });
+  const result = await deleteOutreachTemplateFromGoogleSheets(templateId);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  return result.records;
+}
+
+export async function cleanupOutreachTemplatesInGoogleSheetsOnly(): Promise<{
+  records: OutreachTemplateRecord[];
+  report: OutreachTemplateCleanupReport | null;
+}> {
+  console.info("[AppRepositoryGoogleSheets]", "cleanup-outreach-templates-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await cleanupOutreachTemplatesInGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  return {
+    records: result.records,
+    report: result.report,
+  };
+}
+
+export async function listCampaignMemoryCardsFromGoogleSheetsOnly(): Promise<{
+  records: CampaignMemoryCardRecord[];
+  report: CampaignMemoryCardCleanupReport | null;
+}> {
+  console.info("[AppRepositoryGoogleSheets]", "list-campaign-memory-cards-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listCampaignMemoryCardsFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignMemoryCards(result.records);
+  return {
+    records: result.records,
+    report: result.report,
+  };
+}
+
+export async function createCampaignMemoryCardInGoogleSheetsOnly(
+  record: CampaignMemoryCardRecord,
+): Promise<CampaignMemoryCardRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "create-campaign-memory-card-start", {
+    cardId: record.cardId,
+    campaignId: record.campaignId,
+    at: new Date().toISOString(),
+  });
+  const result = await createCampaignMemoryCardInGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignMemoryCards(result.records);
+  return result.records;
+}
+
+export async function updateCampaignMemoryCardInGoogleSheetsOnly(
+  record: CampaignMemoryCardRecord,
+): Promise<CampaignMemoryCardRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "update-campaign-memory-card-start", {
+    cardId: record.cardId,
+    campaignId: record.campaignId,
+    at: new Date().toISOString(),
+  });
+  const result = await updateCampaignMemoryCardInGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignMemoryCards(result.records);
+  return result.records;
+}
+
+export async function deleteCampaignMemoryCardFromGoogleSheetsOnly(
+  cardId: string,
+): Promise<CampaignMemoryCardRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "delete-campaign-memory-card-start", {
+    cardId,
+    at: new Date().toISOString(),
+  });
+  const result = await deleteCampaignMemoryCardFromGoogleSheets(cardId);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignMemoryCards(result.records);
+  return result.records;
+}
+
+export async function replaceCampaignMemoryCardsForCampaignInGoogleSheetsOnly({
+  campaignId,
+  preferredLanguages,
+  records,
+}: {
+  campaignId: string;
+  preferredLanguages: string;
+  records: CampaignMemoryCardRecord[];
+}): Promise<{
+  records: CampaignMemoryCardRecord[];
+  campaignProfiles: CampaignProfileRecord[];
+  report: CampaignMemoryCardCleanupReport | null;
+}> {
+  console.info("[AppRepositoryGoogleSheets]", "replace-campaign-memory-cards-start", {
+    campaignId,
+    cards: records.length,
+    at: new Date().toISOString(),
+  });
+  const result = await replaceCampaignMemoryCardsForCampaignInGoogleSheets({
+    campaignId,
+    preferredLanguages,
+    records,
+  });
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignMemoryCards(result.records, result.campaignProfiles);
+  return {
+    records: result.records,
+    campaignProfiles: result.campaignProfiles,
+    report: result.report,
+  };
+}
+
+export async function cleanupCampaignMemoryCardsInGoogleSheetsOnly(): Promise<{
+  records: CampaignMemoryCardRecord[];
+  report: CampaignMemoryCardCleanupReport | null;
+}> {
+  console.info("[AppRepositoryGoogleSheets]", "cleanup-campaign-memory-cards-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await cleanupCampaignMemoryCardsInGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignMemoryCards(result.records);
+  return {
+    records: result.records,
+    report: result.report,
+  };
+}
+
+export async function cleanupSourcingActiveTemplateSettingsInGoogleSheetsOnly(): Promise<{
+  changedCount: number;
+}> {
+  console.info("[AppRepositoryGoogleSheets]", "cleanup-sourcing-active-template-settings-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await cleanupSourcingActiveTemplateSettingsInGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  return {
+    changedCount: result.changedCount,
   };
 }
 
@@ -315,6 +550,16 @@ function rememberPrimaryDatabase(database: CentralAppDatabase, status: StorageSt
     status,
     expiresAt: Date.now() + primaryDatabaseCacheTtlMs,
   };
+}
+
+function rememberCampaignMemoryCards(
+  records: CampaignMemoryCardRecord[],
+  campaignProfiles?: CampaignProfileRecord[],
+) {
+  const database = loadAppDatabase();
+  database.worksheets.CampaignMemoryCards = records;
+  if (campaignProfiles) database.worksheets.CampaignProfiles = campaignProfiles;
+  saveCentralDatabaseToLocalStorage(database);
 }
 
 function clearPrimaryDatabaseCache() {

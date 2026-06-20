@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -29,20 +30,31 @@ import { TopBar } from "@/components/TopBar";
 import {
   campaignMemoryLanguages,
   loadCampaignRegistry,
-  saveCampaignRegistry,
+  loadCampaignRegistryFromGoogleSheetsOnly,
+  saveCampaignMemoryForCampaign,
   type CampaignMemoryLanguage,
   type CampaignMemoryCard,
   type GlobalCampaignRegistry,
 } from "@/lib/campaignRegistry";
 import {
+  createOutreachTemplateInGoogleSheetsOnly,
+  deleteOutreachTemplateFromGoogleSheetsOnly,
+  listOutreachTemplatesFromGoogleSheetsOnly,
   loadAppDatabaseFromGoogleSheetsOnly,
   saveAppDatabaseToGoogleSheetsOnly,
+  updateOutreachTemplateInGoogleSheetsOnly,
 } from "@/storage/appRepository";
-import type { AgencyDatabaseRecord, CreatorDatabaseRecord } from "@/storage/schema";
+import type {
+  AgencyDatabaseRecord,
+  CreatorDatabaseRecord,
+  OutreachTemplateRecord,
+} from "@/storage/schema";
 import { DatabaseViewModal } from "./ContactDatabaseModal";
 import {
   createDefaultDatabase,
   loadKatlasBuddyDatabase,
+  outreachTemplateRecordToTemplate,
+  outreachTemplateToRecord,
   saveKatlasBuddyDatabase,
 } from "./database";
 import {
@@ -118,6 +130,7 @@ export function CreatorOutreachAssistant() {
   const [translationStatus, setTranslationStatus] = useState("");
   const replyEditorTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const translatedReplyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const selectedTemplateIdRef = useRef("");
   const activeTextTargetRef = useRef<{
     id: TextInsertTarget;
     element: HTMLTextAreaElement;
@@ -141,15 +154,79 @@ export function CreatorOutreachAssistant() {
   const defaultTargetLanguage = settings.defaultTargetLanguage ?? "english";
 
   useEffect(() => {
+    selectedTemplateIdRef.current = selectedTemplateId;
+  }, [selectedTemplateId]);
+
+  const applyOutreachTemplateRecords = useCallback(
+    (records: OutreachTemplateRecord[], preferredTemplateId?: string) => {
+      const nextTemplates = records.map(outreachTemplateRecordToTemplate);
+      const currentSelectedTemplateId = selectedTemplateIdRef.current;
+      const nextSelectedTemplateId =
+        (preferredTemplateId &&
+        nextTemplates.some((template) => template.id === preferredTemplateId)
+          ? preferredTemplateId
+          : currentSelectedTemplateId &&
+              nextTemplates.some((template) => template.id === currentSelectedTemplateId)
+            ? currentSelectedTemplateId
+            : nextTemplates[0]?.id) ?? "";
+
+      selectedTemplateIdRef.current = nextSelectedTemplateId;
+      setDatabase((current) => ({
+        ...current,
+        worksheets: {
+          ...current.worksheets,
+          Templates: nextTemplates,
+        },
+      }));
+      setSelectedTemplateId(nextSelectedTemplateId);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
     const loadedDatabase = loadKatlasBuddyDatabase();
     const loadedRegistry = loadCampaignRegistry();
+    const loadedTemplateId = loadedDatabase.worksheets.Templates[0]?.id ?? "";
     setDatabase(loadedDatabase);
     setCampaignRegistry(loadedRegistry);
-    setSelectedTemplateId(loadedDatabase.worksheets.Templates[0]?.id ?? "");
+    selectedTemplateIdRef.current = loadedTemplateId;
+    setSelectedTemplateId(loadedTemplateId);
     setTargetLanguage(loadedDatabase.worksheets.Settings.defaultTargetLanguage);
     setSelectedMemoryCampaignId(loadedRegistry.campaigns[0]?.id ?? "");
     setLoaded(true);
-  }, []);
+
+    void (async () => {
+      try {
+        const [templateResult, registryResult] = await Promise.all([
+          listOutreachTemplatesFromGoogleSheetsOnly(),
+          loadCampaignRegistryFromGoogleSheetsOnly({
+            reason: "creator-outreach:load-campaign-memory",
+          }),
+        ]);
+        if (cancelled) return;
+        applyOutreachTemplateRecords(templateResult.records);
+        setCampaignRegistry(registryResult);
+        setSelectedMemoryCampaignId((current) => current || registryResult.campaigns[0]?.id || "");
+        if (templateResult.report?.removedRows) {
+          setCopyStatus(
+            `Cleaned ${templateResult.report.removedRows} stale outreach template rows.`,
+          );
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setCopyStatus(
+          error instanceof Error
+            ? error.message
+            : "Google Sheets is unavailable. Outreach templates were not loaded.",
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyOutreachTemplateRecords]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -306,7 +383,7 @@ export function CreatorOutreachAssistant() {
     setIsNewTemplateModalOpen(true);
   }
 
-  function duplicateTemplate(template: OutreachTemplate) {
+  async function duplicateTemplate(template: OutreachTemplate) {
     const now = new Date().toISOString();
     const duplicate: OutreachTemplate = {
       ...template,
@@ -316,18 +393,22 @@ export function CreatorOutreachAssistant() {
       updatedAt: now,
     };
 
-    setDatabase((current) => ({
-      ...current,
-      worksheets: {
-        ...current.worksheets,
-        Templates: [duplicate, ...current.worksheets.Templates],
-      },
-    }));
-    setSelectedTemplateId(duplicate.id);
-    setCopyStatus("Template duplicated.");
+    try {
+      const records = await createOutreachTemplateInGoogleSheetsOnly(
+        outreachTemplateToRecord(duplicate),
+      );
+      applyOutreachTemplateRecords(records, duplicate.id);
+      setCopyStatus("Template duplicated.");
+    } catch (error) {
+      setCopyStatus(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets save failed. Template was not duplicated.",
+      );
+    }
   }
 
-  function deleteTemplate(templateId: string) {
+  async function deleteTemplate(templateId: string) {
     const template = templates.find((item) => item.id === templateId);
     if (!template) return;
     const confirmed =
@@ -335,23 +416,20 @@ export function CreatorOutreachAssistant() {
       window.confirm(`Delete "${template.templateName}"? This cannot be undone.`);
     if (!confirmed) return;
 
-    setDatabase((current) => {
-      const nextTemplates = current.worksheets.Templates.filter((item) => item.id !== templateId);
-      if (templateId === selectedTemplateId) {
-        setSelectedTemplateId(nextTemplates[0]?.id ?? "");
-      }
-      return {
-        ...current,
-        worksheets: {
-          ...current.worksheets,
-          Templates: nextTemplates,
-        },
-      };
-    });
-    setCopyStatus("Template deleted.");
+    try {
+      const records = await deleteOutreachTemplateFromGoogleSheetsOnly(templateId);
+      applyOutreachTemplateRecords(records);
+      setCopyStatus("Template deleted.");
+    } catch (error) {
+      setCopyStatus(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets delete failed. Template was not deleted.",
+      );
+    }
   }
 
-  function saveTemplateDraft(event: FormEvent<HTMLFormElement>) {
+  async function saveTemplateDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!templateDraft) return;
     if (!templateDraft.templateName.trim() || !templateDraft.body.trim()) return;
@@ -367,27 +445,23 @@ export function CreatorOutreachAssistant() {
       updatedAt: now,
     };
 
-    setDatabase((current) => {
-      const exists = current.worksheets.Templates.some(
-        (template) => template.id === savedTemplate.id,
+    try {
+      const exists = templates.some((template) => template.id === savedTemplate.id);
+      const records = exists
+        ? await updateOutreachTemplateInGoogleSheetsOnly(outreachTemplateToRecord(savedTemplate))
+        : await createOutreachTemplateInGoogleSheetsOnly(outreachTemplateToRecord(savedTemplate));
+      applyOutreachTemplateRecords(records, savedTemplate.id);
+      updateSettings({ defaultSource: savedTemplate.channelType as CreatorMessageSource });
+      setTemplateDraft(null);
+      setIsNewTemplateModalOpen(false);
+      setCopyStatus("Template saved.");
+    } catch (error) {
+      setCopyStatus(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets save failed. Template was not saved.",
       );
-      return {
-        ...current,
-        worksheets: {
-          ...current.worksheets,
-          Templates: exists
-            ? current.worksheets.Templates.map((template) =>
-                template.id === savedTemplate.id ? savedTemplate : template,
-              )
-            : [savedTemplate, ...current.worksheets.Templates],
-        },
-      };
-    });
-    setSelectedTemplateId(savedTemplate.id);
-    updateSettings({ defaultSource: savedTemplate.channelType as CreatorMessageSource });
-    setTemplateDraft(null);
-    setIsNewTemplateModalOpen(false);
-    setCopyStatus("Template saved.");
+    }
   }
 
   async function copyText(text: string, label: string) {
@@ -625,7 +699,9 @@ export function CreatorOutreachAssistant() {
     }
   }
 
-  function saveSmartFieldsCampaign(updatedCampaign: GlobalCampaignRegistry["campaigns"][number]) {
+  async function saveSmartFieldsCampaign(
+    updatedCampaign: GlobalCampaignRegistry["campaigns"][number],
+  ) {
     const nextRegistry = {
       ...campaignRegistry,
       campaigns: campaignRegistry.campaigns.map((campaign) =>
@@ -633,11 +709,20 @@ export function CreatorOutreachAssistant() {
       ),
     };
     setCampaignRegistry(nextRegistry);
-    saveCampaignRegistry(nextRegistry);
-    if (selectedMemoryCampaignId === "" || selectedMemoryCampaignId === updatedCampaign.id) {
-      setSelectedMemoryCampaignId(updatedCampaign.id);
+    try {
+      const savedRegistry = await saveCampaignMemoryForCampaign(updatedCampaign);
+      setCampaignRegistry(savedRegistry);
+      if (selectedMemoryCampaignId === "" || selectedMemoryCampaignId === updatedCampaign.id) {
+        setSelectedMemoryCampaignId(updatedCampaign.id);
+      }
+      setCopyStatus("Smart fields saved.");
+    } catch (error) {
+      setCopyStatus(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets save failed. Smart fields were not saved.",
+      );
     }
-    setCopyStatus("Smart fields saved.");
   }
 
   function insertSmartFieldContent(content: string) {

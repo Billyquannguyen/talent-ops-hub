@@ -27,6 +27,17 @@ import {
   removeSourcingTemplateRecord,
   upsertSourcingTemplateRecord,
 } from "./sourcingTemplates";
+import {
+  cleanupOutreachTemplateRecords,
+  removeOutreachTemplateRecord,
+  upsertOutreachTemplateRecord,
+} from "./outreachTemplates";
+import {
+  cleanupCampaignMemoryCardRecords,
+  removeCampaignMemoryCardRecord,
+  replaceCampaignMemoryCardsForCampaign,
+  upsertCampaignMemoryCardRecord,
+} from "./campaignMemoryCards";
 
 type GoogleSheetsConfig = {
   spreadsheetId: string;
@@ -374,6 +385,334 @@ export async function cleanupSourcingTemplatesInGoogleSheets() {
   };
 }
 
+export async function listOutreachTemplatesInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const outreachRows = await readWorksheetRecordsWithRowNumbers<OutreachTemplateRecord>(
+    spreadsheetId,
+    "OutreachTemplates",
+  );
+  const cleanup = cleanupOutreachTemplateRecords(outreachRows.rows.map((row) => row.record));
+  logOutreachTemplateCleanupSummary("list-current-state", cleanup);
+
+  if (cleanup.removedCount > 0) {
+    await writeCurrentStateWorksheetRows(
+      spreadsheetId,
+      "OutreachTemplates",
+      outreachRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("outreach-template-list-cleanup");
+  }
+
+  return {
+    records: cleanup.records,
+    report: createOutreachTemplateCleanupReport(outreachRows.rows.length, cleanup),
+  };
+}
+
+export async function upsertOutreachTemplateInGoogleSheets(record: OutreachTemplateRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const outreachRows = await readWorksheetRecordsWithRowNumbers<OutreachTemplateRecord>(
+    spreadsheetId,
+    "OutreachTemplates",
+  );
+  const cleanup = upsertOutreachTemplateRecord(
+    outreachRows.rows.map((row) => row.record),
+    record,
+  );
+  logOutreachTemplateCleanupSummary("targeted-upsert", cleanup);
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "OutreachTemplates",
+    outreachRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("outreach-template-targeted-write");
+
+  return {
+    records: cleanup.records,
+    report: createOutreachTemplateCleanupReport(outreachRows.rows.length, cleanup),
+  };
+}
+
+export async function deleteOutreachTemplateInGoogleSheets(templateId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const outreachRows = await readWorksheetRecordsWithRowNumbers<OutreachTemplateRecord>(
+    spreadsheetId,
+    "OutreachTemplates",
+  );
+  const cleanup = removeOutreachTemplateRecord(
+    outreachRows.rows.map((row) => row.record),
+    templateId,
+  );
+  logOutreachTemplateCleanupSummary("targeted-delete", cleanup);
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "OutreachTemplates",
+    outreachRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("outreach-template-targeted-delete");
+
+  return {
+    records: cleanup.records,
+    report: createOutreachTemplateCleanupReport(outreachRows.rows.length, cleanup),
+  };
+}
+
+export async function cleanupOutreachTemplatesInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const outreachRows = await readWorksheetRecordsWithRowNumbers<OutreachTemplateRecord>(
+    spreadsheetId,
+    "OutreachTemplates",
+  );
+  const cleanup = cleanupOutreachTemplateRecords(outreachRows.rows.map((row) => row.record));
+  logOutreachTemplateCleanupSummary("manual-cleanup-action", cleanup);
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "OutreachTemplates",
+    outreachRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("outreach-template-manual-cleanup");
+
+  return {
+    records: cleanup.records,
+    report: createOutreachTemplateCleanupReport(outreachRows.rows.length, cleanup),
+  };
+}
+
+export async function listCampaignMemoryCardsInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const memoryRows = await readWorksheetRecordsWithRowNumbers<CampaignMemoryCardRecord>(
+    spreadsheetId,
+    "CampaignMemoryCards",
+  );
+  const cleanup = cleanupCampaignMemoryCardRecords(memoryRows.rows.map((row) => row.record));
+  logCampaignMemoryCardCleanupSummary("list-current-state", cleanup);
+
+  if (cleanup.removedCount > 0 || cleanup.duplicateIdReassignedCount > 0) {
+    await writeCurrentStateWorksheetRows(
+      spreadsheetId,
+      "CampaignMemoryCards",
+      memoryRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("campaign-memory-card-list-cleanup");
+  }
+
+  return {
+    records: cleanup.records,
+    report: createCampaignMemoryCardCleanupReport(memoryRows.rows.length, cleanup),
+  };
+}
+
+export async function upsertCampaignMemoryCardInGoogleSheets(record: CampaignMemoryCardRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const memoryRows = await readWorksheetRecordsWithRowNumbers<CampaignMemoryCardRecord>(
+    spreadsheetId,
+    "CampaignMemoryCards",
+  );
+  const cleanup = upsertCampaignMemoryCardRecord(
+    memoryRows.rows.map((row) => row.record),
+    record,
+  );
+  logCampaignMemoryCardCleanupSummary("targeted-upsert", cleanup);
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignMemoryCards",
+    memoryRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("campaign-memory-card-targeted-write");
+
+  return {
+    records: cleanup.records,
+    report: createCampaignMemoryCardCleanupReport(memoryRows.rows.length, cleanup),
+  };
+}
+
+export async function deleteCampaignMemoryCardInGoogleSheets(cardId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const memoryRows = await readWorksheetRecordsWithRowNumbers<CampaignMemoryCardRecord>(
+    spreadsheetId,
+    "CampaignMemoryCards",
+  );
+  const cleanup = removeCampaignMemoryCardRecord(
+    memoryRows.rows.map((row) => row.record),
+    cardId,
+  );
+  logCampaignMemoryCardCleanupSummary("targeted-delete", cleanup);
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignMemoryCards",
+    memoryRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("campaign-memory-card-targeted-delete");
+
+  return {
+    records: cleanup.records,
+    report: createCampaignMemoryCardCleanupReport(memoryRows.rows.length, cleanup),
+  };
+}
+
+export async function replaceCampaignMemoryCardsForCampaignInGoogleSheets({
+  campaignId,
+  preferredLanguages,
+  records,
+}: {
+  campaignId: string;
+  preferredLanguages: string;
+  records: CampaignMemoryCardRecord[];
+}) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const [memoryRows, campaignRows] = await Promise.all([
+    readWorksheetRecordsWithRowNumbers<CampaignMemoryCardRecord>(
+      spreadsheetId,
+      "CampaignMemoryCards",
+    ),
+    readWorksheetRecordsWithRowNumbers<CampaignProfileRecord>(spreadsheetId, "CampaignProfiles"),
+  ]);
+  const cleanup = replaceCampaignMemoryCardsForCampaign(
+    memoryRows.rows.map((row) => row.record),
+    campaignId,
+    records,
+  );
+  logCampaignMemoryCardCleanupSummary("replace-campaign-cards", cleanup);
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignMemoryCards",
+    memoryRows,
+    cleanup.records,
+  );
+
+  const campaignProfiles = updateCampaignPreferredLanguages(
+    campaignRows.rows.map((row) => row.record),
+    campaignId,
+    preferredLanguages,
+  );
+  await writeChangedWorksheetRows(
+    spreadsheetId,
+    "CampaignProfiles",
+    campaignRows,
+    campaignProfiles,
+  );
+
+  invalidateDatabaseReadCache("campaign-memory-card-replace-campaign");
+
+  return {
+    records: cleanup.records,
+    campaignProfiles,
+    report: createCampaignMemoryCardCleanupReport(memoryRows.rows.length, cleanup),
+  };
+}
+
+export async function cleanupCampaignMemoryCardsInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const memoryRows = await readWorksheetRecordsWithRowNumbers<CampaignMemoryCardRecord>(
+    spreadsheetId,
+    "CampaignMemoryCards",
+  );
+  const cleanup = cleanupCampaignMemoryCardRecords(memoryRows.rows.map((row) => row.record));
+  logCampaignMemoryCardCleanupSummary("manual-cleanup-action", cleanup);
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignMemoryCards",
+    memoryRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("campaign-memory-card-manual-cleanup");
+
+  return {
+    records: cleanup.records,
+    report: createCampaignMemoryCardCleanupReport(memoryRows.rows.length, cleanup),
+  };
+}
+
+export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const [settingsRows, sourcingRows] = await Promise.all([
+    readWorksheetRecordsWithRowNumbers<AppSettingRecord>(spreadsheetId, "AppSettings"),
+    readWorksheetRecordsWithRowNumbers<SourcingTemplateRecord>(spreadsheetId, "SourcingTemplates"),
+  ]);
+  const settings = settingsRows.rows.map((row) => row.record);
+  const activeTemplates = cleanupSourcingTemplateRecords(
+    sourcingRows.rows.map((row) => row.record),
+  ).records.filter(isActiveSourcingTemplateRecord);
+  const templatesByCampaign = new Map<string, SourcingTemplateRecord[]>();
+  activeTemplates.forEach((template) => {
+    templatesByCampaign.set(template.campaignId, [
+      ...(templatesByCampaign.get(template.campaignId) ?? []),
+      template,
+    ]);
+  });
+  let changedCount = 0;
+  const cleanedSettings = settings.map((setting) => {
+    if (!setting.settingKey.startsWith("sourcing.activeTemplate.")) return setting;
+    const campaignId = setting.settingKey.replace("sourcing.activeTemplate.", "");
+    const campaignTemplates = templatesByCampaign.get(campaignId) ?? [];
+    const currentTemplateExists = campaignTemplates.some(
+      (template) => template.id === setting.settingValue,
+    );
+    if (currentTemplateExists || !setting.settingValue) return setting;
+
+    changedCount += 1;
+    return {
+      ...setting,
+      settingValue: campaignTemplates[0]?.id ?? "",
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  if (changedCount > 0) {
+    await writeChangedWorksheetRows(spreadsheetId, "AppSettings", settingsRows, cleanedSettings);
+    invalidateDatabaseReadCache("sourcing-active-template-settings-cleanup");
+    invalidateCreatorSourcingReadCache("sourcing-active-template-settings-cleanup");
+  }
+
+  return {
+    records: cleanedSettings,
+    changedCount,
+  };
+}
+
 export async function mergeCentralDatabaseIntoGoogleSheets(localDatabase: CentralAppDatabase) {
   const remoteDatabase = await readCentralDatabaseFromGoogleSheets({
     reason: "merge-local-database",
@@ -707,6 +1046,103 @@ function logSourcingTemplateCleanupSummary(
   });
 }
 
+function createOutreachTemplateCleanupReport(
+  beforeRows: number,
+  cleanup: {
+    records: OutreachTemplateRecord[];
+    removedCount: number;
+    duplicateIdCount: number;
+    duplicateNameCount: number;
+    emptyRecordCount: number;
+  },
+) {
+  return {
+    beforeRows,
+    afterRows: cleanup.records.length,
+    removedRows: beforeRows - cleanup.records.length,
+    removedEmptyRows: cleanup.emptyRecordCount,
+    removedDuplicateIdRows: cleanup.duplicateIdCount,
+    removedDuplicateNameRows: cleanup.duplicateNameCount,
+  };
+}
+
+function logOutreachTemplateCleanupSummary(
+  reason: string,
+  cleanup: {
+    removedCount: number;
+    duplicateIdCount: number;
+    duplicateNameCount: number;
+    emptyRecordCount: number;
+  },
+) {
+  if (cleanup.removedCount === 0) return;
+  console.info("[OutreachTemplatesCleanup]", "delete-stale-current-state-rows", {
+    reason,
+    removedCount: cleanup.removedCount,
+    emptyRows: cleanup.emptyRecordCount,
+    duplicateIdRows: cleanup.duplicateIdCount,
+    duplicateNameRows: cleanup.duplicateNameCount,
+    at: new Date().toISOString(),
+  });
+}
+
+function updateCampaignPreferredLanguages(
+  campaigns: CampaignProfileRecord[],
+  campaignId: string,
+  preferredLanguages: string,
+) {
+  const now = new Date().toISOString();
+  return campaigns.map((campaign) =>
+    campaign.campaignId === campaignId
+      ? {
+          ...campaign,
+          preferredLanguages,
+          updatedAt: now,
+        }
+      : campaign,
+  );
+}
+
+function createCampaignMemoryCardCleanupReport(
+  beforeRows: number,
+  cleanup: {
+    records: CampaignMemoryCardRecord[];
+    removedCount: number;
+    duplicateIdReassignedCount: number;
+    duplicateTitleCount: number;
+    emptyRecordCount: number;
+  },
+) {
+  return {
+    beforeRows,
+    afterRows: cleanup.records.length,
+    removedRows: beforeRows - cleanup.records.length,
+    removedEmptyRows: cleanup.emptyRecordCount,
+    reassignedDuplicateCardIds: cleanup.duplicateIdReassignedCount,
+    removedDuplicateTitleRows: cleanup.duplicateTitleCount,
+  };
+}
+
+function logCampaignMemoryCardCleanupSummary(
+  reason: string,
+  cleanup: {
+    removedCount: number;
+    duplicateIdReassignedCount: number;
+    duplicateTitleCount: number;
+    emptyRecordCount: number;
+  },
+) {
+  if (cleanup.removedCount === 0 && cleanup.duplicateIdReassignedCount === 0) return;
+  console.info("[CampaignMemoryCardsCleanup]", "current-state-repair", {
+    reason,
+    removedCount: cleanup.removedCount,
+    emptyRows: cleanup.emptyRecordCount,
+    reassignedDuplicateCardIds: cleanup.duplicateIdReassignedCount,
+    duplicateTitleRows: cleanup.duplicateTitleCount,
+    at: new Date().toISOString(),
+  });
+}
+
 async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
   spreadsheetId: string,
   reason: string,
@@ -962,23 +1398,27 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         createdBy: stringValue(row.createdBy),
         updatedBy: stringValue(row.updatedBy),
       })),
-      OutreachTemplates: rowsBySheet.OutreachTemplates.map((row) => ({
-        templateId: stringValue(row.templateId),
-        templateName: stringValue(row.templateName),
-        type: stringValue(row.type) === "Email" ? "Email" : "DM",
-        body: stringValue(row.body),
-        createdAt: stringValue(row.createdAt),
-        updatedAt: stringValue(row.updatedAt),
-      })),
-      CampaignMemoryCards: rowsBySheet.CampaignMemoryCards.map((row) => ({
-        cardId: stringValue(row.cardId),
-        campaignId: stringValue(row.campaignId),
-        title: stringValue(row.title),
-        content: stringValue(row.content),
-        preferredLanguages: stringValue(row.preferredLanguages),
-        createdAt: stringValue(row.createdAt),
-        updatedAt: stringValue(row.updatedAt),
-      })),
+      OutreachTemplates: cleanupOutreachTemplateRecords(
+        rowsBySheet.OutreachTemplates.map((row) => ({
+          templateId: stringValue(row.templateId),
+          templateName: stringValue(row.templateName),
+          type: stringValue(row.type) === "Email" ? "Email" : "DM",
+          body: stringValue(row.body),
+          createdAt: stringValue(row.createdAt),
+          updatedAt: stringValue(row.updatedAt),
+        })),
+      ).records,
+      CampaignMemoryCards: cleanupCampaignMemoryCardRecords(
+        rowsBySheet.CampaignMemoryCards.map((row) => ({
+          cardId: stringValue(row.cardId),
+          campaignId: stringValue(row.campaignId),
+          title: stringValue(row.title),
+          content: stringValue(row.content),
+          preferredLanguages: stringValue(row.preferredLanguages),
+          createdAt: stringValue(row.createdAt),
+          updatedAt: stringValue(row.updatedAt),
+        })),
+      ).records,
       ActiveCampaignCreators: rowsBySheet.ActiveCampaignCreators.map((row) => ({
         recordId: stringValue(row.recordId),
         campaignId: stringValue(row.campaignId),
