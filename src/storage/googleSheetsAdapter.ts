@@ -9,6 +9,7 @@ import {
   type StorageStatus,
 } from "./schema";
 import {
+  cleanupSourcingTemplatesRecord,
   deleteSourcingTemplateRecord,
   getGoogleSheetsConnectionStatus,
   loadCreatorSourcingGoogleSheetsDatabase,
@@ -37,6 +38,15 @@ export type GoogleSheetsDatabaseResult = {
 };
 
 export type MigrationReport = Record<CentralWorksheetName, number> & { errors: string[] };
+
+export type SourcingTemplateCleanupReport = {
+  beforeRows: number;
+  afterRows: number;
+  removedRows: number;
+  removedInactiveRows: number;
+  removedDuplicateIdRows: number;
+  removedDuplicateNameRows: number;
+};
 
 export async function getGoogleSheetsStorageStatus(): Promise<StorageStatus> {
   return getGoogleSheetsConnectionStatus();
@@ -74,6 +84,12 @@ export async function deleteSourcingTemplateFromGoogleSheets(
   templateId: string,
 ): Promise<GoogleSheetsDatabaseResult> {
   return deleteSourcingTemplateRecord({ data: { templateId } });
+}
+
+export async function cleanupSourcingTemplatesInGoogleSheets(): Promise<
+  GoogleSheetsDatabaseResult & { report: SourcingTemplateCleanupReport | null }
+> {
+  return cleanupSourcingTemplatesRecord();
 }
 
 export async function migrateDatabaseToGoogleSheets(database: CentralAppDatabase): Promise<{

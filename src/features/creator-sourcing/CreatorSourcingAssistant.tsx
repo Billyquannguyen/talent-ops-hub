@@ -2997,7 +2997,7 @@ function createProjectFromCampaign(
 function groupSourcingTemplates(records: SourcingTemplateRecord[]) {
   const grouped = new Map<string, SourcingTemplate[]>();
   const cleanup = cleanupSourcingTemplateRecords(records);
-  if (cleanup.inactiveCount > 0) {
+  if (cleanup.removedCount > 0) {
     console.info("[SourcingTemplatesCleanup]", "load-templates", cleanup);
   }
   cleanup.records.filter(isActiveSourcingTemplateRecord).forEach((record) => {

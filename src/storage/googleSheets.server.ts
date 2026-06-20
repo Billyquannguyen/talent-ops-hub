@@ -23,8 +23,8 @@ import {
 } from "./schema";
 import {
   cleanupSourcingTemplateRecords,
-  deactivateSourcingTemplateRecord,
   isActiveSourcingTemplateRecord,
+  removeSourcingTemplateRecord,
   upsertSourcingTemplateRecord,
 } from "./sourcingTemplates";
 
@@ -182,13 +182,7 @@ export async function writeCentralDatabaseToGoogleSheets(database: CentralAppDat
     databaseToSave.worksheets.SourcingTemplates,
   );
   databaseToSave.worksheets.SourcingTemplates = sourcingCleanup.records;
-  if (sourcingCleanup.inactiveCount > 0) {
-    console.info("[SourcingTemplatesCleanup]", "deactivated-duplicates-before-write", {
-      duplicateIdCount: sourcingCleanup.duplicateIdCount,
-      duplicateNameCount: sourcingCleanup.duplicateNameCount,
-      at: new Date().toISOString(),
-    });
-  }
+  logSourcingTemplateCleanupSummary("full-database-write", sourcingCleanup);
 
   for (const worksheetName of centralWorksheetNames) {
     await replaceWorksheetRows(
@@ -258,7 +252,8 @@ export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTempl
     sourcingRows.rows.map((row) => row.record),
     record,
   );
-  await writeChangedWorksheetRows(
+  logSourcingTemplateCleanupSummary("targeted-upsert", sourcingCleanup);
+  await writeCurrentStateWorksheetRows(
     spreadsheetId,
     "SourcingTemplates",
     sourcingRows,
@@ -285,7 +280,7 @@ export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTempl
   });
 }
 
-export async function deactivateSourcingTemplateInGoogleSheets(templateId: string) {
+export async function deleteSourcingTemplateInGoogleSheets(templateId: string) {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
@@ -302,8 +297,9 @@ export async function deactivateSourcingTemplateInGoogleSheets(templateId: strin
     });
   }
 
-  const sourcingCleanup = deactivateSourcingTemplateRecord(currentTemplates, templateId);
-  await writeChangedWorksheetRows(
+  const sourcingCleanup = removeSourcingTemplateRecord(currentTemplates, templateId);
+  logSourcingTemplateCleanupSummary("targeted-delete", sourcingCleanup);
+  await writeCurrentStateWorksheetRows(
     spreadsheetId,
     "SourcingTemplates",
     sourcingRows,
@@ -337,6 +333,45 @@ export async function deactivateSourcingTemplateInGoogleSheets(templateId: strin
     SourcingTemplates: sourcingCleanup.records,
     AppSettings: appSettings,
   });
+}
+
+export async function cleanupSourcingTemplatesInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const sourcingRows = await readWorksheetRecordsWithRowNumbers<SourcingTemplateRecord>(
+    spreadsheetId,
+    "SourcingTemplates",
+  );
+  const beforeRows = sourcingRows.rows.length;
+  const sourcingCleanup = cleanupSourcingTemplateRecords(
+    sourcingRows.rows.map((row) => row.record),
+  );
+  logSourcingTemplateCleanupSummary("manual-cleanup-action", sourcingCleanup);
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "SourcingTemplates",
+    sourcingRows,
+    sourcingCleanup.records,
+  );
+
+  invalidateDatabaseReadCache("sourcing-template-manual-cleanup");
+  invalidateCreatorSourcingReadCache("sourcing-template-manual-cleanup");
+
+  return {
+    database: await readCreatorSourcingDatabaseSubset(spreadsheetId, {
+      SourcingTemplates: sourcingCleanup.records,
+    }),
+    report: {
+      beforeRows,
+      afterRows: sourcingCleanup.records.length,
+      removedRows: beforeRows - sourcingCleanup.records.length,
+      removedInactiveRows: sourcingCleanup.removedInactiveCount,
+      removedDuplicateIdRows: sourcingCleanup.duplicateIdCount,
+      removedDuplicateNameRows: sourcingCleanup.duplicateNameCount,
+    },
+  };
 }
 
 export async function mergeCentralDatabaseIntoGoogleSheets(localDatabase: CentralAppDatabase) {
@@ -594,6 +629,54 @@ async function writeChangedWorksheetRows<T>(
   }
 }
 
+async function writeCurrentStateWorksheetRows<T>(
+  spreadsheetId: string,
+  worksheetName: CentralWorksheetName,
+  currentRows: {
+    rows: Array<SheetRecordWithRowNumber<T>>;
+    nextRowNumber: number;
+  },
+  nextRows: T[],
+) {
+  await writeChangedWorksheetRows(spreadsheetId, worksheetName, currentRows, nextRows);
+
+  const staleRows = currentRows.rows.slice(nextRows.length).map((row) => row.rowNumber);
+  if (staleRows.length === 0) return;
+
+  await deleteWorksheetRowNumbers(spreadsheetId, worksheetName, staleRows);
+}
+
+async function deleteWorksheetRowNumbers(
+  spreadsheetId: string,
+  worksheetName: CentralWorksheetName,
+  rowNumbers: number[],
+) {
+  const sheetId = await getWorksheetSheetId(spreadsheetId, worksheetName);
+  const requests = [...new Set(rowNumbers)]
+    .filter((rowNumber) => rowNumber > 1)
+    .sort((first, second) => second - first)
+    .map((rowNumber) => ({
+      deleteDimension: {
+        range: {
+          sheetId,
+          dimension: "ROWS",
+          startIndex: rowNumber - 1,
+          endIndex: rowNumber,
+        },
+      },
+    }));
+
+  await batchUpdate(spreadsheetId, requests);
+}
+
+async function getWorksheetSheetId(spreadsheetId: string, worksheetName: CentralWorksheetName) {
+  const metadata = await getMetadata(spreadsheetId);
+  const sheetId = metadata.sheets?.find((sheet) => sheet.properties.title === worksheetName)
+    ?.properties.sheetId;
+  if (sheetId === undefined) throw new Error(`Worksheet not found: ${worksheetName}`);
+  return sheetId;
+}
+
 function worksheetRecordChanged(
   currentRecord: Record<string, unknown>,
   nextRecord: Record<string, unknown>,
@@ -602,6 +685,26 @@ function worksheetRecordChanged(
   return headers.some(
     (header) => stringValue(currentRecord[header]) !== stringValue(nextRecord[header]),
   );
+}
+
+function logSourcingTemplateCleanupSummary(
+  reason: string,
+  cleanup: {
+    removedCount: number;
+    removedInactiveCount: number;
+    duplicateIdCount: number;
+    duplicateNameCount: number;
+  },
+) {
+  if (cleanup.removedCount === 0) return;
+  console.info("[SourcingTemplatesCleanup]", "delete-stale-current-state-rows", {
+    reason,
+    removedCount: cleanup.removedCount,
+    inactiveRows: cleanup.removedInactiveCount,
+    duplicateIdRows: cleanup.duplicateIdCount,
+    duplicateNameRows: cleanup.duplicateNameCount,
+    at: new Date().toISOString(),
+  });
 }
 
 async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
@@ -618,13 +721,9 @@ async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
   ]);
   const cleanup = cleanupSourcingTemplateRecords(sourcingRows.rows.map((row) => row.record));
 
-  if (cleanup.inactiveCount > 0) {
-    console.info("[SourcingTemplatesCleanup]", "deactivated-duplicates-during-load", {
-      duplicateIdCount: cleanup.duplicateIdCount,
-      duplicateNameCount: cleanup.duplicateNameCount,
-      at: new Date().toISOString(),
-    });
-    await writeChangedWorksheetRows(
+  if (cleanup.removedCount > 0) {
+    logSourcingTemplateCleanupSummary("creator-sourcing-load", cleanup);
+    await writeCurrentStateWorksheetRows(
       spreadsheetId,
       "SourcingTemplates",
       sourcingRows,

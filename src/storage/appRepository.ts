@@ -3,6 +3,7 @@ import {
   saveCentralDatabaseToLocalStorage,
 } from "./localStorageAdapter";
 import {
+  cleanupSourcingTemplatesInGoogleSheets,
   deleteSourcingTemplateFromGoogleSheets,
   getGoogleSheetsStorageStatus,
   loadCreatorSourcingDatabaseFromGoogleSheets,
@@ -12,6 +13,7 @@ import {
   saveSourcingTemplateToGoogleSheets,
   type GoogleSheetsDatabaseResult,
   type MigrationReport,
+  type SourcingTemplateCleanupReport,
 } from "./googleSheetsAdapter";
 
 export type { MigrationReport };
@@ -115,6 +117,24 @@ export async function deleteSourcingTemplateFromGoogleSheetsOnly(
   }
   clearPrimaryDatabaseCache();
   return cloneCentralDatabase(result.database);
+}
+
+export async function cleanupSourcingTemplatesInGoogleSheetsOnly(): Promise<{
+  database: CentralAppDatabase;
+  report: SourcingTemplateCleanupReport;
+}> {
+  console.info("[AppRepositoryGoogleSheets]", "cleanup-sourcing-templates-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await cleanupSourcingTemplatesInGoogleSheets();
+  if (!result.ok || !result.database || !result.report) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  return {
+    database: cloneCentralDatabase(result.database),
+    report: result.report,
+  };
 }
 
 export function saveAppDatabase(database: CentralAppDatabase) {

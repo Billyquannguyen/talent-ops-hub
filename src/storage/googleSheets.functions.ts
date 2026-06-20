@@ -170,7 +170,7 @@ export const deleteSourcingTemplateRecord = createServerFn({ method: "POST" })
   .inputValidator(z.object({ templateId: z.string() }))
   .handler(async ({ data }) => {
     const {
-      deactivateSourcingTemplateInGoogleSheets,
+      deleteSourcingTemplateInGoogleSheets,
       diagnosticsFromError,
       getGoogleSheetsServerStatus,
     } = await import("./googleSheets.server");
@@ -187,7 +187,7 @@ export const deleteSourcingTemplateRecord = createServerFn({ method: "POST" })
 
       return {
         ok: true,
-        database: await deactivateSourcingTemplateInGoogleSheets(data.templateId),
+        database: await deleteSourcingTemplateInGoogleSheets(data.templateId),
         status,
       };
     } catch (error) {
@@ -203,6 +203,48 @@ export const deleteSourcingTemplateRecord = createServerFn({ method: "POST" })
       };
     }
   });
+
+export const cleanupSourcingTemplatesRecord = createServerFn({ method: "POST" }).handler(
+  async () => {
+    const {
+      cleanupSourcingTemplatesInGoogleSheets,
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          database: null,
+          report: null,
+          status,
+        };
+      }
+
+      const result = await cleanupSourcingTemplatesInGoogleSheets();
+      return {
+        ok: true,
+        database: result.database,
+        report: result.report,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        database: null,
+        report: null,
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  },
+);
 
 export const migrateLocalDatabaseToGoogleSheets = createServerFn({ method: "POST" })
   .inputValidator(z.object({ database: z.any() }))

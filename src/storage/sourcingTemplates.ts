@@ -2,9 +2,11 @@ import type { SourcingTemplateRecord } from "./schema";
 
 export type SourcingTemplateCleanupResult = {
   records: SourcingTemplateRecord[];
-  inactiveCount: number;
+  removedCount: number;
+  removedInactiveCount: number;
   duplicateIdCount: number;
   duplicateNameCount: number;
+  inactiveCount: number;
 };
 
 export function isActiveSourcingTemplateRecord(record: SourcingTemplateRecord): boolean {
@@ -14,48 +16,46 @@ export function isActiveSourcingTemplateRecord(record: SourcingTemplateRecord): 
 export function cleanupSourcingTemplateRecords(
   records: SourcingTemplateRecord[],
 ): SourcingTemplateCleanupResult {
-  const normalized = records.map((record) => ({
+  const activeRecords = records.filter(isActiveSourcingTemplateRecord).map((record) => ({
     ...record,
-    isActive: normalizeActiveFlag(record.isActive) ? "TRUE" : "FALSE",
+    isActive: "TRUE",
   }));
+  const removedIndexes = new Set<number>();
+  const removedInactiveCount = records.length - activeRecords.length;
   let duplicateIdCount = 0;
   let duplicateNameCount = 0;
 
-  for (const group of groupRecordIndexes(normalized, (record) => record.id)) {
-    const activeIndexes = group.filter((index) =>
-      isActiveSourcingTemplateRecord(normalized[index]),
-    );
-    if (activeIndexes.length <= 1) continue;
-    const keepIndex = getLatestRecordIndex(normalized, activeIndexes);
-    activeIndexes.forEach((index) => {
+  for (const group of groupRecordIndexes(activeRecords, (record) => record.id, removedIndexes)) {
+    if (group.length <= 1) continue;
+    const keepIndex = getLatestRecordIndex(activeRecords, group);
+    group.forEach((index) => {
       if (index === keepIndex) return;
-      normalized[index] = {
-        ...normalized[index],
-        isActive: "FALSE",
-      };
+      removedIndexes.add(index);
       duplicateIdCount += 1;
     });
   }
 
-  for (const group of groupRecordIndexes(normalized, getCampaignTemplateNameKey)) {
-    const activeIndexes = group.filter((index) =>
-      isActiveSourcingTemplateRecord(normalized[index]),
-    );
-    if (activeIndexes.length <= 1) continue;
-    const keepIndex = getLatestRecordIndex(normalized, activeIndexes);
-    activeIndexes.forEach((index) => {
+  for (const group of groupRecordIndexes(
+    activeRecords,
+    getCampaignTemplateNameKey,
+    removedIndexes,
+  )) {
+    if (group.length <= 1) continue;
+    const keepIndex = getLatestRecordIndex(activeRecords, group);
+    group.forEach((index) => {
       if (index === keepIndex) return;
-      normalized[index] = {
-        ...normalized[index],
-        isActive: "FALSE",
-      };
+      removedIndexes.add(index);
       duplicateNameCount += 1;
     });
   }
 
+  const removedCount = removedInactiveCount + duplicateIdCount + duplicateNameCount;
+
   return {
-    records: normalized,
-    inactiveCount: duplicateIdCount + duplicateNameCount,
+    records: activeRecords.filter((_, index) => !removedIndexes.has(index)),
+    removedCount,
+    removedInactiveCount,
+    inactiveCount: removedCount,
     duplicateIdCount,
     duplicateNameCount,
   };
@@ -66,32 +66,22 @@ export function upsertSourcingTemplateRecord(
   record: SourcingTemplateRecord,
 ): SourcingTemplateCleanupResult {
   const cleaned = cleanupSourcingTemplateRecords(records).records;
-  const sameIdIndexes = cleaned
-    .map((item, index) => (item.id === record.id ? index : -1))
-    .filter((index) => index >= 0);
+  const sameIdIndex = cleaned.findIndex((item) => item.id === record.id);
 
   const activeRecord = {
     ...record,
     isActive: "TRUE",
   };
 
-  if (sameIdIndexes.length === 0) {
+  if (sameIdIndex < 0) {
     return cleanupSourcingTemplateRecords([...cleaned, activeRecord]);
   }
 
-  const keepIndex = getLatestRecordIndex(cleaned, sameIdIndexes);
   const nextRecords = cleaned.map((item, index) => {
-    if (index === keepIndex) {
+    if (index === sameIdIndex) {
       return {
         ...activeRecord,
         createdAt: item.createdAt || activeRecord.createdAt,
-      };
-    }
-
-    if (item.id === record.id) {
-      return {
-        ...item,
-        isActive: "FALSE",
       };
     }
 
@@ -101,29 +91,24 @@ export function upsertSourcingTemplateRecord(
   return cleanupSourcingTemplateRecords(nextRecords);
 }
 
-export function deactivateSourcingTemplateRecord(
+export function removeSourcingTemplateRecord(
   records: SourcingTemplateRecord[],
   templateId: string,
 ): SourcingTemplateCleanupResult {
-  const nextRecords = records.map((record) =>
-    record.id === templateId
-      ? {
-          ...record,
-          isActive: "FALSE",
-          updatedAt: new Date().toISOString(),
-        }
-      : record,
+  const nextRecords = cleanupSourcingTemplateRecords(records).records.filter(
+    (record) => record.id !== templateId,
   );
-
   return cleanupSourcingTemplateRecords(nextRecords);
 }
 
 function groupRecordIndexes(
   records: SourcingTemplateRecord[],
   getKey: (record: SourcingTemplateRecord) => string,
+  removedIndexes = new Set<number>(),
 ): number[][] {
   const groups = new Map<string, number[]>();
   records.forEach((record, index) => {
+    if (removedIndexes.has(index)) return;
     const key = getKey(record);
     if (!key) return;
     groups.set(key, [...(groups.get(key) ?? []), index]);
