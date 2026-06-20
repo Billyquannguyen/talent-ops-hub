@@ -1,11 +1,19 @@
 import {
+  createActiveCampaignCreatorInGoogleSheetsOnly,
+  deleteActiveCampaignCreatorFromGoogleSheetsOnly,
   loadAppDatabase,
   loadAppDatabaseFromGoogleSheetsOnly,
+  listActiveCampaignCreatorsFromGoogleSheetsOnly,
   listCampaignMemoryCardsFromGoogleSheetsOnly,
   replaceCampaignMemoryCardsForCampaignInGoogleSheetsOnly,
   saveAppDatabase,
+  updateActiveCampaignCreatorInGoogleSheetsOnly,
 } from "@/storage/appRepository";
-import type { CampaignMemoryCardRecord, CentralAppDatabase } from "@/storage/schema";
+import type {
+  ActiveCampaignCreatorRecord,
+  CampaignMemoryCardRecord,
+  CentralAppDatabase,
+} from "@/storage/schema";
 
 export const selectedCreatorStatuses = [
   "Contract Signed",
@@ -173,28 +181,83 @@ export function saveCampaignRegistry(registry: GlobalCampaignRegistry) {
       updatedAt: campaign.updatedAt,
     })),
   );
-  database.worksheets.ActiveCampaignCreators = registry.creatorRecords.map((record) => {
-    const financials = calculateCreatorFinancials(record);
-    return {
-      recordId: record.id,
-      campaignId: record.campaignRegistryId,
+  saveAppDatabase(database);
+}
+
+export async function loadActiveCampaignCreatorsFromGoogleSheetsOnly(): Promise<
+  SelectedCreatorRecord[]
+> {
+  const result = await listActiveCampaignCreatorsFromGoogleSheetsOnly();
+  return activeCampaignCreatorRecordsToSelectedCreatorRecords(result.records);
+}
+
+export async function saveSelectedCreatorRecordToGoogleSheets(
+  record: SelectedCreatorRecord,
+): Promise<SelectedCreatorRecord[]> {
+  const storageRecord = selectedCreatorRecordToStorageRecord(record);
+  const records = await createActiveCampaignCreatorInGoogleSheetsOnly(storageRecord);
+  return activeCampaignCreatorRecordsToSelectedCreatorRecords(records);
+}
+
+export async function updateSelectedCreatorRecordInGoogleSheets(
+  record: SelectedCreatorRecord,
+): Promise<SelectedCreatorRecord[]> {
+  const storageRecord = selectedCreatorRecordToStorageRecord(record);
+  const records = await updateActiveCampaignCreatorInGoogleSheetsOnly(storageRecord);
+  return activeCampaignCreatorRecordsToSelectedCreatorRecords(records);
+}
+
+export async function deleteSelectedCreatorRecordFromGoogleSheets(
+  recordId: string,
+): Promise<SelectedCreatorRecord[]> {
+  const records = await deleteActiveCampaignCreatorFromGoogleSheetsOnly(recordId);
+  return activeCampaignCreatorRecordsToSelectedCreatorRecords(records);
+}
+
+export function selectedCreatorRecordToStorageRecord(
+  record: SelectedCreatorRecord,
+): ActiveCampaignCreatorRecord {
+  const financials = calculateCreatorFinancials(record);
+  return {
+    recordId: record.id,
+    campaignId: record.campaignRegistryId,
+    creatorName: record.creatorName,
+    creatorLink: record.creatorLink,
+    avgViews: record.avgViews,
+    internalQuote: record.internalQuote,
+    externalQuote: record.externalQuote,
+    cpm: financials.cpm,
+    profit: financials.profit,
+    profitMargin: financials.profitMargin,
+    status: record.status,
+    draftLink: record.draftLink,
+    liveLink: record.liveLink,
+    notes: record.notes,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+function activeCampaignCreatorRecordsToSelectedCreatorRecords(
+  records: ActiveCampaignCreatorRecord[],
+): SelectedCreatorRecord[] {
+  return records.map((record) =>
+    normalizeCreatorRecord({
+      id: record.recordId,
+      campaignRegistryId: record.campaignId,
       creatorName: record.creatorName,
       creatorLink: record.creatorLink,
       avgViews: record.avgViews,
       internalQuote: record.internalQuote,
       externalQuote: record.externalQuote,
-      cpm: financials.cpm,
-      profit: financials.profit,
-      profitMargin: financials.profitMargin,
       status: record.status,
       draftLink: record.draftLink,
       liveLink: record.liveLink,
       notes: record.notes,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
-    };
-  });
-  saveAppDatabase(database);
+    }),
+  );
 }
 
 function databaseToCampaignRegistry(database: CentralAppDatabase): GlobalCampaignRegistry {

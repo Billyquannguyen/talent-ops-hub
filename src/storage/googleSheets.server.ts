@@ -38,6 +38,11 @@ import {
   replaceCampaignMemoryCardsForCampaign,
   upsertCampaignMemoryCardRecord,
 } from "./campaignMemoryCards";
+import {
+  cleanupActiveCampaignCreatorRecords,
+  removeActiveCampaignCreatorRecord,
+  upsertActiveCampaignCreatorRecord,
+} from "./activeCampaignCreators";
 
 type GoogleSheetsConfig = {
   spreadsheetId: string;
@@ -663,6 +668,94 @@ export async function cleanupCampaignMemoryCardsInGoogleSheets() {
   };
 }
 
+export async function listActiveCampaignCreatorsInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const creatorRows = await readWorksheetRecordsWithRowNumbers<ActiveCampaignCreatorRecord>(
+    spreadsheetId,
+    "ActiveCampaignCreators",
+  );
+  const cleanup = cleanupActiveCampaignCreatorRecords(creatorRows.rows.map((row) => row.record));
+  logActiveCampaignCreatorCleanupSummary("list-current-state", cleanup);
+
+  if (cleanup.removedCount > 0) {
+    await writeCurrentStateWorksheetRows(
+      spreadsheetId,
+      "ActiveCampaignCreators",
+      creatorRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("active-campaign-creator-list-cleanup");
+  }
+
+  return {
+    records: cleanup.records,
+    report: createActiveCampaignCreatorCleanupReport(creatorRows.rows.length, cleanup),
+  };
+}
+
+export async function upsertActiveCampaignCreatorInGoogleSheets(
+  record: ActiveCampaignCreatorRecord,
+) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const creatorRows = await readWorksheetRecordsWithRowNumbers<ActiveCampaignCreatorRecord>(
+    spreadsheetId,
+    "ActiveCampaignCreators",
+  );
+  const cleanup = upsertActiveCampaignCreatorRecord(
+    creatorRows.rows.map((row) => row.record),
+    record,
+  );
+  logActiveCampaignCreatorCleanupSummary("targeted-upsert", cleanup);
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "ActiveCampaignCreators",
+    creatorRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("active-campaign-creator-targeted-write");
+
+  return {
+    records: cleanup.records,
+    report: createActiveCampaignCreatorCleanupReport(creatorRows.rows.length, cleanup),
+  };
+}
+
+export async function deleteActiveCampaignCreatorInGoogleSheets(recordId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const creatorRows = await readWorksheetRecordsWithRowNumbers<ActiveCampaignCreatorRecord>(
+    spreadsheetId,
+    "ActiveCampaignCreators",
+  );
+  const cleanup = removeActiveCampaignCreatorRecord(
+    creatorRows.rows.map((row) => row.record),
+    recordId,
+  );
+  logActiveCampaignCreatorCleanupSummary("targeted-delete", cleanup);
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "ActiveCampaignCreators",
+    creatorRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("active-campaign-creator-targeted-delete");
+
+  return {
+    records: cleanup.records,
+    report: createActiveCampaignCreatorCleanupReport(creatorRows.rows.length, cleanup),
+  };
+}
+
 export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets() {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
@@ -1143,6 +1236,42 @@ function logCampaignMemoryCardCleanupSummary(
   });
 }
 
+function createActiveCampaignCreatorCleanupReport(
+  beforeRows: number,
+  cleanup: {
+    records: ActiveCampaignCreatorRecord[];
+    removedCount: number;
+    duplicateIdCount: number;
+    emptyRecordCount: number;
+  },
+) {
+  return {
+    beforeRows,
+    afterRows: cleanup.records.length,
+    removedRows: beforeRows - cleanup.records.length,
+    removedEmptyRows: cleanup.emptyRecordCount,
+    removedDuplicateIdRows: cleanup.duplicateIdCount,
+  };
+}
+
+function logActiveCampaignCreatorCleanupSummary(
+  reason: string,
+  cleanup: {
+    removedCount: number;
+    duplicateIdCount: number;
+    emptyRecordCount: number;
+  },
+) {
+  if (cleanup.removedCount === 0) return;
+  console.info("[ActiveCampaignCreatorsCleanup]", "delete-stale-current-state-rows", {
+    reason,
+    removedCount: cleanup.removedCount,
+    emptyRows: cleanup.emptyRecordCount,
+    duplicateIdRows: cleanup.duplicateIdCount,
+    at: new Date().toISOString(),
+  });
+}
+
 async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
   spreadsheetId: string,
   reason: string,
@@ -1419,24 +1548,26 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
           updatedAt: stringValue(row.updatedAt),
         })),
       ).records,
-      ActiveCampaignCreators: rowsBySheet.ActiveCampaignCreators.map((row) => ({
-        recordId: stringValue(row.recordId),
-        campaignId: stringValue(row.campaignId),
-        creatorName: stringValue(row.creatorName),
-        creatorLink: stringValue(row.creatorLink),
-        avgViews: numberValue(row.avgViews),
-        internalQuote: numberValue(row.internalQuote),
-        externalQuote: numberValue(row.externalQuote),
-        cpm: numberValue(row.cpm),
-        profit: numberValue(row.profit),
-        profitMargin: numberValue(row.profitMargin),
-        status: stringValue(row.status),
-        draftLink: stringValue(row.draftLink),
-        liveLink: stringValue(row.liveLink),
-        notes: stringValue(row.notes),
-        createdAt: stringValue(row.createdAt),
-        updatedAt: stringValue(row.updatedAt),
-      })),
+      ActiveCampaignCreators: cleanupActiveCampaignCreatorRecords(
+        rowsBySheet.ActiveCampaignCreators.map((row) => ({
+          recordId: stringValue(row.recordId),
+          campaignId: stringValue(row.campaignId),
+          creatorName: stringValue(row.creatorName),
+          creatorLink: stringValue(row.creatorLink),
+          avgViews: numberValue(row.avgViews),
+          internalQuote: numberValue(row.internalQuote),
+          externalQuote: numberValue(row.externalQuote),
+          cpm: numberValue(row.cpm),
+          profit: numberValue(row.profit),
+          profitMargin: numberValue(row.profitMargin),
+          status: stringValue(row.status),
+          draftLink: stringValue(row.draftLink),
+          liveLink: stringValue(row.liveLink),
+          notes: stringValue(row.notes),
+          createdAt: stringValue(row.createdAt),
+          updatedAt: stringValue(row.updatedAt),
+        })),
+      ).records,
       PerformanceBenchmarks: rowsBySheet.PerformanceBenchmarks.map((row) => ({
         benchmarkId: stringValue(row.benchmarkId),
         campaignId: stringValue(row.campaignId),

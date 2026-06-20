@@ -7,10 +7,13 @@ import {
   calculateCampaignSummary,
   calculateCreatorFinancials,
   createSelectedCreatorRecord,
+  deleteSelectedCreatorRecordFromGoogleSheets,
   getCampaignCreators,
   loadCampaignRegistry,
-  saveCampaignRegistry,
+  loadCampaignRegistryFromGoogleSheetsOnly,
+  saveSelectedCreatorRecordToGoogleSheets,
   selectedCreatorStatuses,
+  updateSelectedCreatorRecordInGoogleSheets,
   type GlobalCampaign,
   type GlobalCampaignRegistry,
   type SelectedCreatorRecord,
@@ -24,14 +27,15 @@ export function ActiveCampaignManagement({
 }: {
   initialCampaignId?: string;
 }) {
-  const [loaded, setLoaded] = useState(false);
   const [registry, setRegistry] = useState<GlobalCampaignRegistry>(() => loadCampaignRegistry());
   const [selectedCampaignId, setSelectedCampaignId] = useState(
     initialCampaignId || allCampaignsSelectionId,
   );
   const [editingRecord, setEditingRecord] = useState<SelectedCreatorRecord | null>(null);
+  const [storageMessage, setStorageMessage] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
     const currentRegistry = loadCampaignRegistry();
     setRegistry(currentRegistry);
     setSelectedCampaignId((current) => {
@@ -41,13 +45,34 @@ export function ActiveCampaignManagement({
         ? requestedSelection
         : allCampaignsSelectionId;
     });
-    setLoaded(true);
-  }, [initialCampaignId]);
+    void (async () => {
+      try {
+        const googleRegistry = await loadCampaignRegistryFromGoogleSheetsOnly({
+          reason: "active-campaigns:load",
+        });
+        if (cancelled) return;
+        setRegistry(googleRegistry);
+        setSelectedCampaignId((current) => {
+          const requestedSelection = initialCampaignId || current || allCampaignsSelectionId;
+          if (requestedSelection === allCampaignsSelectionId) return allCampaignsSelectionId;
+          return googleRegistry.campaigns.some((campaign) => campaign.id === requestedSelection)
+            ? requestedSelection
+            : allCampaignsSelectionId;
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setStorageMessage(
+          error instanceof Error
+            ? error.message
+            : "Google Sheets is unavailable. Creator records were not refreshed.",
+        );
+      }
+    })();
 
-  useEffect(() => {
-    if (!loaded) return;
-    saveCampaignRegistry(registry);
-  }, [loaded, registry]);
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCampaignId]);
 
   const hasCampaignProfiles = registry.campaigns.length > 0;
   const isAllCampaignsView = selectedCampaignId === allCampaignsSelectionId;
@@ -78,7 +103,7 @@ export function ActiveCampaignManagement({
     setEditingRecord(createSelectedCreatorRecord(selectedCampaign.id));
   }
 
-  function saveCreatorRecord(event: FormEvent<HTMLFormElement>) {
+  async function saveCreatorRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingRecord || !editingRecord.creatorName.trim()) return;
     if (!campaignById.has(editingRecord.campaignRegistryId)) return;
@@ -88,30 +113,46 @@ export function ActiveCampaignManagement({
       updatedAt: now,
     };
 
-    setRegistry((current) => {
-      const exists = current.creatorRecords.some((record) => record.id === savedRecord.id);
-      return {
+    try {
+      const exists = registry.creatorRecords.some((record) => record.id === savedRecord.id);
+      const nextCreatorRecords = exists
+        ? await updateSelectedCreatorRecordInGoogleSheets(savedRecord)
+        : await saveSelectedCreatorRecordToGoogleSheets(savedRecord);
+      setRegistry((current) => ({
         ...current,
-        creatorRecords: exists
-          ? current.creatorRecords.map((record) =>
-              record.id === savedRecord.id ? savedRecord : record,
-            )
-          : [savedRecord, ...current.creatorRecords],
-      };
-    });
-    setEditingRecord(null);
+        creatorRecords: filterCreatorRecordsByCampaigns(nextCreatorRecords, current.campaigns),
+      }));
+      setEditingRecord(null);
+      setStorageMessage("Creator record saved.");
+    } catch (error) {
+      setStorageMessage(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets save failed. Creator record was not saved.",
+      );
+    }
   }
 
-  function deleteCreatorRecord(recordId: string) {
+  async function deleteCreatorRecord(recordId: string) {
     const confirmed =
       typeof window === "undefined" ||
       window.confirm("Delete this selected creator record from the campaign?");
     if (!confirmed) return;
 
-    setRegistry((current) => ({
-      ...current,
-      creatorRecords: current.creatorRecords.filter((record) => record.id !== recordId),
-    }));
+    try {
+      const nextCreatorRecords = await deleteSelectedCreatorRecordFromGoogleSheets(recordId);
+      setRegistry((current) => ({
+        ...current,
+        creatorRecords: filterCreatorRecordsByCampaigns(nextCreatorRecords, current.campaigns),
+      }));
+      setStorageMessage("Creator record deleted.");
+    } catch (error) {
+      setStorageMessage(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets delete failed. Creator record was not deleted.",
+      );
+    }
   }
 
   return (
@@ -205,8 +246,13 @@ export function ActiveCampaignManagement({
                 campaignById={campaignById}
                 showCampaignColumn={isAllCampaignsView}
                 onEdit={setEditingRecord}
-                onDelete={deleteCreatorRecord}
+                onDelete={(recordId) => {
+                  void deleteCreatorRecord(recordId);
+                }}
               />
+              {storageMessage ? (
+                <p className="mt-3 text-xs text-muted-foreground">{storageMessage}</p>
+              ) : null}
             </Panel>
           </>
         ) : (
@@ -228,6 +274,14 @@ export function ActiveCampaignManagement({
       ) : null}
     </div>
   );
+}
+
+function filterCreatorRecordsByCampaigns(
+  records: SelectedCreatorRecord[],
+  campaigns: GlobalCampaign[],
+): SelectedCreatorRecord[] {
+  const campaignIds = new Set(campaigns.map((campaign) => campaign.id));
+  return records.filter((record) => campaignIds.has(record.campaignRegistryId));
 }
 
 function CreatorRecordsTable({

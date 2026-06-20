@@ -6,6 +6,7 @@ import {
   type CampaignProfileRecord,
   type CentralAppDatabase,
   type CentralWorksheetName,
+  type ActiveCampaignCreatorRecord,
   type OutreachTemplateRecord,
   type SourcingTemplateRecord,
   type StorageDiagnostic,
@@ -16,13 +17,16 @@ import {
   cleanupOutreachTemplatesRecord,
   cleanupSourcingTemplatesRecord,
   cleanupSourcingActiveTemplateSettingsRecord,
+  createActiveCampaignCreatorRecord,
   createCampaignMemoryCardRecord,
   createOutreachTemplateRecord,
+  deleteActiveCampaignCreatorRecord,
   deleteCampaignMemoryCardRecord,
   deleteOutreachTemplateRecord,
   deleteSourcingTemplateRecord,
   getGoogleSheetsConnectionStatus,
   listCampaignMemoryCardRecords,
+  listActiveCampaignCreatorRecords,
   listOutreachTemplateRecords,
   loadCreatorSourcingGoogleSheetsDatabase,
   loadGoogleSheetsDatabase,
@@ -31,6 +35,7 @@ import {
   saveGoogleSheetsDatabase,
   saveSourcingTemplateRecord,
   updateCampaignMemoryCardRecord,
+  updateActiveCampaignCreatorRecord,
   updateOutreachTemplateRecord,
 } from "./googleSheets.functions";
 
@@ -97,6 +102,21 @@ export type CampaignMemoryCardsResult = {
 
 export type CampaignMemoryCardsForCampaignResult = CampaignMemoryCardsResult & {
   campaignProfiles: CampaignProfileRecord[];
+};
+
+export type ActiveCampaignCreatorCleanupReport = {
+  beforeRows: number;
+  afterRows: number;
+  removedRows: number;
+  removedEmptyRows: number;
+  removedDuplicateIdRows: number;
+};
+
+export type ActiveCampaignCreatorsResult = {
+  ok: boolean;
+  records: ActiveCampaignCreatorRecord[];
+  report: ActiveCampaignCreatorCleanupReport | null;
+  status: StorageStatus;
 };
 
 export async function getGoogleSheetsStorageStatus(): Promise<StorageStatus> {
@@ -207,6 +227,28 @@ export async function replaceCampaignMemoryCardsForCampaignInGoogleSheets({
 
 export async function cleanupCampaignMemoryCardsInGoogleSheets(): Promise<CampaignMemoryCardsResult> {
   return cleanupCampaignMemoryCardsRecord();
+}
+
+export async function listActiveCampaignCreatorsFromGoogleSheets(): Promise<ActiveCampaignCreatorsResult> {
+  return listActiveCampaignCreatorRecords();
+}
+
+export async function createActiveCampaignCreatorInGoogleSheets(
+  record: ActiveCampaignCreatorRecord,
+): Promise<ActiveCampaignCreatorsResult> {
+  return createActiveCampaignCreatorRecord({ data: { record } });
+}
+
+export async function updateActiveCampaignCreatorInGoogleSheets(
+  record: ActiveCampaignCreatorRecord,
+): Promise<ActiveCampaignCreatorsResult> {
+  return updateActiveCampaignCreatorRecord({ data: { record } });
+}
+
+export async function deleteActiveCampaignCreatorFromGoogleSheets(
+  recordId: string,
+): Promise<ActiveCampaignCreatorsResult> {
+  return deleteActiveCampaignCreatorRecord({ data: { recordId } });
 }
 
 export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets(): Promise<{

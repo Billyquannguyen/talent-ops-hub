@@ -7,12 +7,15 @@ import {
   cleanupOutreachTemplatesInGoogleSheets,
   cleanupSourcingActiveTemplateSettingsInGoogleSheets,
   cleanupSourcingTemplatesInGoogleSheets,
+  createActiveCampaignCreatorInGoogleSheets,
   createCampaignMemoryCardInGoogleSheets,
   createOutreachTemplateInGoogleSheets,
+  deleteActiveCampaignCreatorFromGoogleSheets,
   deleteCampaignMemoryCardFromGoogleSheets,
   deleteOutreachTemplateFromGoogleSheets,
   deleteSourcingTemplateFromGoogleSheets,
   getGoogleSheetsStorageStatus,
+  listActiveCampaignCreatorsFromGoogleSheets,
   listCampaignMemoryCardsFromGoogleSheets,
   listOutreachTemplatesFromGoogleSheets,
   loadCreatorSourcingDatabaseFromGoogleSheets,
@@ -21,8 +24,10 @@ import {
   replaceCampaignMemoryCardsForCampaignInGoogleSheets,
   saveDatabaseToGoogleSheets,
   saveSourcingTemplateToGoogleSheets,
+  updateActiveCampaignCreatorInGoogleSheets,
   updateCampaignMemoryCardInGoogleSheets,
   updateOutreachTemplateInGoogleSheets,
+  type ActiveCampaignCreatorCleanupReport,
   type CampaignMemoryCardCleanupReport,
   type GoogleSheetsDatabaseResult,
   type MigrationReport,
@@ -372,6 +377,75 @@ export async function cleanupSourcingActiveTemplateSettingsInGoogleSheetsOnly():
   };
 }
 
+export async function listActiveCampaignCreatorsFromGoogleSheetsOnly(): Promise<{
+  records: ActiveCampaignCreatorRecord[];
+  report: ActiveCampaignCreatorCleanupReport | null;
+}> {
+  console.info("[AppRepositoryGoogleSheets]", "list-active-campaign-creators-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listActiveCampaignCreatorsFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberActiveCampaignCreators(result.records);
+  return {
+    records: result.records,
+    report: result.report,
+  };
+}
+
+export async function createActiveCampaignCreatorInGoogleSheetsOnly(
+  record: ActiveCampaignCreatorRecord,
+): Promise<ActiveCampaignCreatorRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "create-active-campaign-creator-start", {
+    recordId: record.recordId,
+    campaignId: record.campaignId,
+    at: new Date().toISOString(),
+  });
+  const result = await createActiveCampaignCreatorInGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberActiveCampaignCreators(result.records);
+  return result.records;
+}
+
+export async function updateActiveCampaignCreatorInGoogleSheetsOnly(
+  record: ActiveCampaignCreatorRecord,
+): Promise<ActiveCampaignCreatorRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "update-active-campaign-creator-start", {
+    recordId: record.recordId,
+    campaignId: record.campaignId,
+    at: new Date().toISOString(),
+  });
+  const result = await updateActiveCampaignCreatorInGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberActiveCampaignCreators(result.records);
+  return result.records;
+}
+
+export async function deleteActiveCampaignCreatorFromGoogleSheetsOnly(
+  recordId: string,
+): Promise<ActiveCampaignCreatorRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "delete-active-campaign-creator-start", {
+    recordId,
+    at: new Date().toISOString(),
+  });
+  const result = await deleteActiveCampaignCreatorFromGoogleSheets(recordId);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberActiveCampaignCreators(result.records);
+  return result.records;
+}
+
 export function saveAppDatabase(database: CentralAppDatabase) {
   saveCentralDatabaseToLocalStorage(database);
   if (typeof window !== "undefined") {
@@ -559,6 +633,12 @@ function rememberCampaignMemoryCards(
   const database = loadAppDatabase();
   database.worksheets.CampaignMemoryCards = records;
   if (campaignProfiles) database.worksheets.CampaignProfiles = campaignProfiles;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
+function rememberActiveCampaignCreators(records: ActiveCampaignCreatorRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.ActiveCampaignCreators = records;
   saveCentralDatabaseToLocalStorage(database);
 }
 

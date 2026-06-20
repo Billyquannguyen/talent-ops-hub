@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import type {
+  ActiveCampaignCreatorRecord,
   CampaignMemoryCardRecord,
   CentralAppDatabase,
   OutreachTemplateRecord,
@@ -728,6 +729,178 @@ export const cleanupCampaignMemoryCardsRecord = createServerFn({ method: "POST" 
     }
   },
 );
+
+export const listActiveCampaignCreatorRecords = createServerFn({ method: "POST" }).handler(
+  async () => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      listActiveCampaignCreatorsInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [],
+          report: null,
+          status,
+        };
+      }
+
+      const result = await listActiveCampaignCreatorsInGoogleSheets();
+      return {
+        ok: true,
+        records: result.records,
+        report: result.report,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [],
+        report: null,
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  },
+);
+
+export const createActiveCampaignCreatorRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertActiveCampaignCreatorInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [],
+          report: null,
+          status,
+        };
+      }
+
+      const result = await upsertActiveCampaignCreatorInGoogleSheets(
+        data.record as ActiveCampaignCreatorRecord,
+      );
+      return {
+        ok: true,
+        records: result.records,
+        report: result.report,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [],
+        report: null,
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const updateActiveCampaignCreatorRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertActiveCampaignCreatorInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [],
+          report: null,
+          status,
+        };
+      }
+
+      const result = await upsertActiveCampaignCreatorInGoogleSheets(
+        data.record as ActiveCampaignCreatorRecord,
+      );
+      return {
+        ok: true,
+        records: result.records,
+        report: result.report,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [],
+        report: null,
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const deleteActiveCampaignCreatorRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ recordId: z.string() }))
+  .handler(async ({ data }) => {
+    const {
+      deleteActiveCampaignCreatorInGoogleSheets,
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [],
+          report: null,
+          status,
+        };
+      }
+
+      const result = await deleteActiveCampaignCreatorInGoogleSheets(data.recordId);
+      return {
+        ok: true,
+        records: result.records,
+        report: result.report,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [],
+        report: null,
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
 
 export const cleanupSourcingActiveTemplateSettingsRecord = createServerFn({
   method: "POST",
