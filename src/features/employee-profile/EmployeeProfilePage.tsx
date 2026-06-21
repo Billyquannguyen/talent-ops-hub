@@ -129,8 +129,8 @@ export function EmployeeProfilePage() {
       <TopBar />
       <div className="absolute inset-x-0 top-0 h-[360px] bg-hero-glow pointer-events-none" />
 
-      <main className="relative mx-auto flex w-full max-w-6xl flex-col gap-5 px-5 py-6">
-        <section className="rounded-2xl border border-border bg-card/60 p-5 md:p-7">
+      <main className="katlas-page max-w-6xl">
+        <section className="katlas-hero-panel">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
               <div className="grid size-24 shrink-0 place-items-center overflow-hidden rounded-2xl border border-border bg-background text-2xl font-semibold">
@@ -499,7 +499,7 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
+    <section className="katlas-panel">
       <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
         <h2 className="text-base font-semibold">{title}</h2>
         {action ? <p className="text-xs text-muted-foreground">{action}</p> : null}

@@ -38,16 +38,18 @@ export function PasswordGate({ status, onUnlocked }: PasswordGateProps) {
     <main className="relative min-h-screen overflow-hidden bg-[#020604] text-white">
       <SmokeyBackground color="#22c55e" backdropBlurAmount="sm" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_100%,rgba(0,0,0,0),rgba(0,0,0,0.66)_78%)]" />
-      <div className="relative z-10 flex min-h-screen items-center justify-center px-5 py-10">
-        <section className="w-full max-w-sm rounded-2xl border border-white/15 bg-white/[0.08] p-8 shadow-[0_30px_120px_rgba(0,0,0,0.48)] backdrop-blur-xl">
-          <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs font-medium text-emerald-100 shadow-[0_0_32px_rgba(16,185,129,0.12)]">
+      <div className="relative z-10 mx-auto grid min-h-screen w-full max-w-6xl items-center gap-10 px-6 py-12 lg:grid-cols-[minmax(0,0.82fr)_minmax(280px,0.58fr)]">
+        <section className="w-full max-w-xl">
+          <div className="flex w-fit items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs font-medium text-emerald-100 shadow-[0_0_32px_rgba(16,185,129,0.12)]">
             <ShieldCheck className="size-3.5" />
             Katlas Buddy Access
           </div>
 
-          <div className="mt-6 text-center">
-            <h1 className="text-3xl font-semibold tracking-tight text-white">Katlas Buddy</h1>
-            <p className="mt-2 text-sm leading-6 text-white/58">
+          <div className="mt-7">
+            <h1 className="text-5xl font-semibold tracking-tight text-white md:text-7xl">
+              Katlas Buddy
+            </h1>
+            <p className="mt-5 max-w-lg text-base leading-7 text-white/62">
               Internal workflow system for creator sourcing, outreach, and campaign ops.
             </p>
           </div>
@@ -92,9 +94,17 @@ export function PasswordGate({ status, onUnlocked }: PasswordGateProps) {
           )}
 
           {message && !setupError ? (
-            <p className="mt-5 text-center text-sm leading-6 text-white/46">{message}</p>
+            <p className="mt-5 text-sm leading-6 text-white/46">{message}</p>
           ) : null}
         </section>
+        <aside className="hidden lg:block">
+          <div className="relative ml-auto aspect-square max-w-sm">
+            <div className="absolute inset-8 rounded-full border border-emerald-300/10 bg-emerald-300/[0.03] shadow-[0_0_120px_rgba(34,197,94,0.16)]" />
+            <div className="absolute left-1/2 top-1/2 grid size-40 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-[2rem] border border-white/10 bg-white/[0.06] shadow-[0_40px_100px_rgba(0,0,0,0.36)] backdrop-blur-xl">
+              <ShieldCheck className="size-12 text-emerald-200" />
+            </div>
+          </div>
+        </aside>
       </div>
     </main>
   );

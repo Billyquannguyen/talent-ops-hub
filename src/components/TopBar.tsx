@@ -14,47 +14,49 @@ export function TopBar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
-    <div className="flex items-center justify-between px-6 pt-5">
-      <Link
-        to="/settings"
-        className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs font-medium text-foreground/90 hover:bg-card"
-      >
-        <span className="size-1.5 rounded-full bg-emerald-400" />
-        Katlas Ops v1.0
-        <ChevronDown className="size-3.5 text-muted-foreground" />
-      </Link>
-
-      <div className="flex min-w-0 items-center gap-5">
-        <nav className="flex max-w-[70vw] items-center gap-5 overflow-x-auto text-sm">
-          {navItems.map((n) => {
-            const active = pathname === n.to;
-            return (
-              <Link
-                key={n.to}
-                to={n.to}
-                className={`relative pb-1 transition-colors ${
-                  active
-                    ? "text-foreground after:absolute after:-bottom-0.5 after:left-0 after:right-0 after:h-px after:bg-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {n.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <button
-          type="button"
-          onClick={lockPasswordGate}
-          title="Lock Katlas Buddy"
-          className="grid size-8 place-items-center rounded-full border border-border bg-card/60 text-muted-foreground transition hover:bg-card hover:text-foreground"
+    <header className="relative z-50 px-4 pt-4 sm:px-5">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 rounded-2xl border border-border/70 bg-background/62 px-3 py-3 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-xl md:flex-row md:items-center md:justify-between md:px-4">
+        <Link
+          to="/settings"
+          className="inline-flex w-fit items-center gap-2 rounded-full border border-border/80 bg-card/70 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-ring/40 hover:bg-card"
         >
-          <LockKeyhole className="size-3.5" />
-        </button>
-        <div className="size-8 rounded-full bg-accent grid place-items-center text-[11px] font-semibold ring-1 ring-border">
-          KM
+          <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.8)]" />
+          Katlas Buddy
+          <ChevronDown className="size-3.5 text-muted-foreground" />
+        </Link>
+
+        <div className="flex min-w-0 items-center justify-between gap-3 md:justify-end">
+          <nav className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-full border border-border/60 bg-card/45 p-1 text-sm">
+            {navItems.map((n) => {
+              const active = pathname === n.to;
+              return (
+                <Link
+                  key={n.to}
+                  to={n.to}
+                  className={`whitespace-nowrap rounded-full px-3 py-1.5 transition-colors ${
+                    active
+                      ? "bg-foreground text-background shadow-sm"
+                      : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+                  }`}
+                >
+                  {n.label}
+                </Link>
+              );
+            })}
+          </nav>
+          <button
+            type="button"
+            onClick={lockPasswordGate}
+            title="Lock Katlas Buddy"
+            className="grid size-9 shrink-0 place-items-center rounded-full border border-border/80 bg-card/70 text-muted-foreground transition hover:border-ring/40 hover:bg-card hover:text-foreground"
+          >
+            <LockKeyhole className="size-3.5" />
+          </button>
+          <div className="hidden size-9 shrink-0 place-items-center rounded-full border border-border bg-accent/80 text-[11px] font-semibold ring-1 ring-border sm:grid">
+            KM
+          </div>
         </div>
       </div>
-    </div>
+    </header>
   );
 }

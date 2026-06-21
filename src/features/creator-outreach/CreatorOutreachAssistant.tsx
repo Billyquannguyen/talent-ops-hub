@@ -832,8 +832,8 @@ export function CreatorOutreachAssistant() {
       <TopBar />
       <div className="absolute inset-x-0 top-0 h-[320px] bg-hero-glow pointer-events-none" />
 
-      <main className="relative mx-auto flex w-full max-w-7xl flex-col gap-4 px-5 py-5">
-        <section className="rounded-xl border border-border bg-card/70 p-4">
+      <main className="katlas-page gap-4 py-5">
+        <section className="katlas-hero-panel p-4 md:p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase text-muted-foreground">
@@ -844,7 +844,7 @@ export function CreatorOutreachAssistant() {
               </h1>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 lg:justify-end">
               <button
                 type="button"
                 onClick={() => setIsSmartFieldsModalOpen(true)}
@@ -879,7 +879,7 @@ export function CreatorOutreachAssistant() {
 
         <section className="grid items-stretch gap-4 lg:grid-cols-2">
           <Panel title="Creator Message" icon={Languages}>
-            <div className="grid min-h-[122px] gap-3 rounded-lg border border-border bg-background/65 p-3 md:grid-cols-2 md:items-end">
+            <div className="grid min-h-[122px] gap-3 rounded-lg border border-border/75 bg-background/65 p-3 md:grid-cols-2 md:items-end">
               <ControlBlock
                 label="Auto Detect Language"
                 value={getLanguageBadge(detectedLanguage)}
@@ -929,7 +929,7 @@ export function CreatorOutreachAssistant() {
           </Panel>
 
           <Panel title="Reply Builder" icon={FileInput}>
-            <div className="grid min-h-[122px] gap-3 rounded-lg border border-border bg-background/65 p-3 xl:grid-cols-[150px_minmax(0,1fr)_124px_176px] xl:items-end">
+            <div className="grid min-h-[122px] gap-3 rounded-lg border border-border/75 bg-background/65 p-3 xl:grid-cols-[150px_minmax(0,1fr)_124px_176px] xl:items-end">
               <ReplyTypeField value={creatorSource} onChange={changeCreatorSource} />
               <div className="flex items-end gap-2">
                 <div className="min-w-0 flex-1">
@@ -1048,17 +1048,9 @@ export function CreatorOutreachAssistant() {
           </Panel>
         </section>
 
-        {translationStatus ? (
-          <div className="rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
-            {translationStatus}
-          </div>
-        ) : null}
+        {translationStatus ? <div className="katlas-status-line">{translationStatus}</div> : null}
 
-        {copyStatus ? (
-          <div className="rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
-            {copyStatus}
-          </div>
-        ) : null}
+        {copyStatus ? <div className="katlas-status-line">{copyStatus}</div> : null}
       </main>
 
       <CampaignMemoryWidget
@@ -1830,9 +1822,9 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section className="flex h-full min-h-[680px] flex-col rounded-xl border border-border bg-card p-4 lg:h-[calc(100vh-220px)]">
+    <section className="katlas-panel flex h-full min-h-[680px] flex-col lg:h-[calc(100vh-236px)]">
       <div className="mb-4 flex shrink-0 items-center gap-2">
-        <div className="grid size-8 place-items-center rounded-md bg-accent text-accent-foreground">
+        <div className="katlas-panel-icon">
           <Icon className="size-4" />
         </div>
         <h2 className="text-base font-semibold">{title}</h2>

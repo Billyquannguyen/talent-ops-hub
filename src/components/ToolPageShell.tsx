@@ -16,7 +16,7 @@ export function ToolPageShell({ eyebrow, title, description, icon: Icon, actionL
       <div className="absolute inset-x-0 top-0 h-[360px] bg-hero-glow pointer-events-none" />
 
       <div className="relative flex-1 flex flex-col items-center justify-center px-6 py-16 text-center">
-        <div className="grid size-14 place-items-center rounded-2xl border border-border bg-card/70 backdrop-blur-sm mb-6">
+        <div className="mb-6 grid size-14 place-items-center rounded-2xl border border-border/80 bg-card/75 shadow-[0_18px_54px_rgba(0,0,0,0.2)] backdrop-blur-sm">
           <Icon className="size-5 text-muted-foreground" />
         </div>
         {eyebrow && (
@@ -24,7 +24,7 @@ export function ToolPageShell({ eyebrow, title, description, icon: Icon, actionL
             {eyebrow}
           </p>
         )}
-        <h1 className="text-2xl md:text-3xl font-medium tracking-tight max-w-xl">{title}</h1>
+        <h1 className="max-w-xl text-2xl font-semibold tracking-tight md:text-3xl">{title}</h1>
         <p className="mt-3 text-sm text-muted-foreground max-w-md leading-relaxed">{description}</p>
         {actionLabel && (
           <button className="mt-6 rounded-full bg-foreground text-background text-xs font-medium px-4 py-2 hover:opacity-90">

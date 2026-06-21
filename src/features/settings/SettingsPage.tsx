@@ -55,8 +55,8 @@ export function SettingsPage() {
       <TopBar />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[360px] bg-hero-glow" />
 
-      <main className="relative mx-auto flex w-full max-w-5xl flex-col gap-5 px-5 py-6">
-        <section className="rounded-2xl border border-border bg-card/60 p-5 md:p-7">
+      <main className="katlas-page max-w-5xl">
+        <section className="katlas-hero-panel">
           <p className="text-xs font-semibold uppercase text-muted-foreground">Settings</p>
           <h1 className="mt-3 text-3xl font-medium tracking-tight md:text-4xl">
             Workspace storage
@@ -67,10 +67,10 @@ export function SettingsPage() {
           </p>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-5">
+        <section className="katlas-panel p-5">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
             <div className="flex gap-3">
-              <div className="grid size-10 place-items-center rounded-lg bg-accent">
+              <div className="katlas-panel-icon size-10">
                 <Database className="size-5" />
               </div>
               <div>
@@ -121,7 +121,7 @@ export function SettingsPage() {
           ) : null}
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-5">
+        <section className="katlas-panel p-5">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
               <h2 className="text-lg font-semibold">Migrate Local Data To Google Sheets</h2>

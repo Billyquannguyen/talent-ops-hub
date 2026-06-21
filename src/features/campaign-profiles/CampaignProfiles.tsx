@@ -107,8 +107,8 @@ export function CampaignProfiles() {
       <TopBar />
       <div className="absolute inset-x-0 top-0 h-[360px] bg-hero-glow pointer-events-none" />
 
-      <main className="relative mx-auto flex w-full max-w-6xl flex-col gap-5 px-5 py-6">
-        <section className="rounded-2xl border border-border bg-card/60 p-5 md:p-7">
+      <main className="katlas-page max-w-6xl">
+        <section className="katlas-hero-panel">
           <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
             <div>
               <p className="text-xs font-semibold uppercase text-muted-foreground">
@@ -149,7 +149,7 @@ export function CampaignProfiles() {
             </button>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+          <div className="katlas-table-shell mt-4">
             <table className="min-w-[620px] w-full border-collapse text-left text-sm">
               <thead className="bg-muted/40 text-xs text-muted-foreground">
                 <tr>
@@ -419,9 +419,9 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
+    <section className="katlas-panel">
       <div className="mb-4 flex items-center gap-2">
-        <div className="grid size-8 place-items-center rounded-md bg-accent text-accent-foreground">
+        <div className="katlas-panel-icon">
           <Icon className="size-4" />
         </div>
         <h2 className="text-base font-semibold">{title}</h2>

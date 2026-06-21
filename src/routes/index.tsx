@@ -13,13 +13,13 @@ function Dashboard() {
       <TopBar />
       <div className="absolute inset-x-0 top-0 h-[420px] bg-hero-glow pointer-events-none" />
 
-      <main className="relative mx-auto flex w-full max-w-6xl flex-col px-6 pb-10 pt-14">
+      <main className="relative mx-auto flex w-full max-w-6xl flex-col px-5 pb-12 pt-14">
         <section className="mx-auto flex max-w-3xl flex-col items-center text-center">
-          <div className="mb-6 size-16 rounded-full bg-orb shadow-[0_0_60px_-10px_var(--glow)]" />
-          <p className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">
+          <div className="mb-6 size-14 rounded-2xl border border-border/70 bg-orb shadow-[0_0_70px_-16px_var(--glow)]" />
+          <p className="rounded-full border border-border/80 bg-card/60 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
             KATLAS BUDDY
           </p>
-          <h1 className="mt-3 text-3xl font-medium tracking-tight md:text-5xl">
+          <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-5xl">
             Unlock global markets with local voices
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">
@@ -34,7 +34,7 @@ function Dashboard() {
             const body = (
               <>
                 <div className="flex items-start justify-between">
-                  <div className="grid size-9 place-items-center rounded-lg border border-border bg-background/40">
+                  <div className="grid size-10 place-items-center rounded-xl border border-border/80 bg-background/55 shadow-inner">
                     <Icon className="size-4 text-muted-foreground" />
                   </div>
                   {card.status === "ready" ? (
@@ -47,7 +47,7 @@ function Dashboard() {
                   <span
                     className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
                       card.status === "ready"
-                        ? "bg-foreground text-background"
+                        ? "bg-emerald-300/15 text-emerald-100 ring-1 ring-emerald-300/20"
                         : "border border-border text-muted-foreground"
                     }`}
                   >
@@ -66,7 +66,7 @@ function Dashboard() {
                 <Link
                   key={card.id}
                   to={card.route}
-                  className="group rounded-2xl border border-border bg-card/60 p-4 transition-colors hover:bg-card"
+                  className="group min-h-56 rounded-2xl border border-border/80 bg-card/70 p-4 shadow-[0_18px_54px_rgba(0,0,0,0.18)] transition duration-200 hover:-translate-y-0.5 hover:border-ring/40 hover:bg-card"
                 >
                   {body}
                 </Link>
@@ -76,7 +76,7 @@ function Dashboard() {
             return (
               <div
                 key={card.id}
-                className="rounded-2xl border border-dashed border-border bg-card/40 p-4 opacity-80"
+                className="min-h-56 rounded-2xl border border-dashed border-border/80 bg-card/40 p-4 opacity-80"
               >
                 {body}
               </div>

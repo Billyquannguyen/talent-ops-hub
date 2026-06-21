@@ -9,9 +9,9 @@ interface Props {
 
 export function EmptyState({ icon: Icon, title, description, actionLabel }: Props) {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-card/40 px-8 py-20">
+    <div className="rounded-xl border border-dashed border-border/80 bg-card/45 px-8 py-16 shadow-inner">
       <div className="mx-auto flex max-w-md flex-col items-center text-center">
-        <div className="mb-4 grid size-11 place-items-center rounded-md border border-border bg-background">
+        <div className="mb-4 grid size-11 place-items-center rounded-lg border border-border/80 bg-background/70">
           <Icon className="size-5 text-muted-foreground" />
         </div>
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>

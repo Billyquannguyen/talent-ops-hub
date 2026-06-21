@@ -40,25 +40,25 @@
 
 :root {
   --radius: 0.75rem;
-  --background: oklch(0.16 0.005 250);
+  --background: oklch(0.145 0.007 250);
   --foreground: oklch(0.96 0.003 250);
-  --card: oklch(0.195 0.006 250);
+  --card: oklch(0.185 0.008 250);
   --card-foreground: oklch(0.96 0.003 250);
-  --popover: oklch(0.195 0.006 250);
+  --popover: oklch(0.19 0.008 250);
   --popover-foreground: oklch(0.96 0.003 250);
   --primary: oklch(0.96 0.003 250);
   --primary-foreground: oklch(0.16 0.005 250);
-  --secondary: oklch(0.23 0.006 250);
+  --secondary: oklch(0.225 0.008 250);
   --secondary-foreground: oklch(0.96 0.003 250);
-  --muted: oklch(0.22 0.006 250);
-  --muted-foreground: oklch(0.6 0.012 250);
-  --accent: oklch(0.26 0.018 165);
+  --muted: oklch(0.215 0.008 250);
+  --muted-foreground: oklch(0.68 0.014 250);
+  --accent: oklch(0.27 0.032 165);
   --accent-foreground: oklch(0.96 0.003 250);
   --destructive: oklch(0.6 0.2 25);
   --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.26 0.006 250 / 0.7);
-  --input: oklch(0.26 0.006 250);
-  --ring: oklch(0.62 0.12 165);
+  --border: oklch(0.3 0.01 250 / 0.72);
+  --input: oklch(0.32 0.012 250 / 0.86);
+  --ring: oklch(0.67 0.15 165);
 
   --sidebar: oklch(0.145 0.005 250);
   --sidebar-foreground: oklch(0.85 0.005 250);
@@ -68,11 +68,13 @@
 
   --glow: oklch(0.62 0.16 165);
 
-  --gradient-hero: radial-gradient(
-    60% 70% at 50% 0%,
-    color-mix(in oklab, var(--glow) 22%, transparent) 0%,
-    transparent 65%
-  );
+  --gradient-hero:
+    radial-gradient(
+      58% 68% at 50% -6%,
+      color-mix(in oklab, var(--glow) 20%, transparent) 0%,
+      transparent 65%
+    ),
+    radial-gradient(36% 40% at 10% 8%, oklch(0.45 0.07 205 / 0.14) 0%, transparent 70%);
   --gradient-orb: radial-gradient(
     circle at 35% 30%,
     oklch(0.85 0.18 180) 0%,
@@ -89,10 +91,75 @@
 
   html,
   body {
+    min-height: 100%;
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    color-scheme: dark;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-image:
+      radial-gradient(circle at 50% -20%, oklch(0.5 0.12 165 / 0.12), transparent 36rem),
+      linear-gradient(180deg, oklch(0.17 0.008 250), var(--color-background) 22rem);
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--glow) 36%, transparent);
+    color: var(--color-foreground);
+  }
+
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--ring) 80%, transparent);
+    outline-offset: 2px;
+  }
+
+  select {
+    color-scheme: dark;
+  }
+}
+
+@layer components {
+  .katlas-page {
+    @apply relative mx-auto flex w-full max-w-7xl flex-col gap-5 px-5 py-6;
+  }
+
+  .katlas-hero-panel {
+    @apply rounded-2xl border border-border/80 bg-card/70 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.22)] backdrop-blur-xl md:p-7;
+  }
+
+  .katlas-panel {
+    @apply rounded-xl border border-border/80 bg-card/80 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-sm;
+  }
+
+  .katlas-panel-icon {
+    @apply grid size-8 place-items-center rounded-lg border border-border/80 bg-accent/70 text-accent-foreground shadow-[0_0_24px_rgba(34,197,94,0.08)];
+  }
+
+  .katlas-muted-box {
+    @apply rounded-lg border border-border/75 bg-background/65;
+  }
+
+  .katlas-table-shell {
+    @apply overflow-x-auto rounded-xl border border-border/80 bg-background/35 shadow-inner;
+  }
+
+  .katlas-status-line {
+    @apply rounded-lg border border-border/75 bg-card/80 px-3 py-2 text-sm text-muted-foreground shadow-[0_12px_32px_rgba(0,0,0,0.14)];
   }
 }
 

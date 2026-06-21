@@ -205,7 +205,7 @@ function AgencyDatabaseTable({
         />
       </DatabaseToolbar>
 
-      <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+      <div className="katlas-table-shell mt-4">
         <table className="min-w-[1180px] w-full text-left text-sm">
           <thead className="bg-background text-xs uppercase text-muted-foreground">
             <tr>
@@ -359,7 +359,7 @@ function CreatorDatabaseTable({
         />
       </DatabaseToolbar>
 
-      <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+      <div className="katlas-table-shell mt-4">
         <table className="min-w-[1360px] w-full text-left text-sm">
           <thead className="bg-background text-xs uppercase text-muted-foreground">
             <tr>

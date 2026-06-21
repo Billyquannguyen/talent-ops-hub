@@ -1038,8 +1038,8 @@ export function CreatorSourcingAssistant() {
       <TopBar />
       <div className="absolute inset-x-0 top-0 h-[360px] bg-hero-glow pointer-events-none" />
 
-      <main className="relative mx-auto flex w-full max-w-7xl flex-col gap-5 px-5 py-6">
-        <section className="rounded-2xl border border-border bg-card/60 p-5 md:p-7">
+      <main className="katlas-page">
+        <section className="katlas-hero-panel">
           <div className="flex flex-col justify-between gap-8 lg:flex-row lg:items-end">
             <div>
               <p className="text-xs font-semibold uppercase text-muted-foreground">
@@ -1059,16 +1059,12 @@ export function CreatorSourcingAssistant() {
         {statusMessage || copyMessage || errorMessage ? (
           <section className="space-y-2">
             {statusMessage ? (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
+              <div className="katlas-status-line flex items-center gap-2">
                 <Check className="size-4 text-emerald-400" />
                 {statusMessage}
               </div>
             ) : null}
-            {copyMessage ? (
-              <div className="rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
-                {copyMessage}
-              </div>
-            ) : null}
+            {copyMessage ? <div className="katlas-status-line">{copyMessage}</div> : null}
             {errorMessage ? (
               <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {errorMessage}
@@ -2583,9 +2579,9 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
+    <section className="katlas-panel">
       <div className="mb-4 flex items-center gap-2">
-        <div className="grid size-8 place-items-center rounded-md bg-accent text-accent-foreground">
+        <div className="katlas-panel-icon">
           <Icon className="size-4" />
         </div>
         <h2 className="text-base font-semibold">{title}</h2>
@@ -2597,7 +2593,7 @@ function Panel({
 
 function SmallMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md border border-border bg-background px-3 py-2">
+    <div className="katlas-muted-box px-3 py-2">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-lg font-semibold">{value.toLocaleString()}</p>
     </div>

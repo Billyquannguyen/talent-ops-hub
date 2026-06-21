@@ -631,8 +631,8 @@ export function AboutKatlasMedia() {
       <TopBar />
       <div className="absolute inset-x-0 top-0 h-[360px] bg-hero-glow pointer-events-none" />
 
-      <main className="relative mx-auto flex w-full max-w-6xl flex-col gap-5 px-5 py-6">
-        <section className="rounded-2xl border border-border bg-card/70 p-5 md:p-7">
+      <main className="katlas-page max-w-6xl">
+        <section className="katlas-hero-panel">
           <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
             <div>
               <p className="text-xs font-semibold uppercase text-muted-foreground">
@@ -673,7 +673,7 @@ export function AboutKatlasMedia() {
           ))}
         </section>
 
-        <section className="rounded-lg border border-border bg-card/60 p-5">
+        <section className="katlas-panel">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -803,7 +803,7 @@ function clearProgressWindowName() {
 
 function ExecutiveSummary() {
   return (
-    <section className="rounded-2xl border border-border bg-card p-5">
+    <section className="katlas-panel p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -841,7 +841,7 @@ function ReadingProgress({
   onToggleComplete: (sectionId: string) => void;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
+    <section className="katlas-panel p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-2">
           <BookOpen className="size-4 text-muted-foreground" />
@@ -891,7 +891,7 @@ function HandbookSection({
   const isStandardsSection = section.id === "standards-boundaries";
 
   return (
-    <article className="rounded-2xl border border-border bg-card p-5 md:p-6">
+    <article className="katlas-panel p-5 md:p-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
         <div className="grid size-11 shrink-0 place-items-center rounded-md bg-accent text-accent-foreground">
           <Icon className="size-5" />
@@ -1084,7 +1084,7 @@ function WorkflowTimeline() {
       <div className="mt-4 flex gap-3 overflow-x-auto pb-2">
         {workflowSteps.map((step, index) => (
           <div key={step} className="flex min-w-[128px] items-center gap-3">
-            <div className="flex min-h-20 flex-1 flex-col justify-between rounded-lg border border-border bg-card p-3">
+            <div className="flex min-h-20 flex-1 flex-col justify-between rounded-lg border border-border/80 bg-card/75 p-3">
               <span className="text-xs text-muted-foreground">
                 {String(index + 1).padStart(2, "0")}
               </span>
@@ -1109,7 +1109,7 @@ function WorkflowStageBreakdown() {
       </div>
       <div className="mt-4 grid gap-3">
         {workflowStages.map((stage) => (
-          <div key={stage.title} className="rounded-lg border border-border bg-card p-4">
+          <div key={stage.title} className="rounded-lg border border-border/80 bg-card/75 p-4">
             <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
               <h4 className="text-sm font-semibold">{stage.title}</h4>
               <span className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground">
@@ -1136,7 +1136,7 @@ function PeopleAndTools() {
           {roleProfiles.map((profile) => (
             <div
               key={`${profile.name}-${profile.role}`}
-              className="rounded-lg border border-border bg-card p-4"
+              className="rounded-lg border border-border/80 bg-card/75 p-4"
             >
               <p className="font-semibold">{profile.name}</p>
               <p className="mt-1 text-sm text-muted-foreground">{profile.role}</p>
@@ -1154,7 +1154,7 @@ function PeopleAndTools() {
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {toolProfiles.map((tool) => (
-            <div key={tool.name} className="rounded-lg border border-border bg-card p-4">
+            <div key={tool.name} className="rounded-lg border border-border/80 bg-card/75 p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="font-semibold">{tool.name}</p>
                 <ExternalLink className="size-3.5 text-muted-foreground" />

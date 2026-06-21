@@ -93,8 +93,8 @@ export function EmployeePerformanceTracking() {
       <TopBar />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[360px] bg-hero-glow" />
 
-      <main className="relative mx-auto flex w-full max-w-7xl flex-col gap-5 px-5 py-6">
-        <section className="rounded-2xl border border-border bg-card/70 p-5 md:p-7">
+      <main className="katlas-page">
+        <section className="katlas-hero-panel">
           <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
             <div>
               <p className="text-xs font-semibold uppercase text-muted-foreground">
@@ -143,7 +143,7 @@ export function EmployeePerformanceTracking() {
 
           <Panel title="2. Campaign Benchmarks">
             {campaignProfiles.length ? (
-              <div className="overflow-x-auto rounded-lg border border-border">
+              <div className="katlas-table-shell">
                 <table className="min-w-[980px] w-full border-collapse text-left text-sm">
                   <thead className="bg-muted/40 text-xs text-muted-foreground">
                     <tr>
@@ -210,7 +210,7 @@ export function EmployeePerformanceTracking() {
             Enter your weekly work manually for now. Approvals, executions, expected profit, and
             actual profit are ready to be pulled from Active Campaign Management later.
           </p>
-          <div className="overflow-x-auto rounded-lg border border-border">
+          <div className="katlas-table-shell">
             <table className="min-w-[1100px] w-full border-collapse text-left text-sm">
               <thead className="bg-muted/40 text-xs text-muted-foreground">
                 <tr>
@@ -499,7 +499,7 @@ function createScore({
 
 function MainScoreCard({ score }: { score: number | null }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="katlas-panel p-4">
       <p className="text-xs text-muted-foreground">Employee Score</p>
       <p className="mt-2 text-3xl font-semibold">{score === null ? "--" : formatScore(score)}</p>
       <p className="mt-2 text-xs leading-5 text-muted-foreground">
@@ -511,7 +511,7 @@ function MainScoreCard({ score }: { score: number | null }) {
 
 function ScoreSummaryCard({ title, result }: { title: string; result: ScoreResult }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="katlas-panel p-4">
       <p className="text-xs text-muted-foreground">{title}</p>
       <p className="mt-2 text-2xl font-semibold">
         {result.cappedScore === null ? "--" : formatScore(result.cappedScore)}
@@ -573,7 +573,7 @@ function Panel({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border bg-card p-4">
+    <section className="katlas-panel">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold">{title}</h2>
         {action}
