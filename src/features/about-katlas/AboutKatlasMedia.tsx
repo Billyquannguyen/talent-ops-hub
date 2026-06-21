@@ -821,11 +821,14 @@ function ExecutiveSummary() {
         </span>
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-5 grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {executiveSummary.map((item) => (
-          <div key={item.label} className="rounded-lg border border-border bg-background/70 p-4">
+          <div
+            key={item.label}
+            className="min-w-0 rounded-lg border border-border bg-background/70 p-4"
+          >
             <p className="text-xs font-medium uppercase text-muted-foreground">{item.label}</p>
-            <p className="mt-2 text-base font-semibold leading-6">{item.value}</p>
+            <p className="mt-2 break-words text-base font-semibold leading-6">{item.value}</p>
           </div>
         ))}
       </div>
@@ -891,14 +894,14 @@ function HandbookSection({
   const isStandardsSection = section.id === "standards-boundaries";
 
   return (
-    <article className="katlas-panel p-5 md:p-6">
+    <article className="katlas-panel overflow-hidden p-5 md:p-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
         <div className="grid size-11 shrink-0 place-items-center rounded-md bg-accent text-accent-foreground">
           <Icon className="size-5" />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 max-w-full flex-1 overflow-hidden">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
+            <div className="min-w-0">
               <h2 className="text-xl font-semibold">{section.title}</h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
                 {section.summary}
@@ -935,13 +938,13 @@ function HandbookSection({
           </div>
 
           {expanded ? (
-            <div id={`${section.id}-details`} className="mt-5 grid gap-4">
-              <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4">
+            <div id={`${section.id}-details`} className="mt-5 grid min-w-0 gap-4">
+              <div className="min-w-0 overflow-hidden rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4">
                 <div className="flex items-center gap-2">
                   <FileText className="size-4 text-emerald-200" />
                   <h3 className="text-sm font-semibold text-emerald-100">Full Details</h3>
                 </div>
-                <div className="mt-4 grid gap-4">
+                <div className="mt-4 grid min-w-0 gap-4">
                   {section.detailBlocks.map((block) => (
                     <DetailBlockCard key={`${section.id}-${block.title}`} block={block} />
                   ))}
@@ -951,7 +954,7 @@ function HandbookSection({
             </div>
           ) : null}
 
-          <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1fr]">
+          <div className="mt-5 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <InfoList title="Key Facts" icon={Flag} items={section.keyFacts} />
             <InfoList
               title="Important Warnings"
@@ -962,7 +965,7 @@ function HandbookSection({
           </div>
 
           {section.callouts.length > 0 ? (
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               {section.callouts.map((callout) => (
                 <CalloutBox key={`${section.id}-${callout.title}`} callout={callout} />
               ))}
@@ -991,7 +994,7 @@ function InfoList({
 }) {
   return (
     <div
-      className={`rounded-lg border p-4 ${
+      className={`min-w-0 overflow-hidden rounded-lg border p-4 ${
         warning ? "border-amber-500/25 bg-amber-500/5" : "border-border bg-background/70"
       }`}
     >
@@ -999,9 +1002,9 @@ function InfoList({
         <Icon className={warning ? "size-4 text-amber-300" : "size-4 text-muted-foreground"} />
         <h3 className="text-sm font-semibold">{title}</h3>
       </div>
-      <div className="mt-3 grid gap-2">
+      <div className="mt-3 grid min-w-0 gap-2">
         {items.map((item) => (
-          <div key={item} className="flex gap-2 text-sm leading-6 text-muted-foreground">
+          <div key={item} className="flex min-w-0 gap-2 text-sm leading-6 text-muted-foreground">
             <span
               className={
                 warning
@@ -1009,7 +1012,7 @@ function InfoList({
                   : "mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground"
               }
             />
-            <span>{item}</span>
+            <span className="min-w-0 break-words">{item}</span>
           </div>
         ))}
       </div>
@@ -1020,24 +1023,24 @@ function InfoList({
 function DetailBlockCard({ block }: { block: DetailBlock }) {
   return (
     <div
-      className={`rounded-lg border p-4 ${
+      className={`min-w-0 overflow-hidden rounded-lg border p-4 ${
         block.warning ? "border-red-500/30 bg-red-500/10" : "border-border bg-background/70"
       }`}
     >
       <h4 className="text-sm font-semibold">{block.title}</h4>
       {block.body ? (
-        <p className="mt-3 text-sm leading-7 text-muted-foreground">{block.body}</p>
+        <p className="mt-3 break-words text-sm leading-7 text-muted-foreground">{block.body}</p>
       ) : null}
       {block.items ? (
-        <div className="mt-3 grid gap-2">
+        <div className="mt-3 grid min-w-0 gap-2">
           {block.items.map((item) => (
-            <div key={item} className="flex gap-2 text-sm leading-6 text-muted-foreground">
+            <div key={item} className="flex min-w-0 gap-2 text-sm leading-6 text-muted-foreground">
               <span
                 className={`mt-2 size-1.5 shrink-0 rounded-full ${
                   block.warning ? "bg-red-300" : "bg-muted-foreground"
                 }`}
               />
-              <span>{item}</span>
+              <span className="min-w-0 break-words">{item}</span>
             </div>
           ))}
         </div>
@@ -1064,24 +1067,26 @@ function CalloutBox({ callout }: { callout: Callout }) {
   const Icon = icons[callout.type];
 
   return (
-    <div className={`rounded-lg border p-4 ${styles[callout.type]}`}>
+    <div
+      className={`min-w-0 max-w-full overflow-hidden rounded-lg border p-4 ${styles[callout.type]}`}
+    >
       <div className="flex items-center gap-2">
         <Icon className="size-4 shrink-0" />
         <h3 className="text-sm font-semibold">{callout.title}</h3>
       </div>
-      <p className="mt-2 text-sm leading-6 text-current/80">{callout.body}</p>
+      <p className="mt-2 break-words text-sm leading-6 text-current/80">{callout.body}</p>
     </div>
   );
 }
 
 function WorkflowTimeline() {
   return (
-    <div className="mt-5 rounded-lg border border-border bg-background/70 p-4">
+    <div className="mt-5 min-w-0 overflow-hidden rounded-lg border border-border bg-background/70 p-4">
       <div className="flex items-center gap-2">
         <CheckCircle2 className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Campaign Workflow</h3>
       </div>
-      <div className="mt-4 flex gap-3 overflow-x-auto pb-2">
+      <div className="mt-4 flex max-w-full gap-3 overflow-x-auto pb-2">
         {workflowSteps.map((step, index) => (
           <div key={step} className="flex min-w-[128px] items-center gap-3">
             <div className="flex min-h-20 flex-1 flex-col justify-between rounded-lg border border-border/80 bg-card/75 p-3">
@@ -1102,21 +1107,24 @@ function WorkflowTimeline() {
 
 function WorkflowStageBreakdown() {
   return (
-    <div className="rounded-lg border border-border bg-background/70 p-4">
+    <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-background/70 p-4">
       <div className="flex items-center gap-2">
         <CheckCircle2 className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Stage-By-Stage Breakdown</h3>
       </div>
-      <div className="mt-4 grid gap-3">
+      <div className="mt-4 grid min-w-0 gap-3">
         {workflowStages.map((stage) => (
-          <div key={stage.title} className="rounded-lg border border-border/80 bg-card/75 p-4">
+          <div
+            key={stage.title}
+            className="min-w-0 overflow-hidden rounded-lg border border-border/80 bg-card/75 p-4"
+          >
             <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
               <h4 className="text-sm font-semibold">{stage.title}</h4>
               <span className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground">
                 {stage.owner}
               </span>
             </div>
-            <p className="mt-3 text-sm leading-7 text-muted-foreground">{stage.body}</p>
+            <p className="mt-3 break-words text-sm leading-7 text-muted-foreground">{stage.body}</p>
           </div>
         ))}
       </div>
@@ -1126,49 +1134,54 @@ function WorkflowStageBreakdown() {
 
 function PeopleAndTools() {
   return (
-    <div className="mt-5 grid gap-4">
-      <div className="rounded-lg border border-border bg-background/70 p-4">
+    <div className="mt-5 grid min-w-0 gap-4">
+      <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-background/70 p-4">
         <div className="flex items-center gap-2">
           <UsersRound className="size-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Role Directory</h3>
         </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-[repeat(3,minmax(0,1fr))]">
           {roleProfiles.map((profile) => (
             <div
               key={`${profile.name}-${profile.role}`}
-              className="rounded-lg border border-border/80 bg-card/75 p-4"
+              className="min-w-0 overflow-hidden rounded-lg border border-border/80 bg-card/75 p-4"
             >
-              <p className="font-semibold">{profile.name}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{profile.role}</p>
+              <p className="break-words font-semibold">{profile.name}</p>
+              <p className="mt-1 break-words text-sm text-muted-foreground">{profile.role}</p>
               <p className="mt-4 text-xs font-medium uppercase text-muted-foreground">Ask for</p>
-              <p className="mt-1 text-sm leading-6">{profile.whatToAsk}</p>
+              <p className="mt-1 break-words text-sm leading-6">{profile.whatToAsk}</p>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="rounded-lg border border-border bg-background/70 p-4">
+      <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-background/70 p-4">
         <div className="flex items-center gap-2">
           <Wrench className="size-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Tool Directory</h3>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-4 grid min-w-0 gap-3 md:grid-cols-[repeat(2,minmax(0,1fr))] xl:grid-cols-[repeat(3,minmax(0,1fr))]">
           {toolProfiles.map((tool) => (
-            <div key={tool.name} className="rounded-lg border border-border/80 bg-card/75 p-4">
+            <div
+              key={tool.name}
+              className="min-w-0 overflow-hidden rounded-lg border border-border/80 bg-card/75 p-4"
+            >
               <div className="flex items-center justify-between gap-3">
-                <p className="font-semibold">{tool.name}</p>
+                <p className="break-words font-semibold">{tool.name}</p>
                 <ExternalLink className="size-3.5 text-muted-foreground" />
               </div>
               <p className="mt-3 text-xs font-medium uppercase text-muted-foreground">Purpose</p>
-              <p className="mt-1 text-sm leading-6">{tool.purpose}</p>
+              <p className="mt-1 break-words text-sm leading-6">{tool.purpose}</p>
               <p className="mt-3 text-xs font-medium uppercase text-muted-foreground">
                 Who Uses It
               </p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">{tool.whoUsesIt}</p>
+              <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">
+                {tool.whoUsesIt}
+              </p>
               <p className="mt-3 text-xs font-medium uppercase text-muted-foreground">
                 Access Instructions
               </p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">
                 {tool.accessInstructions}
               </p>
             </div>
@@ -1181,19 +1194,19 @@ function PeopleAndTools() {
 
 function StandardsChecklist() {
   return (
-    <div className="mt-5 rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+    <div className="mt-5 min-w-0 overflow-hidden rounded-lg border border-red-500/30 bg-red-500/10 p-4">
       <div className="flex items-center gap-2 text-red-100">
         <ShieldAlert className="size-4" />
         <h3 className="text-sm font-semibold">Non-Negotiable Standards</h3>
       </div>
-      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+      <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {standardsChecklist.map((rule) => (
           <div
             key={rule}
-            className="flex gap-3 rounded-lg border border-red-500/25 bg-background/70 p-4"
+            className="flex min-w-0 gap-3 rounded-lg border border-red-500/25 bg-background/70 p-4"
           >
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-300" />
-            <p className="text-sm leading-6 text-red-50/90">{rule}</p>
+            <p className="min-w-0 break-words text-sm leading-6 text-red-50/90">{rule}</p>
           </div>
         ))}
       </div>
