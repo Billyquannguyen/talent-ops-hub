@@ -18,11 +18,16 @@ import {
   listActiveCampaignCreatorsFromGoogleSheets,
   listCampaignMemoryCardsFromGoogleSheets,
   listOutreachTemplatesFromGoogleSheets,
+  listPerformanceBenchmarksFromGoogleSheets,
+  listPerformanceWeeklyInputsFromGoogleSheets,
   loadCreatorSourcingDatabaseFromGoogleSheets,
   loadDatabaseFromGoogleSheets,
   migrateDatabaseToGoogleSheets,
   replaceCampaignMemoryCardsForCampaignInGoogleSheets,
   saveDatabaseToGoogleSheets,
+  saveAppSettingToGoogleSheets,
+  savePerformanceBenchmarkToGoogleSheets,
+  savePerformanceWeeklyInputToGoogleSheets,
   saveSourcingTemplateToGoogleSheets,
   updateActiveCampaignCreatorInGoogleSheets,
   updateCampaignMemoryCardInGoogleSheets,
@@ -446,6 +451,90 @@ export async function deleteActiveCampaignCreatorFromGoogleSheetsOnly(
   return result.records;
 }
 
+export async function listPerformanceBenchmarksFromGoogleSheetsOnly(): Promise<
+  PerformanceBenchmarkRecord[]
+> {
+  console.info("[AppRepositoryGoogleSheets]", "list-performance-benchmarks-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listPerformanceBenchmarksFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberPerformanceBenchmarks(result.records);
+  return result.records;
+}
+
+export async function savePerformanceBenchmarkToGoogleSheetsOnly(
+  record: PerformanceBenchmarkRecord,
+): Promise<PerformanceBenchmarkRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "save-performance-benchmark-start", {
+    benchmarkId: record.benchmarkId,
+    campaignId: record.campaignId,
+    at: new Date().toISOString(),
+  });
+  const result = await savePerformanceBenchmarkToGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberPerformanceBenchmarks(result.records);
+  return result.records;
+}
+
+export async function listPerformanceWeeklyInputsFromGoogleSheetsOnly(): Promise<
+  PerformanceWeeklyInputRecord[]
+> {
+  console.info("[AppRepositoryGoogleSheets]", "list-performance-weekly-inputs-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listPerformanceWeeklyInputsFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberPerformanceWeeklyInputs(result.records);
+  return result.records;
+}
+
+export async function savePerformanceWeeklyInputToGoogleSheetsOnly(
+  record: PerformanceWeeklyInputRecord,
+): Promise<PerformanceWeeklyInputRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "save-performance-weekly-input-start", {
+    inputId: record.inputId,
+    campaignId: record.campaignId,
+    weekStart: record.weekStart,
+    at: new Date().toISOString(),
+  });
+  const result = await savePerformanceWeeklyInputToGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberPerformanceWeeklyInputs(result.records);
+  return result.records;
+}
+
+export async function saveAppSettingToGoogleSheetsOnly(
+  settingKey: string,
+  settingValue: string,
+): Promise<AppSettingRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "save-app-setting-start", {
+    settingKey,
+    at: new Date().toISOString(),
+  });
+  const result = await saveAppSettingToGoogleSheets({
+    settingKey,
+    settingValue,
+    updatedAt: new Date().toISOString(),
+  });
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberAppSettings(result.records);
+  return result.records;
+}
+
 export function saveAppDatabase(database: CentralAppDatabase) {
   saveCentralDatabaseToLocalStorage(database);
   if (typeof window !== "undefined") {
@@ -639,6 +728,24 @@ function rememberCampaignMemoryCards(
 function rememberActiveCampaignCreators(records: ActiveCampaignCreatorRecord[]) {
   const database = loadAppDatabase();
   database.worksheets.ActiveCampaignCreators = records;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
+function rememberPerformanceBenchmarks(records: PerformanceBenchmarkRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.PerformanceBenchmarks = records;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
+function rememberPerformanceWeeklyInputs(records: PerformanceWeeklyInputRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.PerformanceWeeklyInputs = records;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
+function rememberAppSettings(records: AppSettingRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.AppSettings = records;
   saveCentralDatabaseToLocalStorage(database);
 }
 

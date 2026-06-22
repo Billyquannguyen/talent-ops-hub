@@ -32,8 +32,7 @@ export const workflowCards: WorkflowCard[] = [
   {
     id: "active-campaigns",
     title: "Active Campaign Management",
-    description:
-      "Track selected creators, quotes, status, profit, drafts, payments, and live links.",
+    description: "Track selected creators, quotes, status, profit, payments, and live links.",
     status: "ready",
     route: "/active-campaigns",
     icon: BriefcaseBusiness,

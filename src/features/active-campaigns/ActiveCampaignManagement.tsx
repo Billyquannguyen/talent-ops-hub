@@ -110,6 +110,7 @@ export function ActiveCampaignManagement({
     const now = new Date().toISOString();
     const savedRecord = {
       ...editingRecord,
+      draftLink: "",
       updatedAt: now,
     };
 
@@ -299,7 +300,7 @@ function CreatorRecordsTable({
 }) {
   return (
     <div className="katlas-table-shell mt-4">
-      <table className="min-w-[1280px] w-full border-collapse text-left text-sm">
+      <table className="min-w-[1240px] w-full border-collapse text-left text-sm">
         <thead className="bg-muted/40 text-xs text-muted-foreground">
           <tr>
             <TableHeader>Creator</TableHeader>
@@ -311,8 +312,8 @@ function CreatorRecordsTable({
             <TableHeader>CPM</TableHeader>
             <TableHeader>Profit</TableHeader>
             <TableHeader>Profit Margin</TableHeader>
+            <TableHeader>Month</TableHeader>
             <TableHeader>Status</TableHeader>
-            <TableHeader>Draft Link</TableHeader>
             <TableHeader>Live Link</TableHeader>
             <TableHeader>Notes</TableHeader>
             <TableHeader>Actions</TableHeader>
@@ -345,11 +346,9 @@ function CreatorRecordsTable({
                   <TableCell>{formatCpm(financials.cpm)}</TableCell>
                   <TableCell>{formatCurrency(financials.profit)}</TableCell>
                   <TableCell>{formatPercent(financials.profitMargin)}</TableCell>
+                  <TableCell>{record.month || "No month"}</TableCell>
                   <TableCell>
                     <StatusBadge status={record.status} />
-                  </TableCell>
-                  <TableCell>
-                    <InlineLink href={record.draftLink} label="Draft Link" />
                   </TableCell>
                   <TableCell>
                     <InlineLink href={record.liveLink} label="Live Link" />
@@ -467,6 +466,11 @@ function CreatorRecordModal({
             value={record.externalQuote}
             onChange={(externalQuote) => patchRecord({ externalQuote })}
           />
+          <MonthInput
+            label="Month"
+            value={record.month}
+            onChange={(month) => patchRecord({ month })}
+          />
           <FieldLabel label="Status">
             <select
               value={record.status}
@@ -482,11 +486,6 @@ function CreatorRecordModal({
               ))}
             </select>
           </FieldLabel>
-          <TextInput
-            label="Draft Link"
-            value={record.draftLink}
-            onChange={(draftLink) => patchRecord({ draftLink })}
-          />
           <TextInput
             label="Live Link"
             value={record.liveLink}
@@ -611,6 +610,27 @@ function NumberInput({
         min="0"
         step="0.01"
         onChange={(event) => onChange(Number(event.target.value))}
+        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+      />
+    </FieldLabel>
+  );
+}
+
+function MonthInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <FieldLabel label={label}>
+      <input
+        value={value}
+        type="month"
+        onChange={(event) => onChange(event.target.value)}
         className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
       />
     </FieldLabel>

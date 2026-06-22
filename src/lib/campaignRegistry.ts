@@ -59,6 +59,7 @@ export type GlobalCampaign = {
 export type SelectedCreatorRecord = {
   id: string;
   campaignRegistryId: string;
+  month: string;
   creatorName: string;
   creatorLink: string;
   avgViews: number;
@@ -221,6 +222,7 @@ export function selectedCreatorRecordToStorageRecord(
   return {
     recordId: record.id,
     campaignId: record.campaignRegistryId,
+    month: record.month,
     creatorName: record.creatorName,
     creatorLink: record.creatorLink,
     avgViews: record.avgViews,
@@ -245,6 +247,7 @@ function activeCampaignCreatorRecordsToSelectedCreatorRecords(
     normalizeCreatorRecord({
       id: record.recordId,
       campaignRegistryId: record.campaignId,
+      month: record.month,
       creatorName: record.creatorName,
       creatorLink: record.creatorLink,
       avgViews: record.avgViews,
@@ -285,6 +288,7 @@ function databaseToCampaignRegistry(database: CentralAppDatabase): GlobalCampaig
     normalizeCreatorRecord({
       id: record.recordId,
       campaignRegistryId: record.campaignId,
+      month: record.month,
       creatorName: record.creatorName,
       creatorLink: record.creatorLink,
       avgViews: record.avgViews,
@@ -328,6 +332,7 @@ export function createSelectedCreatorRecord(campaignRegistryId: string): Selecte
   return {
     id: createId("creator"),
     campaignRegistryId,
+    month: getCurrentMonthValue(),
     creatorName: "",
     creatorLink: "",
     avgViews: 0,
@@ -533,6 +538,7 @@ function normalizeCreatorRecord(value: unknown): SelectedCreatorRecord {
   return {
     id: stringValue(record.id) || createId("creator"),
     campaignRegistryId: stringValue(record.campaignRegistryId),
+    month: stringValue(record.month) || createdAt.slice(0, 7),
     creatorName: stringValue(record.creatorName),
     creatorLink: stringValue(record.creatorLink),
     avgViews: numberValue(record.avgViews),
@@ -644,6 +650,10 @@ function stringValue(value: unknown): string {
 function createId(prefix: string): string {
   if (globalThis.crypto?.randomUUID) return `${prefix}-${globalThis.crypto.randomUUID()}`;
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function getCurrentMonthValue(): string {
+  return new Date().toISOString().slice(0, 7);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

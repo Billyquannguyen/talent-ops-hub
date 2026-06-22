@@ -83,6 +83,7 @@ function normalizeActiveCampaignCreatorRecord(
   return {
     recordId: stringValue(record.recordId),
     campaignId: stringValue(record.campaignId),
+    month: stringValue(record.month) || createdAt.slice(0, 7),
     creatorName: stringValue(record.creatorName),
     creatorLink: stringValue(record.creatorLink),
     avgViews,

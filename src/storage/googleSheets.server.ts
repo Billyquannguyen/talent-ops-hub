@@ -43,6 +43,12 @@ import {
   removeActiveCampaignCreatorRecord,
   upsertActiveCampaignCreatorRecord,
 } from "./activeCampaignCreators";
+import {
+  cleanupPerformanceBenchmarkRecords,
+  cleanupPerformanceWeeklyInputRecords,
+  upsertPerformanceBenchmarkRecord,
+  upsertPerformanceWeeklyInputRecord,
+} from "./performanceRecords";
 
 type GoogleSheetsConfig = {
   spreadsheetId: string;
@@ -756,6 +762,153 @@ export async function deleteActiveCampaignCreatorInGoogleSheets(recordId: string
   };
 }
 
+export async function listPerformanceBenchmarksInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const benchmarkRows = await readWorksheetRecordsWithRowNumbers<PerformanceBenchmarkRecord>(
+    spreadsheetId,
+    "PerformanceBenchmarks",
+  );
+  const cleanup = cleanupPerformanceBenchmarkRecords(benchmarkRows.rows.map((row) => row.record));
+  logPerformanceBenchmarkCleanupSummary("list-current-state", cleanup);
+
+  if (cleanup.removedCount > 0) {
+    await writeCurrentStateWorksheetRows(
+      spreadsheetId,
+      "PerformanceBenchmarks",
+      benchmarkRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("performance-benchmark-list-cleanup");
+  }
+
+  return {
+    records: cleanup.records,
+  };
+}
+
+export async function upsertPerformanceBenchmarkInGoogleSheets(record: PerformanceBenchmarkRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const benchmarkRows = await readWorksheetRecordsWithRowNumbers<PerformanceBenchmarkRecord>(
+    spreadsheetId,
+    "PerformanceBenchmarks",
+  );
+  const cleanup = upsertPerformanceBenchmarkRecord(
+    benchmarkRows.rows.map((row) => row.record),
+    record,
+  );
+  logPerformanceBenchmarkCleanupSummary("targeted-upsert", cleanup);
+
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "PerformanceBenchmarks",
+    benchmarkRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("performance-benchmark-targeted-write");
+
+  return {
+    records: cleanup.records,
+  };
+}
+
+export async function listPerformanceWeeklyInputsInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const inputRows = await readWorksheetRecordsWithRowNumbers<PerformanceWeeklyInputRecord>(
+    spreadsheetId,
+    "PerformanceWeeklyInputs",
+  );
+  const cleanup = cleanupPerformanceWeeklyInputRecords(inputRows.rows.map((row) => row.record));
+  logPerformanceWeeklyInputCleanupSummary("list-snapshots", cleanup);
+
+  if (cleanup.removedCount > 0) {
+    await writeCurrentStateWorksheetRows(
+      spreadsheetId,
+      "PerformanceWeeklyInputs",
+      inputRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("performance-weekly-input-list-cleanup");
+  }
+
+  return {
+    records: cleanup.records,
+  };
+}
+
+export async function upsertPerformanceWeeklyInputInGoogleSheets(
+  record: PerformanceWeeklyInputRecord,
+) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const inputRows = await readWorksheetRecordsWithRowNumbers<PerformanceWeeklyInputRecord>(
+    spreadsheetId,
+    "PerformanceWeeklyInputs",
+  );
+  const cleanup = upsertPerformanceWeeklyInputRecord(
+    inputRows.rows.map((row) => row.record),
+    record,
+  );
+  logPerformanceWeeklyInputCleanupSummary("targeted-upsert", cleanup);
+
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "PerformanceWeeklyInputs",
+    inputRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("performance-weekly-input-targeted-write");
+
+  return {
+    records: cleanup.records,
+  };
+}
+
+export async function upsertAppSettingInGoogleSheets(record: AppSettingRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const settingsRows = await readWorksheetRecordsWithRowNumbers<AppSettingRecord>(
+    spreadsheetId,
+    "AppSettings",
+  );
+  const now = new Date().toISOString();
+  const nextRecord: AppSettingRecord = {
+    settingKey: stringValue(record.settingKey),
+    settingValue: stringValue(record.settingValue),
+    updatedAt: stringValue(record.updatedAt) || now,
+  };
+  const existingIndex = settingsRows.rows.findIndex(
+    (row) => row.record.settingKey === nextRecord.settingKey,
+  );
+  const nextRows = settingsRows.rows.map((row) => row.record);
+  if (existingIndex === -1) {
+    nextRows.push(nextRecord);
+  } else {
+    nextRows[existingIndex] = nextRecord;
+  }
+
+  await writeCurrentStateWorksheetRows(spreadsheetId, "AppSettings", settingsRows, nextRows);
+  invalidateDatabaseReadCache("app-setting-targeted-write");
+
+  return {
+    records: nextRows,
+  };
+}
+
 export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets() {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
@@ -1272,6 +1425,38 @@ function logActiveCampaignCreatorCleanupSummary(
   });
 }
 
+function logPerformanceBenchmarkCleanupSummary(
+  reason: string,
+  cleanup: {
+    removedCount: number;
+    duplicateCampaignRows: number;
+  },
+) {
+  if (cleanup.removedCount === 0) return;
+  console.info("[PerformanceBenchmarksCleanup]", "delete-duplicate-campaign-rows", {
+    reason,
+    removedCount: cleanup.removedCount,
+    duplicateCampaignRows: cleanup.duplicateCampaignRows,
+    at: new Date().toISOString(),
+  });
+}
+
+function logPerformanceWeeklyInputCleanupSummary(
+  reason: string,
+  cleanup: {
+    removedCount: number;
+    duplicateSnapshotRows: number;
+  },
+) {
+  if (cleanup.removedCount === 0) return;
+  console.info("[PerformanceWeeklyInputsCleanup]", "delete-duplicate-snapshot-rows", {
+    reason,
+    removedCount: cleanup.removedCount,
+    duplicateSnapshotRows: cleanup.duplicateSnapshotRows,
+    at: new Date().toISOString(),
+  });
+}
+
 async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
   spreadsheetId: string,
   reason: string,
@@ -1552,6 +1737,7 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         rowsBySheet.ActiveCampaignCreators.map((row) => ({
           recordId: stringValue(row.recordId),
           campaignId: stringValue(row.campaignId),
+          month: stringValue(row.month),
           creatorName: stringValue(row.creatorName),
           creatorLink: stringValue(row.creatorLink),
           avgViews: numberValue(row.avgViews),
@@ -1571,6 +1757,8 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
       PerformanceBenchmarks: rowsBySheet.PerformanceBenchmarks.map((row) => ({
         benchmarkId: stringValue(row.benchmarkId),
         campaignId: stringValue(row.campaignId),
+        includeInPerformance: stringValue(row.includeInPerformance),
+        teamSize: numberValue(row.teamSize),
         targetDailyOutreach: numberValue(row.targetDailyOutreach),
         teamOutreachExcludingMe: numberValue(row.teamOutreachExcludingMe),
         teamSubmissionsExcludingMe: numberValue(row.teamSubmissionsExcludingMe),
@@ -1580,6 +1768,7 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
       })),
       PerformanceWeeklyInputs: rowsBySheet.PerformanceWeeklyInputs.map((row) => ({
         inputId: stringValue(row.inputId),
+        month: stringValue(row.month),
         weekStart: stringValue(row.weekStart),
         campaignId: stringValue(row.campaignId),
         myOutreachVolume: numberValue(row.myOutreachVolume),
@@ -1588,6 +1777,11 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         myCampaignExecutions: numberValue(row.myCampaignExecutions),
         expectedProfit: numberValue(row.expectedProfit),
         actualProfit: numberValue(row.actualProfit),
+        outreachScore: numberValue(row.outreachScore),
+        submissionScore: numberValue(row.submissionScore),
+        approvalScore: numberValue(row.approvalScore),
+        executionScore: numberValue(row.executionScore),
+        weeklyScore: numberValue(row.weeklyScore),
         createdAt: stringValue(row.createdAt),
         updatedAt: stringValue(row.updatedAt),
       })),

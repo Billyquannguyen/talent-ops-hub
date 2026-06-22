@@ -149,6 +149,7 @@ function mergeLegacyCampaignRegistry(database: CentralAppDatabase, now: string) 
     database.worksheets.ActiveCampaignCreators.push({
       recordId: stringValue(record.id) || createId("creator"),
       campaignId,
+      month: stringValue(record.month) || String(updatedAt).slice(0, 7),
       creatorName: stringValue(record.creatorName),
       creatorLink: stringValue(record.creatorLink),
       avgViews,
@@ -274,6 +275,8 @@ function mergeLegacyPerformance(database: CentralAppDatabase, now: string) {
     database.worksheets.PerformanceBenchmarks.push({
       benchmarkId: stringValue(campaign.benchmarkId) || createId("benchmark"),
       campaignId,
+      includeInPerformance: stringValue(campaign.includeInPerformance) || "TRUE",
+      teamSize: numberValue(campaign.teamSize) || 1,
       targetDailyOutreach: numberValue(campaign.targetDailyOutreachVolume) || 25,
       teamOutreachExcludingMe: numberValue(campaign.teamOutreachVolumeExcludingMe),
       teamSubmissionsExcludingMe: numberValue(campaign.teamSubmissionsExcludingMe),
@@ -284,6 +287,7 @@ function mergeLegacyPerformance(database: CentralAppDatabase, now: string) {
 
     database.worksheets.PerformanceWeeklyInputs.push({
       inputId: stringValue(campaign.inputId) || createId("weekly-input"),
+      month: stringValue(campaign.month) || stringValue(campaign.weekStart).slice(0, 7),
       weekStart: stringValue(campaign.weekStart),
       campaignId,
       myOutreachVolume: numberValue(campaign.myOutreachVolume),
@@ -292,6 +296,11 @@ function mergeLegacyPerformance(database: CentralAppDatabase, now: string) {
       myCampaignExecutions: numberValue(campaign.myCampaignExecutions),
       expectedProfit: numberValue(campaign.expectedProfit),
       actualProfit: numberValue(campaign.actualProfit),
+      outreachScore: numberValue(campaign.outreachScore),
+      submissionScore: numberValue(campaign.submissionScore),
+      approvalScore: numberValue(campaign.approvalScore),
+      executionScore: numberValue(campaign.executionScore),
+      weeklyScore: numberValue(campaign.weeklyScore),
       createdAt: now,
       updatedAt: stringValue(state.updatedAt) || now,
     });
@@ -403,6 +412,7 @@ function normalizeActiveCampaignCreator(value: unknown): ActiveCampaignCreatorRe
   return {
     recordId: stringValue(row.recordId) || stringValue(row.id) || createId("creator"),
     campaignId: stringValue(row.campaignId),
+    month: stringValue(row.month) || createdAt.slice(0, 7),
     creatorName: stringValue(row.creatorName),
     creatorLink: stringValue(row.creatorLink),
     avgViews,
@@ -427,6 +437,8 @@ function normalizePerformanceBenchmark(value: unknown): PerformanceBenchmarkReco
   return {
     benchmarkId: stringValue(row.benchmarkId) || stringValue(row.id) || createId("benchmark"),
     campaignId: stringValue(row.campaignId),
+    includeInPerformance: normalizeBooleanString(row.includeInPerformance, true),
+    teamSize: numberValue(row.teamSize) || 1,
     targetDailyOutreach: numberValue(row.targetDailyOutreach) || 25,
     teamOutreachExcludingMe: numberValue(row.teamOutreachExcludingMe),
     teamSubmissionsExcludingMe: numberValue(row.teamSubmissionsExcludingMe),
@@ -442,6 +454,7 @@ function normalizePerformanceWeeklyInput(value: unknown): PerformanceWeeklyInput
   const createdAt = stringValue(row.createdAt) || now;
   return {
     inputId: stringValue(row.inputId) || stringValue(row.id) || createId("weekly-input"),
+    month: stringValue(row.month) || stringValue(row.weekStart).slice(0, 7),
     weekStart: stringValue(row.weekStart),
     campaignId: stringValue(row.campaignId),
     myOutreachVolume: numberValue(row.myOutreachVolume),
@@ -450,6 +463,11 @@ function normalizePerformanceWeeklyInput(value: unknown): PerformanceWeeklyInput
     myCampaignExecutions: numberValue(row.myCampaignExecutions),
     expectedProfit: numberValue(row.expectedProfit),
     actualProfit: numberValue(row.actualProfit),
+    outreachScore: numberValue(row.outreachScore),
+    submissionScore: numberValue(row.submissionScore),
+    approvalScore: numberValue(row.approvalScore),
+    executionScore: numberValue(row.executionScore),
+    weeklyScore: numberValue(row.weeklyScore),
     createdAt,
     updatedAt: stringValue(row.updatedAt) || createdAt,
   };
@@ -581,6 +599,15 @@ function createCampaignCode(name: string): string {
 function numberValue(value: unknown): number {
   const numeric = Number(String(value ?? "").replace(/,/g, ""));
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function normalizeBooleanString(value: unknown, fallback: boolean): string {
+  const normalized = stringValue(value).trim().toLowerCase();
+  if (["true", "yes", "1", "include", "included"].includes(normalized)) return "TRUE";
+  if (["false", "no", "0", "exclude", "excluded", "disabled"].includes(normalized)) {
+    return "FALSE";
+  }
+  return fallback ? "TRUE" : "FALSE";
 }
 
 function stringValue(value: unknown): string {

@@ -3,9 +3,12 @@ import { z } from "zod";
 
 import type {
   ActiveCampaignCreatorRecord,
+  AppSettingRecord,
   CampaignMemoryCardRecord,
   CentralAppDatabase,
   OutreachTemplateRecord,
+  PerformanceBenchmarkRecord,
+  PerformanceWeeklyInputRecord,
   SourcingTemplateRecord,
 } from "./schema";
 
@@ -892,6 +895,202 @@ export const deleteActiveCampaignCreatorRecord = createServerFn({ method: "POST"
         ok: false,
         records: [],
         report: null,
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const listPerformanceBenchmarkRecords = createServerFn({ method: "POST" }).handler(
+  async () => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      listPerformanceBenchmarksInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [],
+          status,
+        };
+      }
+
+      const result = await listPerformanceBenchmarksInGoogleSheets();
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  },
+);
+
+export const savePerformanceBenchmarkRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertPerformanceBenchmarkInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [],
+          status,
+        };
+      }
+
+      const result = await upsertPerformanceBenchmarkInGoogleSheets(
+        data.record as PerformanceBenchmarkRecord,
+      );
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const listPerformanceWeeklyInputRecords = createServerFn({ method: "POST" }).handler(
+  async () => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      listPerformanceWeeklyInputsInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [],
+          status,
+        };
+      }
+
+      const result = await listPerformanceWeeklyInputsInGoogleSheets();
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  },
+);
+
+export const savePerformanceWeeklyInputRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertPerformanceWeeklyInputInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [],
+          status,
+        };
+      }
+
+      const result = await upsertPerformanceWeeklyInputInGoogleSheets(
+        data.record as PerformanceWeeklyInputRecord,
+      );
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const saveAppSettingRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const { diagnosticsFromError, getGoogleSheetsServerStatus, upsertAppSettingInGoogleSheets } =
+      await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [],
+          status,
+        };
+      }
+
+      const result = await upsertAppSettingInGoogleSheets(data.record as AppSettingRecord);
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [],
         status: {
           source: "googleSheets" as const,
           shared: true,

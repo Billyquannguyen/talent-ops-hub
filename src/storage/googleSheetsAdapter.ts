@@ -2,12 +2,15 @@ import {
   centralWorksheetNames,
   requiredWorksheetHeaders,
   worksheetHeaderAliases,
+  type ActiveCampaignCreatorRecord,
+  type AppSettingRecord,
   type CampaignMemoryCardRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
   type CentralWorksheetName,
-  type ActiveCampaignCreatorRecord,
   type OutreachTemplateRecord,
+  type PerformanceBenchmarkRecord,
+  type PerformanceWeeklyInputRecord,
   type SourcingTemplateRecord,
   type StorageDiagnostic,
   type StorageStatus,
@@ -25,17 +28,22 @@ import {
   deleteOutreachTemplateRecord,
   deleteSourcingTemplateRecord,
   getGoogleSheetsConnectionStatus,
-  listCampaignMemoryCardRecords,
   listActiveCampaignCreatorRecords,
+  listCampaignMemoryCardRecords,
   listOutreachTemplateRecords,
+  listPerformanceBenchmarkRecords,
+  listPerformanceWeeklyInputRecords,
   loadCreatorSourcingGoogleSheetsDatabase,
   loadGoogleSheetsDatabase,
   migrateLocalDatabaseToGoogleSheets,
   replaceCampaignMemoryCardsForCampaignRecord,
+  saveAppSettingRecord,
   saveGoogleSheetsDatabase,
+  savePerformanceBenchmarkRecord,
+  savePerformanceWeeklyInputRecord,
   saveSourcingTemplateRecord,
-  updateCampaignMemoryCardRecord,
   updateActiveCampaignCreatorRecord,
+  updateCampaignMemoryCardRecord,
   updateOutreachTemplateRecord,
 } from "./googleSheets.functions";
 
@@ -116,6 +124,24 @@ export type ActiveCampaignCreatorsResult = {
   ok: boolean;
   records: ActiveCampaignCreatorRecord[];
   report: ActiveCampaignCreatorCleanupReport | null;
+  status: StorageStatus;
+};
+
+export type PerformanceBenchmarksResult = {
+  ok: boolean;
+  records: PerformanceBenchmarkRecord[];
+  status: StorageStatus;
+};
+
+export type PerformanceWeeklyInputsResult = {
+  ok: boolean;
+  records: PerformanceWeeklyInputRecord[];
+  status: StorageStatus;
+};
+
+export type AppSettingsResult = {
+  ok: boolean;
+  records: AppSettingRecord[];
   status: StorageStatus;
 };
 
@@ -249,6 +275,32 @@ export async function deleteActiveCampaignCreatorFromGoogleSheets(
   recordId: string,
 ): Promise<ActiveCampaignCreatorsResult> {
   return deleteActiveCampaignCreatorRecord({ data: { recordId } });
+}
+
+export async function listPerformanceBenchmarksFromGoogleSheets(): Promise<PerformanceBenchmarksResult> {
+  return listPerformanceBenchmarkRecords();
+}
+
+export async function savePerformanceBenchmarkToGoogleSheets(
+  record: PerformanceBenchmarkRecord,
+): Promise<PerformanceBenchmarksResult> {
+  return savePerformanceBenchmarkRecord({ data: { record } });
+}
+
+export async function listPerformanceWeeklyInputsFromGoogleSheets(): Promise<PerformanceWeeklyInputsResult> {
+  return listPerformanceWeeklyInputRecords();
+}
+
+export async function savePerformanceWeeklyInputToGoogleSheets(
+  record: PerformanceWeeklyInputRecord,
+): Promise<PerformanceWeeklyInputsResult> {
+  return savePerformanceWeeklyInputRecord({ data: { record } });
+}
+
+export async function saveAppSettingToGoogleSheets(
+  record: AppSettingRecord,
+): Promise<AppSettingsResult> {
+  return saveAppSettingRecord({ data: { record } });
 }
 
 export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets(): Promise<{

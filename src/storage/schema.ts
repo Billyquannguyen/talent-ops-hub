@@ -61,6 +61,7 @@ export type CampaignMemoryCardRecord = {
 export type ActiveCampaignCreatorRecord = {
   recordId: string;
   campaignId: string;
+  month: string;
   creatorName: string;
   creatorLink: string;
   avgViews: number;
@@ -80,6 +81,8 @@ export type ActiveCampaignCreatorRecord = {
 export type PerformanceBenchmarkRecord = {
   benchmarkId: string;
   campaignId: string;
+  includeInPerformance: string;
+  teamSize: number;
   targetDailyOutreach: number;
   teamOutreachExcludingMe: number;
   teamSubmissionsExcludingMe: number;
@@ -90,6 +93,7 @@ export type PerformanceBenchmarkRecord = {
 
 export type PerformanceWeeklyInputRecord = {
   inputId: string;
+  month: string;
   weekStart: string;
   campaignId: string;
   myOutreachVolume: number;
@@ -98,6 +102,11 @@ export type PerformanceWeeklyInputRecord = {
   myCampaignExecutions: number;
   expectedProfit: number;
   actualProfit: number;
+  outreachScore: number;
+  submissionScore: number;
+  approvalScore: number;
+  executionScore: number;
+  weeklyScore: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -213,6 +222,7 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
   ActiveCampaignCreators: [
     "recordId",
     "campaignId",
+    "month",
     "creatorName",
     "creatorLink",
     "avgViews",
@@ -231,6 +241,8 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
   PerformanceBenchmarks: [
     "benchmarkId",
     "campaignId",
+    "includeInPerformance",
+    "teamSize",
     "targetDailyOutreach",
     "teamOutreachExcludingMe",
     "teamSubmissionsExcludingMe",
@@ -240,6 +252,7 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
   ],
   PerformanceWeeklyInputs: [
     "inputId",
+    "month",
     "weekStart",
     "campaignId",
     "myOutreachVolume",
@@ -248,6 +261,11 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "myCampaignExecutions",
     "expectedProfit",
     "actualProfit",
+    "outreachScore",
+    "submissionScore",
+    "approvalScore",
+    "executionScore",
+    "weeklyScore",
     "createdAt",
     "updatedAt",
   ],
@@ -293,6 +311,7 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
 
 export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   campaignId: ["id", "campaign id", "campaign_id"],
+  month: ["month", "campaign month", "performance month"],
   campaignName: ["campaign name", "name", "campaign_name"],
   campaignCode: ["campaign code", "campaign id code", "campaign_code"],
   id: ["templateId", "template id", "template_id"],
@@ -310,6 +329,8 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   externalQuote: ["external quote", "price", "external_quote"],
   profitMargin: ["profit margin", "margin", "profit_margin"],
   benchmarkId: ["id", "benchmark id", "benchmark_id"],
+  includeInPerformance: ["include in performance", "include_in_performance", "performance enabled"],
+  teamSize: ["team size", "team_size", "members", "number of members"],
   targetDailyOutreach: ["target daily outreach", "target outreach", "target_daily_outreach"],
   teamOutreachExcludingMe: ["team outreach excluding me", "team outreach"],
   teamSubmissionsExcludingMe: ["team submissions excluding me", "team submissions"],
@@ -322,6 +343,11 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   myCampaignExecutions: ["my campaign executions", "my executions"],
   expectedProfit: ["expected profit", "expected_profit"],
   actualProfit: ["actual profit", "actual_profit"],
+  outreachScore: ["outreach score", "outreach_score"],
+  submissionScore: ["submission score", "submission_score"],
+  approvalScore: ["approval score", "approval_score"],
+  executionScore: ["execution score", "execution_score"],
+  weeklyScore: ["weekly score", "weekly_score", "snapshot score"],
   agencyName: ["agency name", "agency_name"],
   contactName: ["contact name", "contact_name"],
   contactRole: ["contact role", "role", "contact_role"],
