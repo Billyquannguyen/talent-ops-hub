@@ -3,9 +3,11 @@ import { z } from "zod";
 
 import type {
   ActiveCampaignCreatorRecord,
+  AgencyDatabaseRecord,
   AppSettingRecord,
   CampaignMemoryCardRecord,
   CentralAppDatabase,
+  EmployeeProfileRecord,
   OutreachTemplateRecord,
   PerformanceBenchmarkRecord,
   PerformanceWeeklyInputRecord,
@@ -98,6 +100,82 @@ export const loadCreatorSourcingGoogleSheetsDatabase = createServerFn({ method: 
       };
     }
   });
+
+export const listCampaignProfileRecords = createServerFn({ method: "POST" }).handler(async () => {
+  const { diagnosticsFromError, getGoogleSheetsServerStatus, listCampaignProfilesInGoogleSheets } =
+    await import("./googleSheets.server");
+
+  try {
+    const status = getGoogleSheetsServerStatus();
+    if (!status.configured) {
+      return {
+        ok: false,
+        records: [],
+        status,
+      };
+    }
+
+    const result = await listCampaignProfilesInGoogleSheets();
+    return {
+      ok: true,
+      records: result.records,
+      status,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      records: [],
+      status: {
+        source: "googleSheets" as const,
+        shared: true,
+        configured: true,
+        diagnostics: diagnosticsFromError(error),
+      },
+    };
+  }
+});
+
+export const migrateAgencyDatabaseContactsRecord = createServerFn({ method: "POST" }).handler(
+  async () => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      migrateAgencyDatabaseContactsInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as AgencyDatabaseRecord[],
+          report: null,
+          status,
+        };
+      }
+
+      const result = await migrateAgencyDatabaseContactsInGoogleSheets();
+      return {
+        ok: true,
+        records: result.records,
+        report: result.report,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as AgencyDatabaseRecord[],
+        report: null,
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  },
+);
 
 export const saveGoogleSheetsDatabase = createServerFn({ method: "POST" })
   .inputValidator(z.object({ database: z.any() }))
@@ -1082,6 +1160,115 @@ export const saveAppSettingRecord = createServerFn({ method: "POST" })
       }
 
       const result = await upsertAppSettingInGoogleSheets(data.record as AppSettingRecord);
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const listAppSettingRecords = createServerFn({ method: "POST" }).handler(async () => {
+  const { diagnosticsFromError, getGoogleSheetsServerStatus, listAppSettingsInGoogleSheets } =
+    await import("./googleSheets.server");
+
+  try {
+    const status = getGoogleSheetsServerStatus();
+    if (!status.configured) {
+      return {
+        ok: false,
+        records: [],
+        status,
+      };
+    }
+
+    const result = await listAppSettingsInGoogleSheets();
+    return {
+      ok: true,
+      records: result.records,
+      status,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      records: [],
+      status: {
+        source: "googleSheets" as const,
+        shared: true,
+        configured: true,
+        diagnostics: diagnosticsFromError(error),
+      },
+    };
+  }
+});
+
+export const listEmployeeProfileRecords = createServerFn({ method: "POST" }).handler(async () => {
+  const { diagnosticsFromError, getGoogleSheetsServerStatus, listEmployeeProfilesInGoogleSheets } =
+    await import("./googleSheets.server");
+
+  try {
+    const status = getGoogleSheetsServerStatus();
+    if (!status.configured) {
+      return {
+        ok: false,
+        records: [],
+        status,
+      };
+    }
+
+    const result = await listEmployeeProfilesInGoogleSheets();
+    return {
+      ok: true,
+      records: result.records,
+      status,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      records: [],
+      status: {
+        source: "googleSheets" as const,
+        shared: true,
+        configured: true,
+        diagnostics: diagnosticsFromError(error),
+      },
+    };
+  }
+});
+
+export const saveEmployeeProfileRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertEmployeeProfileInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [],
+          status,
+        };
+      }
+
+      const result = await upsertEmployeeProfileInGoogleSheets(
+        data.record as EmployeeProfileRecord,
+      );
       return {
         ok: true,
         records: result.records,

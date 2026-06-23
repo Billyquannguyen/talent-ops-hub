@@ -41,6 +41,7 @@ import {
   deleteOutreachTemplateFromGoogleSheetsOnly,
   listOutreachTemplatesFromGoogleSheetsOnly,
   loadAppDatabaseFromGoogleSheetsOnly,
+  migrateAgencyDatabaseContactsInGoogleSheetsOnly,
   saveAppDatabaseToGoogleSheetsOnly,
   updateOutreachTemplateInGoogleSheetsOnly,
 } from "@/storage/appRepository";
@@ -509,6 +510,8 @@ export function CreatorOutreachAssistant() {
       agencyName: "",
       contactName: "",
       contactRole: "",
+      contact: "",
+      contactsJson: "",
       email: "",
       line: "",
       instagram: "",
@@ -560,10 +563,23 @@ export function CreatorOutreachAssistant() {
         reason: "creator-outreach:save-agency-preload",
       });
       const now = new Date().toISOString();
+      const agencyContacts = normalizeAgencyContactRows(record);
+      const firstContact = agencyContacts[0] ?? {
+        name: "",
+        role: "",
+        contact: "",
+      };
       const savedRecord = {
         ...record,
         agencyName: record.agencyName.trim(),
-        status: normalizeDatabaseStatus(record.status),
+        contactName: firstContact.name,
+        contactRole: firstContact.role,
+        contact: firstContact.contact,
+        contactsJson: JSON.stringify(agencyContacts),
+        email: extractEmailFromContact(firstContact.contact),
+        line: extractLineFromContact(firstContact.contact),
+        niche: "",
+        status: record.status || "potential",
         createdAt: record.createdAt || now,
         updatedAt: now,
       };
@@ -661,6 +677,33 @@ export function CreatorOutreachAssistant() {
         error instanceof Error
           ? error.message
           : "Google Sheets delete failed. Agency was not deleted.",
+      );
+    } finally {
+      setIsDatabaseSaving(false);
+    }
+  }
+
+  async function migrateAgencyContacts() {
+    const confirmed =
+      typeof window === "undefined" ||
+      window.confirm(
+        "Run safe Agency Database contact migration? This creates a backup tab first and keeps old columns.",
+      );
+    if (!confirmed) return;
+
+    setIsDatabaseSaving(true);
+    setDatabaseError("");
+    try {
+      const result = await migrateAgencyDatabaseContactsInGoogleSheetsOnly();
+      setAgencyRecords(result.records);
+      setCopyStatus(
+        `Agency contacts migrated. Backup tab: ${result.report.backupSheetName}. Rows backfilled: ${result.report.rowsBackfilled}.`,
+      );
+    } catch (error) {
+      setDatabaseError(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets migration failed. Agency contacts were not migrated.",
       );
     } finally {
       setIsDatabaseSaving(false);
@@ -1091,6 +1134,9 @@ export function CreatorOutreachAssistant() {
           }}
           onDeleteAgency={(recordId) => {
             void deleteAgencyRecord(recordId);
+          }}
+          onMigrateAgencyContacts={() => {
+            void migrateAgencyContacts();
           }}
           onNewCreator={() => setCreatorDraft(createCreatorDraft())}
           onEditCreator={(record) => setCreatorDraft({ ...record })}
@@ -1777,6 +1823,60 @@ function isTemplateCompatibleWithSource(template: OutreachTemplate, source: Crea
 function normalizeDatabaseStatus(value: unknown) {
   const status = String(value ?? "").toLowerCase();
   return databaseStatusOptions.includes(status) ? status : "potential";
+}
+
+function normalizeAgencyContactRows(record: AgencyDatabaseRecord) {
+  const parsed = parseAgencyContactsJson(record.contactsJson);
+  if (parsed.length) return parsed;
+
+  const legacyContact = [
+    record.contact?.trim(),
+    record.email ? `Email: ${record.email.trim()}` : "",
+    record.line ? `LINE: ${record.line.trim()}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  if (!record.contactName && !record.contactRole && !legacyContact) return [];
+
+  return [
+    {
+      id: createOutreachId("agency-contact"),
+      name: record.contactName.trim(),
+      role: record.contactRole.trim(),
+      contact: legacyContact,
+    },
+  ];
+}
+
+function parseAgencyContactsJson(value: string) {
+  if (!value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Record<string, unknown>;
+      const contact = {
+        id: String(row.id ?? "") || createOutreachId("agency-contact"),
+        name: String(row.name ?? "").trim(),
+        role: String(row.role ?? "").trim(),
+        contact: String(row.contact ?? row.value ?? "").trim(),
+      };
+      return contact.name || contact.role || contact.contact ? [contact] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function extractEmailFromContact(value: string) {
+  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? "";
+}
+
+function extractLineFromContact(value: string) {
+  const lineMatch = value.match(/(?:line|line id)[:\s]+(@?[\w.-]+)/i);
+  return lineMatch?.[1] ?? "";
 }
 
 function normalizeNumber(value: unknown) {

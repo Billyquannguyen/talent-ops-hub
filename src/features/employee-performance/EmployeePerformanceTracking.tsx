@@ -1,9 +1,23 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Activity,
+  BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  Gauge,
+  Send,
+  Target,
+  TrendingUp,
+} from "lucide-react";
 
 import { TopBar } from "@/components/TopBar";
 import {
+  listActiveCampaignCreatorsFromGoogleSheetsOnly,
+  listAppSettingsFromGoogleSheetsOnly,
+  listCampaignProfilesFromGoogleSheetsOnly,
+  listPerformanceBenchmarksFromGoogleSheetsOnly,
+  listPerformanceWeeklyInputsFromGoogleSheetsOnly,
   loadAppDatabase,
-  loadAppDatabaseFromGoogleSheetsOnly,
   saveAppSettingToGoogleSheetsOnly,
   savePerformanceBenchmarkToGoogleSheetsOnly,
   savePerformanceWeeklyInputToGoogleSheetsOnly,
@@ -42,7 +56,6 @@ type WeeklyInputDraft = {
   myOutreachVolume: number;
   myCreatorSubmissions: number;
   myCreatorApprovals: number;
-  myCampaignExecutions: number;
 };
 
 type ScoreValue = {
@@ -54,7 +67,6 @@ type WeeklySnapshotCalculation = {
   outreach: ScoreValue;
   submission: ScoreValue;
   approval: ScoreValue;
-  execution: ScoreValue;
   weeklyScore: number;
 };
 
@@ -65,7 +77,6 @@ const weeklyWeights = {
   outreach: 0.15,
   submission: 0.25,
   approval: 0.3,
-  execution: 0.3,
 } as const;
 
 export function EmployeePerformanceTracking() {
@@ -87,11 +98,29 @@ export function EmployeePerformanceTracking() {
     let cancelled = false;
     void (async () => {
       try {
-        const database = await loadAppDatabaseFromGoogleSheetsOnly({
-          reason: "employee-performance:load",
-          force: true,
+        console.info("[EmployeePerformance]", "load-targeted-sheets", {
+          at: new Date().toISOString(),
         });
+        const [
+          campaignProfiles,
+          performanceBenchmarks,
+          performanceWeeklyInputs,
+          activeCreators,
+          settings,
+        ] = await Promise.all([
+          listCampaignProfilesFromGoogleSheetsOnly(),
+          listPerformanceBenchmarksFromGoogleSheetsOnly(),
+          listPerformanceWeeklyInputsFromGoogleSheetsOnly(),
+          listActiveCampaignCreatorsFromGoogleSheetsOnly(),
+          listAppSettingsFromGoogleSheetsOnly(),
+        ]);
         if (cancelled) return;
+        const database = loadAppDatabase();
+        database.worksheets.CampaignProfiles = campaignProfiles;
+        database.worksheets.PerformanceBenchmarks = performanceBenchmarks;
+        database.worksheets.PerformanceWeeklyInputs = performanceWeeklyInputs;
+        database.worksheets.ActiveCampaignCreators = activeCreators;
+        database.worksheets.AppSettings = settings;
         hydrateFromDatabase(database, "google-sheets");
         setStatusMessage("Performance data loaded from Google Sheets.");
       } catch (error) {
@@ -150,7 +179,6 @@ export function EmployeePerformanceTracking() {
               myOutreachVolume: snapshot?.myOutreachVolume ?? 0,
               myCreatorSubmissions: snapshot?.myCreatorSubmissions ?? 0,
               myCreatorApprovals: snapshot?.myCreatorApprovals ?? 0,
-              myCampaignExecutions: snapshot?.myCampaignExecutions ?? 0,
             },
           ];
         }),
@@ -178,6 +206,19 @@ export function EmployeePerformanceTracking() {
         monthlyProfitKpi,
       }),
     [activeCreators, includedCampaigns, monthlyProfitKpi, selectedMonth, selectedMonthSnapshots],
+  );
+  const latestSnapshot = useMemo(
+    () =>
+      [...selectedMonthSnapshots].sort(
+        (first, second) =>
+          Date.parse(second.updatedAt || second.createdAt) -
+          Date.parse(first.updatedAt || first.createdAt),
+      )[0],
+    [selectedMonthSnapshots],
+  );
+  const selectedWeekLabel = useMemo(
+    () => weeks.find((week) => week.weekStart === selectedWeekStart)?.label ?? "Select a week",
+    [selectedWeekStart, weeks],
   );
 
   function hydrateFromDatabase(
@@ -269,13 +310,13 @@ export function EmployeePerformanceTracking() {
           myOutreachVolume: input.myOutreachVolume,
           myCreatorSubmissions: input.myCreatorSubmissions,
           myCreatorApprovals: input.myCreatorApprovals,
-          myCampaignExecutions: input.myCampaignExecutions,
+          myCampaignExecutions: 0,
           expectedProfit: 0,
           actualProfit: 0,
           outreachScore: calculation.outreach.capped ?? 0,
           submissionScore: calculation.submission.capped ?? 0,
           approvalScore: calculation.approval.capped ?? 0,
-          executionScore: calculation.execution.capped ?? 0,
+          executionScore: 0,
           weeklyScore: calculation.weeklyScore,
           createdAt: existing?.createdAt || now,
           updatedAt: now,
@@ -312,49 +353,56 @@ export function EmployeePerformanceTracking() {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[360px] bg-hero-glow" />
 
       <main className="katlas-page">
-        <section className="katlas-hero-panel">
-          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+        <section className="relative overflow-hidden rounded-3xl border border-border/80 bg-card/70 p-5 shadow-[0_30px_100px_rgba(0,0,0,0.28)] backdrop-blur-xl md:p-7">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_72%_22%,rgba(34,211,238,0.14),transparent_34%),radial-gradient(circle_at_14%_8%,rgba(34,197,94,0.12),transparent_32%)]" />
+          <div className="relative grid gap-7 lg:grid-cols-[1fr_360px] lg:items-center">
             <div>
-              <p className="text-xs font-semibold uppercase text-muted-foreground">
+              <p className="inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/5 px-3 py-1 text-xs font-medium uppercase text-cyan-100/80">
                 Employee Performance Tracking
               </p>
-              <h1 className="mt-3 text-3xl font-medium tracking-tight md:text-4xl">
-                Weekly snapshots with monthly rollup
+              <h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight md:text-5xl">
+                Weekly snapshots. Monthly signal.
               </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Select a month, generate weekly snapshots, and let monthly profit pull from Active
-                Campaign Management.
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
+                Track outreach, submissions, approvals, and revenue pull in one operating view.
               </p>
+              <div className="mt-6 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span className="rounded-full border border-border/80 bg-background/50 px-3 py-1">
+                  100 = meeting expectations
+                </span>
+                <span className="rounded-full border border-border/80 bg-background/50 px-3 py-1">
+                  Above 100 = outperforming
+                </span>
+                <span className="rounded-full border border-border/80 bg-background/50 px-3 py-1">
+                  Below 100 = underperforming
+                </span>
+              </div>
             </div>
-            <div className="rounded-lg border border-border bg-background p-4 text-sm leading-6 text-muted-foreground">
-              <p>100 = meeting expectations</p>
-              <p>Above 100 = outperforming</p>
-              <p>Below 100 = underperforming</p>
-            </div>
+            <ScoreRing
+              score={monthlyResult.finalScore}
+              label="Monthly Score"
+              detail={`${selectedMonth} · ${formatNumber(selectedMonthSnapshots.length)} snapshots`}
+            />
           </div>
         </section>
 
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <MetricCard title="Monthly Score" value={formatNullableScore(monthlyResult.finalScore)} />
-          <MetricCard
-            title="Activity Average"
-            value={formatNullableScore(monthlyResult.monthlyActivityAverage)}
-          />
-          <MetricCard title="Profit Score" value={formatNullableScore(monthlyResult.profitScore)} />
-          <MetricCard title="Pulled Profit" value={formatCurrency(monthlyResult.monthlyProfit)} />
-          <MetricCard title="Snapshots" value={formatNumber(selectedMonthSnapshots.length)} />
-        </section>
-
-        <section className="grid gap-5 xl:grid-cols-[380px_1fr]">
-          <Panel title="1. Monthly Setup">
-            <div className="grid gap-3">
+        <section className="grid gap-5 xl:grid-cols-[0.88fr_1.42fr]">
+          <Panel
+            title="Monthly Control"
+            action={
+              <span className="rounded-full border border-border/70 bg-background/50 px-2.5 py-1 text-xs text-muted-foreground">
+                {selectedMonth}
+              </span>
+            }
+          >
+            <div className="grid gap-4">
               <MonthInput
                 label="Selected Month"
                 value={selectedMonth}
                 onChange={setSelectedMonth}
               />
               <NumberInput
-                label="Monthly Profit KPI"
+                label="Monthly Revenue/Profit Goal"
                 value={monthlyProfitKpi}
                 prefix="$"
                 onChange={setMonthlyProfitKpi}
@@ -370,212 +418,165 @@ export function EmployeePerformanceTracking() {
             </div>
           </Panel>
 
-          <Panel title="2. Project Performance Controls">
-            {campaigns.length ? (
-              <div className="katlas-table-shell">
-                <table className="min-w-[1120px] w-full border-collapse text-left text-sm">
-                  <thead className="bg-muted/40 text-xs text-muted-foreground">
-                    <tr>
-                      <TableHeader>Include</TableHeader>
-                      <TableHeader>Campaign</TableHeader>
-                      <TableHeader>Team Size</TableHeader>
-                      <TableHeader>Target Daily Outreach</TableHeader>
-                      <TableHeader>Team Outreach Excl. Me</TableHeader>
-                      <TableHeader>Team Submissions Excl. Me</TableHeader>
-                      <TableHeader>Team Approvals Excl. Me</TableHeader>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {benchmarks.map((benchmark) => (
-                      <tr key={benchmark.campaignId} className="border-t border-border">
-                        <TableCell>
-                          <input
-                            type="checkbox"
-                            checked={benchmark.includeInPerformance}
-                            onChange={(event) =>
-                              patchBenchmark(benchmark.campaignId, {
-                                includeInPerformance: event.target.checked,
-                              })
-                            }
-                            className="size-4 accent-primary"
-                            aria-label={`Include ${benchmark.campaignName} in performance`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <span className="font-medium">{benchmark.campaignName}</span>
-                        </TableCell>
-                        <TableCell>
-                          <CompactNumberInput
-                            value={benchmark.teamSize}
-                            onChange={(teamSize) =>
-                              patchBenchmark(benchmark.campaignId, {
-                                teamSize: Math.max(1, Math.round(teamSize)),
-                              })
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <CompactNumberInput
-                            value={benchmark.targetDailyOutreach}
-                            onChange={(targetDailyOutreach) =>
-                              patchBenchmark(benchmark.campaignId, { targetDailyOutreach })
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <CompactNumberInput
-                            value={benchmark.teamOutreachExcludingMe}
-                            onChange={(teamOutreachExcludingMe) =>
-                              patchBenchmark(benchmark.campaignId, { teamOutreachExcludingMe })
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <CompactNumberInput
-                            value={benchmark.teamSubmissionsExcludingMe}
-                            onChange={(teamSubmissionsExcludingMe) =>
-                              patchBenchmark(benchmark.campaignId, { teamSubmissionsExcludingMe })
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <CompactNumberInput
-                            value={benchmark.teamApprovalsExcludingMe}
-                            onChange={(teamApprovalsExcludingMe) =>
-                              patchBenchmark(benchmark.campaignId, { teamApprovalsExcludingMe })
-                            }
-                          />
-                        </TableCell>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <Panel
+            title="Weekly Snapshot"
+            action={
+              <button
+                type="button"
+                onClick={() => void generateWeeklySnapshot()}
+                disabled={isSaving || !includedCampaigns.length}
+                className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Generate Snapshot
+              </button>
+            }
+          >
+            <div className="mb-5 grid gap-3 lg:grid-cols-[320px_1fr] lg:items-end">
+              <FieldLabel label="Week Period">
+                <select
+                  value={selectedWeekStart}
+                  onChange={(event) => setSelectedWeekStart(event.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                >
+                  {weeks.map((week) => (
+                    <option key={week.weekStart} value={week.weekStart}>
+                      {week.label}
+                    </option>
+                  ))}
+                </select>
+              </FieldLabel>
+              <div className="rounded-xl border border-border/75 bg-background/40 p-3">
+                <div className="flex items-start gap-3">
+                  <CalendarDays className="mt-0.5 size-4 text-cyan-100/80" />
+                  <div>
+                    <p className="text-xs uppercase text-muted-foreground">Current week</p>
+                    <p className="mt-1 text-sm font-medium">{selectedWeekLabel}</p>
+                  </div>
+                </div>
               </div>
-            ) : (
-              <p className="rounded-lg border border-dashed border-border bg-background p-4 text-sm text-muted-foreground">
-                No campaign profiles exist yet. Create campaigns in Campaign Profiles first.
-              </p>
-            )}
+            </div>
+
+            <div className="katlas-table-shell">
+              <table className="min-w-[720px] w-full border-collapse text-left text-sm">
+                <thead className="bg-muted/40 text-xs text-muted-foreground">
+                  <tr>
+                    <TableHeader>Campaign</TableHeader>
+                    <TableHeader>My Outreach</TableHeader>
+                    <TableHeader>My Submissions</TableHeader>
+                    <TableHeader>My Approvals</TableHeader>
+                  </tr>
+                </thead>
+                <tbody>
+                  {includedCampaigns.length ? (
+                    includedCampaigns.map((campaign) => {
+                      const input =
+                        weeklyInputs[campaign.campaignId] ??
+                        createEmptyWeeklyInput(campaign.campaignId);
+                      return (
+                        <tr key={campaign.campaignId} className="border-t border-border">
+                          <TableCell>
+                            <span className="font-medium">{campaign.campaignName}</span>
+                          </TableCell>
+                          <TableCell>
+                            <CompactNumberInput
+                              value={input.myOutreachVolume}
+                              onChange={(myOutreachVolume) =>
+                                patchWeeklyInput(campaign.campaignId, { myOutreachVolume })
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <CompactNumberInput
+                              value={input.myCreatorSubmissions}
+                              onChange={(myCreatorSubmissions) =>
+                                patchWeeklyInput(campaign.campaignId, { myCreatorSubmissions })
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <CompactNumberInput
+                              value={input.myCreatorApprovals}
+                              onChange={(myCreatorApprovals) =>
+                                patchWeeklyInput(campaign.campaignId, { myCreatorApprovals })
+                              }
+                            />
+                          </TableCell>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-3 py-8 text-center text-sm text-muted-foreground"
+                      >
+                        No campaigns are included in Performance Tracking.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {statusMessage ? (
+              <p className="mt-3 text-xs text-muted-foreground">{statusMessage}</p>
+            ) : null}
           </Panel>
         </section>
 
-        <Panel
-          title="3. Weekly Input"
-          action={
-            <button
-              type="button"
-              onClick={() => void generateWeeklySnapshot()}
-              disabled={isSaving || !includedCampaigns.length}
-              className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Generate Weekly Snapshot
-            </button>
-          }
-        >
-          <div className="mb-4 grid gap-3 md:grid-cols-[320px_1fr] md:items-end">
-            <FieldLabel label="Week Period">
-              <select
-                value={selectedWeekStart}
-                onChange={(event) => setSelectedWeekStart(event.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-              >
-                {weeks.map((week) => (
-                  <option key={week.weekStart} value={week.weekStart}>
-                    {week.label}
-                  </option>
-                ))}
-              </select>
-            </FieldLabel>
-            <p className="text-sm leading-6 text-muted-foreground">
-              Weekly inputs only store activity. Profit comes from Active Campaign Management rows
-              with Month = {selectedMonth}.
-            </p>
-          </div>
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <KpiCard
+            icon={<Gauge className="size-4" />}
+            title="Monthly Score"
+            value={formatNullableScore(monthlyResult.finalScore)}
+            progress={monthlyResult.finalScore}
+            accent="cyan"
+          />
+          <KpiCard
+            icon={<TrendingUp className="size-4" />}
+            title="Revenue Goal"
+            value={formatNullableProgress(monthlyResult.revenueGoalProgress)}
+            progress={monthlyResult.revenueGoalProgress}
+            accent="emerald"
+          />
+          <KpiCard
+            icon={<Send className="size-4" />}
+            title="Outreach"
+            value={formatNullableScore(monthlyResult.outreachPerformance)}
+            progress={monthlyResult.outreachPerformance}
+            accent="blue"
+          />
+          <KpiCard
+            icon={<Activity className="size-4" />}
+            title="Submissions"
+            value={formatNullableScore(monthlyResult.submissionPerformance)}
+            progress={monthlyResult.submissionPerformance}
+            accent="violet"
+          />
+          <KpiCard
+            icon={<CheckCircle2 className="size-4" />}
+            title="Approvals"
+            value={formatNullableScore(monthlyResult.approvalPerformance)}
+            progress={monthlyResult.approvalPerformance}
+            accent="green"
+          />
+        </section>
 
-          <div className="katlas-table-shell">
-            <table className="min-w-[860px] w-full border-collapse text-left text-sm">
-              <thead className="bg-muted/40 text-xs text-muted-foreground">
-                <tr>
-                  <TableHeader>Campaign</TableHeader>
-                  <TableHeader>My Outreach</TableHeader>
-                  <TableHeader>My Submissions</TableHeader>
-                  <TableHeader>My Approvals</TableHeader>
-                  <TableHeader>My Executions</TableHeader>
-                </tr>
-              </thead>
-              <tbody>
-                {includedCampaigns.length ? (
-                  includedCampaigns.map((campaign) => {
-                    const input =
-                      weeklyInputs[campaign.campaignId] ??
-                      createEmptyWeeklyInput(campaign.campaignId);
-                    return (
-                      <tr key={campaign.campaignId} className="border-t border-border">
-                        <TableCell>
-                          <span className="font-medium">{campaign.campaignName}</span>
-                        </TableCell>
-                        <TableCell>
-                          <CompactNumberInput
-                            value={input.myOutreachVolume}
-                            onChange={(myOutreachVolume) =>
-                              patchWeeklyInput(campaign.campaignId, { myOutreachVolume })
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <CompactNumberInput
-                            value={input.myCreatorSubmissions}
-                            onChange={(myCreatorSubmissions) =>
-                              patchWeeklyInput(campaign.campaignId, { myCreatorSubmissions })
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <CompactNumberInput
-                            value={input.myCreatorApprovals}
-                            onChange={(myCreatorApprovals) =>
-                              patchWeeklyInput(campaign.campaignId, { myCreatorApprovals })
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <CompactNumberInput
-                            value={input.myCampaignExecutions}
-                            onChange={(myCampaignExecutions) =>
-                              patchWeeklyInput(campaign.campaignId, { myCampaignExecutions })
-                            }
-                          />
-                        </TableCell>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                      No campaigns are included in Performance Tracking.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {statusMessage ? (
-            <p className="mt-3 text-xs text-muted-foreground">{statusMessage}</p>
-          ) : null}
-        </Panel>
-
-        <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-          <Panel title="4. Snapshot History">
+        <section className="grid gap-5 xl:grid-cols-[1.16fr_0.84fr]">
+          <Panel
+            title="Snapshot History"
+            action={
+              <span className="rounded-full border border-border/70 bg-background/50 px-2.5 py-1 text-xs text-muted-foreground">
+                {formatNumber(selectedMonthSnapshots.length)} saved
+              </span>
+            }
+          >
             <div className="katlas-table-shell">
-              <table className="min-w-[760px] w-full border-collapse text-left text-sm">
+              <table className="min-w-[640px] w-full border-collapse text-left text-sm">
                 <thead className="bg-muted/40 text-xs text-muted-foreground">
                   <tr>
                     <TableHeader>Campaign</TableHeader>
                     <TableHeader>Week</TableHeader>
-                    <TableHeader>Outreach</TableHeader>
-                    <TableHeader>Submissions</TableHeader>
-                    <TableHeader>Approvals</TableHeader>
-                    <TableHeader>Executions</TableHeader>
+                    <TableHeader>Snapshot Date</TableHeader>
                     <TableHeader>Weekly Score</TableHeader>
                   </tr>
                 </thead>
@@ -585,17 +586,20 @@ export function EmployeePerformanceTracking() {
                       <tr key={snapshot.inputId} className="border-t border-border">
                         <TableCell>{campaignNameForId(campaigns, snapshot.campaignId)}</TableCell>
                         <TableCell>{formatWeekLabel(snapshot.weekStart)}</TableCell>
-                        <TableCell>{formatNumber(snapshot.myOutreachVolume)}</TableCell>
-                        <TableCell>{formatNumber(snapshot.myCreatorSubmissions)}</TableCell>
-                        <TableCell>{formatNumber(snapshot.myCreatorApprovals)}</TableCell>
-                        <TableCell>{formatNumber(snapshot.myCampaignExecutions)}</TableCell>
-                        <TableCell>{formatScore(snapshot.weeklyScore)}</TableCell>
+                        <TableCell>
+                          {formatDateTime(snapshot.updatedAt || snapshot.createdAt)}
+                        </TableCell>
+                        <TableCell>
+                          <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2.5 py-1 text-xs font-medium text-cyan-100">
+                            {formatScore(snapshot.weeklyScore)}
+                          </span>
+                        </TableCell>
                       </tr>
                     ))
                   ) : (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={4}
                         className="px-3 py-8 text-center text-sm text-muted-foreground"
                       >
                         No weekly snapshots for this month yet.
@@ -607,56 +611,137 @@ export function EmployeePerformanceTracking() {
             </div>
           </Panel>
 
-          <Panel title="5. Monthly Score Result">
-            <div className="grid gap-3">
-              <ResultRow label="Selected Month" value={selectedMonth} />
-              <ResultRow
-                label="Included Campaigns"
-                value={formatNumber(includedCampaigns.length)}
-              />
-              <ResultRow
-                label="Monthly Activity Average"
-                value={formatNullableScore(monthlyResult.monthlyActivityAverage)}
-              />
-              <ResultRow
-                label="Pulled Revenue"
-                value={formatCurrency(monthlyResult.monthlyRevenue)}
-              />
-              <ResultRow
-                label="Pulled Profit"
-                value={formatCurrency(monthlyResult.monthlyProfit)}
-              />
-              <ResultRow label="Monthly Profit KPI" value={formatCurrency(monthlyProfitKpi)} />
-              <ResultRow
-                label="Profit Score"
-                value={formatNullableScore(monthlyResult.profitScore)}
-              />
-              <ResultRow
-                label="Final Monthly Score"
-                value={formatNullableScore(monthlyResult.finalScore)}
-              />
-            </div>
-            <details className="mt-4 rounded-lg border border-border bg-background p-4">
-              <summary className="cursor-pointer text-sm font-medium">
-                View calculation details
-              </summary>
-              <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
-                <p>
-                  Weekly snapshots score activity from outreach, submissions, approvals, and
-                  executions.
-                </p>
-                <p>
-                  Team size normalizes team benchmarks so larger teams do not unfairly inflate
-                  comparison numbers.
-                </p>
-                <p>
-                  Monthly score combines the average saved weekly snapshot score with monthly profit
-                  pulled from Active Campaign Management.
-                </p>
+          <Panel title="Revenue Pull">
+            <div className="grid gap-4">
+              <div className="rounded-2xl border border-border/80 bg-background/35 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase text-muted-foreground">Pulled Revenue</p>
+                    <p className="mt-2 text-2xl font-semibold">
+                      {formatCurrency(monthlyResult.monthlyRevenue)}
+                    </p>
+                  </div>
+                  <BarChart3 className="size-5 text-cyan-100/80" />
+                </div>
               </div>
-            </details>
+              <div className="rounded-2xl border border-border/80 bg-background/35 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase text-muted-foreground">Pulled Profit</p>
+                    <p className="mt-2 text-2xl font-semibold">
+                      {formatCurrency(monthlyResult.monthlyProfit)}
+                    </p>
+                  </div>
+                  <Target className="size-5 text-emerald-100/80" />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <ResultRow label="Selected Month" value={selectedMonth} />
+                <ResultRow
+                  label="Included Campaigns"
+                  value={formatNumber(includedCampaigns.length)}
+                />
+                <ResultRow label="Goal" value={formatCurrency(monthlyProfitKpi)} />
+                <ResultRow
+                  label="Latest Snapshot"
+                  value={
+                    latestSnapshot
+                      ? formatDateTime(latestSnapshot.updatedAt || latestSnapshot.createdAt)
+                      : "--"
+                  }
+                />
+              </div>
+            </div>
           </Panel>
         </section>
+
+        <CollapsiblePanel title="Performance Setup">
+          {campaigns.length ? (
+            <div className="katlas-table-shell">
+              <table className="min-w-[1120px] w-full border-collapse text-left text-sm">
+                <thead className="bg-muted/40 text-xs text-muted-foreground">
+                  <tr>
+                    <TableHeader>Include</TableHeader>
+                    <TableHeader>Campaign</TableHeader>
+                    <TableHeader>Team Size</TableHeader>
+                    <TableHeader>Target Daily Outreach</TableHeader>
+                    <TableHeader>Team Outreach Excl. Me</TableHeader>
+                    <TableHeader>Team Submissions Excl. Me</TableHeader>
+                    <TableHeader>Team Approvals Excl. Me</TableHeader>
+                  </tr>
+                </thead>
+                <tbody>
+                  {benchmarks.map((benchmark) => (
+                    <tr key={benchmark.campaignId} className="border-t border-border">
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={benchmark.includeInPerformance}
+                          onChange={(event) =>
+                            patchBenchmark(benchmark.campaignId, {
+                              includeInPerformance: event.target.checked,
+                            })
+                          }
+                          className="size-4 accent-primary"
+                          aria-label={`Include ${benchmark.campaignName} in performance`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-medium">{benchmark.campaignName}</span>
+                      </TableCell>
+                      <TableCell>
+                        <CompactNumberInput
+                          value={benchmark.teamSize}
+                          onChange={(teamSize) =>
+                            patchBenchmark(benchmark.campaignId, {
+                              teamSize: Math.max(1, Math.round(teamSize)),
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <CompactNumberInput
+                          value={benchmark.targetDailyOutreach}
+                          onChange={(targetDailyOutreach) =>
+                            patchBenchmark(benchmark.campaignId, { targetDailyOutreach })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <CompactNumberInput
+                          value={benchmark.teamOutreachExcludingMe}
+                          onChange={(teamOutreachExcludingMe) =>
+                            patchBenchmark(benchmark.campaignId, { teamOutreachExcludingMe })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <CompactNumberInput
+                          value={benchmark.teamSubmissionsExcludingMe}
+                          onChange={(teamSubmissionsExcludingMe) =>
+                            patchBenchmark(benchmark.campaignId, { teamSubmissionsExcludingMe })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <CompactNumberInput
+                          value={benchmark.teamApprovalsExcludingMe}
+                          onChange={(teamApprovalsExcludingMe) =>
+                            patchBenchmark(benchmark.campaignId, { teamApprovalsExcludingMe })
+                          }
+                        />
+                      </TableCell>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed border-border bg-background p-4 text-sm text-muted-foreground">
+              No campaign profiles exist yet. Create campaigns in Campaign Profiles first.
+            </p>
+          )}
+        </CollapsiblePanel>
       </main>
     </div>
   );
@@ -712,7 +797,6 @@ function createEmptyWeeklyInput(campaignId: string): WeeklyInputDraft {
     myOutreachVolume: 0,
     myCreatorSubmissions: 0,
     myCreatorApprovals: 0,
-    myCampaignExecutions: 0,
   };
 }
 
@@ -736,17 +820,11 @@ function calculateWeeklySnapshot({
   const outreach = createScore(input.myOutreachVolume, targetOutreach, 100);
   const submission = createScore(input.myCreatorSubmissions, teamSubmissionBenchmark, 150);
   const approval = createScore(input.myCreatorApprovals, teamApprovalBenchmark, 150);
-  const execution = createScore(
-    input.myCampaignExecutions,
-    Math.max(input.myCreatorApprovals, 1),
-    150,
-  );
 
   const weightedScores = [
     [outreach, weeklyWeights.outreach],
     [submission, weeklyWeights.submission],
     [approval, weeklyWeights.approval],
-    [execution, weeklyWeights.execution],
   ] as const;
   const availableWeight = weightedScores.reduce(
     (sum, [score, weight]) => sum + (score.capped === null ? 0 : weight),
@@ -761,7 +839,6 @@ function calculateWeeklySnapshot({
     outreach,
     submission,
     approval,
-    execution,
     weeklyScore: availableWeight > 0 ? weightedTotal / availableWeight : 0,
   };
 }
@@ -804,6 +881,11 @@ function calculateMonthlyResult({
     ? snapshots.reduce((sum, snapshot) => sum + numberValue(snapshot.weeklyScore), 0) /
       snapshots.length
     : null;
+  const outreachPerformance = averageSnapshotScore(snapshots, "outreachScore");
+  const submissionPerformance = averageSnapshotScore(snapshots, "submissionScore");
+  const approvalPerformance = averageSnapshotScore(snapshots, "approvalScore");
+  const revenueGoalProgress =
+    monthlyProfitKpi > 0 ? Math.min((monthlyRevenue / monthlyProfitKpi) * 100, 150) : null;
   const profitScore =
     monthlyProfitKpi > 0 ? Math.min((monthlyProfit / monthlyProfitKpi) * 100, 150) : null;
   const finalScore =
@@ -815,9 +897,22 @@ function calculateMonthlyResult({
     monthlyRevenue,
     monthlyProfit,
     monthlyActivityAverage,
+    revenueGoalProgress,
+    outreachPerformance,
+    submissionPerformance,
+    approvalPerformance,
     profitScore,
     finalScore,
   };
+}
+
+function averageSnapshotScore(
+  snapshots: PerformanceWeeklyInputRecord[],
+  key: "outreachScore" | "submissionScore" | "approvalScore",
+) {
+  return snapshots.length
+    ? snapshots.reduce((sum, snapshot) => sum + numberValue(snapshot[key]), 0) / snapshots.length
+    : null;
 }
 
 function readMonthlyProfitKpi(settings: AppSettingRecord[], selectedMonth: string) {
@@ -942,13 +1037,137 @@ function Panel({
   );
 }
 
-function MetricCard({ title, value }: { title: string; value: string }) {
+function CollapsiblePanel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="katlas-panel p-4">
-      <p className="text-xs text-muted-foreground">{title}</p>
-      <p className="mt-2 text-2xl font-semibold">{value}</p>
+    <details className="katlas-panel group">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold">{title}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Manager setup for campaign inclusion and team benchmarks.
+          </p>
+        </div>
+        <span className="text-sm text-muted-foreground group-open:hidden">Expand</span>
+        <span className="hidden text-sm text-muted-foreground group-open:inline">Collapse</span>
+      </summary>
+      <div className="mt-4">{children}</div>
+    </details>
+  );
+}
+
+function ScoreRing({
+  score,
+  label,
+  detail,
+}: {
+  score: number | null;
+  label: string;
+  detail: string;
+}) {
+  const progress = normalizeScoreProgress(score);
+  const scoreText = formatNullableScore(score);
+  return (
+    <div className="relative mx-auto grid w-full max-w-[340px] place-items-center rounded-3xl border border-border/80 bg-background/35 p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div
+        className="grid size-52 place-items-center rounded-full p-2 shadow-[0_0_46px_rgba(34,211,238,0.12)]"
+        style={{
+          background: `conic-gradient(rgba(34,211,238,0.9) ${progress * 3.6}deg, rgba(255,255,255,0.08) 0deg)`,
+        }}
+        aria-label={`${label}: ${scoreText}`}
+      >
+        <div className="grid size-full place-items-center rounded-full border border-border/80 bg-card">
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
+            <p className="mt-2 text-5xl font-semibold tracking-tight">{scoreText}</p>
+            <p className="mt-2 text-xs text-muted-foreground">{detail}</p>
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 grid w-full grid-cols-3 gap-2 text-center text-xs text-muted-foreground">
+        <span className="rounded-full border border-border/70 bg-card/60 px-2 py-1">0</span>
+        <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-cyan-100">
+          100
+        </span>
+        <span className="rounded-full border border-border/70 bg-card/60 px-2 py-1">150</span>
+      </div>
     </div>
   );
+}
+
+function KpiCard({
+  icon,
+  title,
+  value,
+  progress,
+  accent,
+}: {
+  icon: ReactNode;
+  title: string;
+  value: string;
+  progress: number | null;
+  accent: "cyan" | "emerald" | "blue" | "violet" | "green";
+}) {
+  const tone = kpiTones[accent];
+  return (
+    <div className="rounded-2xl border border-border/80 bg-card/75 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className={`grid size-9 place-items-center rounded-xl border ${tone.icon}`}>
+          {icon}
+        </div>
+        <span className="rounded-full border border-border/70 bg-background/50 px-2 py-0.5 text-[11px] text-muted-foreground">
+          KPI
+        </span>
+      </div>
+      <p className="mt-4 text-xs text-muted-foreground">{title}</p>
+      <p className="mt-1 text-2xl font-semibold tracking-tight">{value}</p>
+      <ProgressBar value={progress} colorClass={tone.bar} />
+    </div>
+  );
+}
+
+function ProgressBar({ value, colorClass }: { value: number | null; colorClass: string }) {
+  const progress = normalizeScoreProgress(value);
+  return (
+    <div className="mt-4">
+      <div className="relative h-2 overflow-hidden rounded-full bg-background/70">
+        <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${progress}%` }} />
+        <div className="absolute left-[66.666%] top-0 h-full w-px bg-foreground/45" />
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+        <span>0</span>
+        <span>100</span>
+        <span>150</span>
+      </div>
+    </div>
+  );
+}
+
+const kpiTones = {
+  cyan: {
+    icon: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
+    bar: "bg-cyan-300",
+  },
+  emerald: {
+    icon: "border-emerald-300/20 bg-emerald-300/10 text-emerald-100",
+    bar: "bg-emerald-300",
+  },
+  blue: {
+    icon: "border-sky-300/20 bg-sky-300/10 text-sky-100",
+    bar: "bg-sky-300",
+  },
+  violet: {
+    icon: "border-violet-300/20 bg-violet-300/10 text-violet-100",
+    bar: "bg-violet-300",
+  },
+  green: {
+    icon: "border-lime-300/20 bg-lime-300/10 text-lime-100",
+    bar: "bg-lime-300",
+  },
+} as const;
+
+function normalizeScoreProgress(value: number | null): number {
+  if (value === null) return 0;
+  return Math.max(0, Math.min(100, (value / 150) * 100));
 }
 
 function ResultRow({ label, value }: { label: string; value: string }) {
@@ -1054,6 +1273,21 @@ function formatScore(value: number): string {
 
 function formatNullableScore(value: number | null): string {
   return value === null ? "--" : formatScore(value);
+}
+
+function formatNullableProgress(value: number | null): string {
+  return value === null ? "--" : `${formatScore(value)}%`;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "--";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function formatShortDate(date: Date): string {

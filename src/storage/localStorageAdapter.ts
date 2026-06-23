@@ -7,6 +7,7 @@ import {
   type CampaignProfileRecord,
   type CentralAppDatabase,
   type CreatorDatabaseRecord,
+  type EmployeeProfileRecord,
   type OutreachTemplateRecord,
   type PerformanceBenchmarkRecord,
   type PerformanceWeeklyInputRecord,
@@ -332,6 +333,7 @@ function normalizeCentralDatabase(value: unknown): CentralAppDatabase {
       ),
       AgencyDatabase: normalizeArray(worksheets.AgencyDatabase, normalizeAgencyDatabaseRecord),
       CreatorDatabase: normalizeArray(worksheets.CreatorDatabase, normalizeCreatorDatabaseRecord),
+      EmployeeProfiles: normalizeArray(worksheets.EmployeeProfiles, normalizeEmployeeProfileRecord),
       AppSettings: normalizeArray(worksheets.AppSettings, normalizeAppSetting),
     },
   };
@@ -482,6 +484,8 @@ function normalizeAgencyDatabaseRecord(value: unknown): AgencyDatabaseRecord {
     agencyName: stringValue(row.agencyName),
     contactName: stringValue(row.contactName),
     contactRole: stringValue(row.contactRole),
+    contact: stringValue(row.contact),
+    contactsJson: stringValue(row.contactsJson),
     email: stringValue(row.email),
     line: stringValue(row.line),
     instagram: stringValue(row.instagram),
@@ -517,6 +521,31 @@ function normalizeCreatorDatabaseRecord(value: unknown): CreatorDatabaseRecord {
     agencyName: stringValue(row.agencyName),
     notes: stringValue(row.notes),
     status: normalizeDatabaseStatus(row.status),
+    createdAt,
+    updatedAt: stringValue(row.updatedAt) || createdAt,
+  };
+}
+
+function normalizeEmployeeProfileRecord(value: unknown): EmployeeProfileRecord {
+  const row = isRecord(value) ? value : {};
+  const now = new Date().toISOString();
+  const createdAt = stringValue(row.createdAt) || now;
+  return {
+    profileId: stringValue(row.profileId) || stringValue(row.id) || "employee-profile-default",
+    displayName: stringValue(row.displayName),
+    role: stringValue(row.role),
+    avatarUrl: stringValue(row.avatarUrl),
+    bio: stringValue(row.bio),
+    joiningDate: stringValue(row.joiningDate),
+    timezone: stringValue(row.timezone),
+    primaryMarkets: stringValue(row.primaryMarkets),
+    responsibilities: stringValue(row.responsibilities),
+    workEmail: stringValue(row.workEmail),
+    phone: stringValue(row.phone),
+    lineId: stringValue(row.lineId),
+    telegram: stringValue(row.telegram),
+    preferredContactMethod: stringValue(row.preferredContactMethod),
+    accountsJson: stringValue(row.accountsJson) || "[]",
     createdAt,
     updatedAt: stringValue(row.updatedAt) || createdAt,
   };

@@ -117,6 +117,18 @@ export function saveLaunchpadLinks(links: LaunchpadLinks) {
   window.localStorage.setItem(launchpadStorageKey, JSON.stringify(normalizeLinks(links)));
 }
 
+export function launchpadLinksToAccounts(links: LaunchpadLinks): EmployeeAccountLink[] {
+  const normalized = normalizeLinks(links);
+  return launchpadServices.map((service) => ({
+    id: service.id,
+    label: service.label,
+    category: service.category,
+    url: normalized[service.id] ?? "",
+    handle: "",
+    notes: "",
+  }));
+}
+
 function normalizeLinks(value: unknown, fallbackProfile?: EmployeeProfile): LaunchpadLinks {
   const links = { ...defaultLaunchpadLinks, ...linksFromProfile(fallbackProfile) };
   if (!isRecord(value)) return links;

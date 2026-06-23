@@ -15,6 +15,7 @@ import {
   type CentralAppDatabase,
   type CentralWorksheetName,
   type CreatorDatabaseRecord,
+  type EmployeeProfileRecord,
   type OutreachTemplateRecord,
   type PerformanceBenchmarkRecord,
   type PerformanceWeeklyInputRecord,
@@ -49,6 +50,7 @@ import {
   upsertPerformanceBenchmarkRecord,
   upsertPerformanceWeeklyInputRecord,
 } from "./performanceRecords";
+import { cleanupEmployeeProfileRecords, upsertEmployeeProfileRecord } from "./employeeProfiles";
 
 type GoogleSheetsConfig = {
   spreadsheetId: string;
@@ -91,11 +93,13 @@ const rowIdFields: Record<CentralWorksheetName, string> = {
   PerformanceWeeklyInputs: "inputId",
   AgencyDatabase: "id",
   CreatorDatabase: "id",
+  EmployeeProfiles: "profileId",
   AppSettings: "settingKey",
 };
 
 let tokenCache: { accessToken: string; expiresAt: number } | null = null;
 const databaseReadCacheTtlMs = 45_000;
+const valuesReadCacheTtlMs = 60_000;
 const databaseShapeCacheTtlMs = 5 * 60_000;
 let databaseReadCache: {
   spreadsheetId: string;
@@ -116,6 +120,8 @@ let creatorSourcingReadPromise: {
   promise: Promise<CentralAppDatabase>;
 } | null = null;
 let databaseShapeCache: { spreadsheetId: string; expiresAt: number } | null = null;
+const valuesReadCache = new Map<string, { values: unknown[][]; expiresAt: number }>();
+const valuesReadPromises = new Map<string, Promise<unknown[][]>>();
 
 export function getGoogleSheetsServerStatus() {
   const config = readConfig();
@@ -259,6 +265,80 @@ export async function readCreatorSourcingDatabaseFromGoogleSheets(
   });
   creatorSourcingReadPromise = { spreadsheetId, promise };
   return cloneDatabase(await promise);
+}
+
+export async function listCampaignProfilesInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const records = (await readWorksheetRows(
+    spreadsheetId,
+    "CampaignProfiles",
+  )) as CampaignProfileRecord[];
+
+  return {
+    records,
+  };
+}
+
+export async function migrateAgencyDatabaseContactsInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const sourceValues = await readValues(
+    spreadsheetId,
+    `${quoteSheetName("AgencyDatabase")}!A1:Z1000`,
+  );
+  const backupSheetName = await createWorksheetBackup(
+    spreadsheetId,
+    "AgencyDatabase",
+    sourceValues,
+  );
+  const records = (await readWorksheetRows(
+    spreadsheetId,
+    "AgencyDatabase",
+  )) as AgencyDatabaseRecord[];
+
+  let rowsBackfilled = 0;
+  let rowsWithExistingContactsJson = 0;
+  const migratedRecords = records.map((record) => {
+    if (stringValue(record.contactsJson).trim()) {
+      rowsWithExistingContactsJson += 1;
+      return record;
+    }
+
+    const contact = createAgencyContactValue(record);
+    if (!record.contactName && !record.contactRole && !contact) return record;
+
+    rowsBackfilled += 1;
+    return {
+      ...record,
+      contact: stringValue(record.contact) || contact,
+      contactsJson: JSON.stringify([
+        {
+          id: `contact-${record.id || Date.now()}`,
+          name: stringValue(record.contactName),
+          role: stringValue(record.contactRole),
+          contact,
+        },
+      ]),
+    };
+  });
+
+  await replaceWorksheetRows(spreadsheetId, "AgencyDatabase", migratedRecords);
+  invalidateDatabaseReadCache("agency-database-contact-migration");
+
+  return {
+    records: migratedRecords,
+    report: {
+      backupSheetName,
+      rowsRead: records.length,
+      rowsBackfilled,
+      rowsWithExistingContactsJson,
+    },
+  };
 }
 
 export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTemplateRecord) {
@@ -909,6 +989,74 @@ export async function upsertAppSettingInGoogleSheets(record: AppSettingRecord) {
   };
 }
 
+export async function listAppSettingsInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const records = (await readWorksheetRows(spreadsheetId, "AppSettings")) as AppSettingRecord[];
+
+  return {
+    records,
+  };
+}
+
+export async function listEmployeeProfilesInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const profileRows = await readWorksheetRecordsWithRowNumbers<EmployeeProfileRecord>(
+    spreadsheetId,
+    "EmployeeProfiles",
+  );
+  const cleanup = cleanupEmployeeProfileRecords(profileRows.rows.map((row) => row.record));
+  logEmployeeProfileCleanupSummary("list-current-state", cleanup);
+
+  if (cleanup.removedCount > 0) {
+    await writeCurrentStateWorksheetRows(
+      spreadsheetId,
+      "EmployeeProfiles",
+      profileRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("employee-profile-list-cleanup");
+  }
+
+  return {
+    records: cleanup.records,
+  };
+}
+
+export async function upsertEmployeeProfileInGoogleSheets(record: EmployeeProfileRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const profileRows = await readWorksheetRecordsWithRowNumbers<EmployeeProfileRecord>(
+    spreadsheetId,
+    "EmployeeProfiles",
+  );
+  const cleanup = upsertEmployeeProfileRecord(
+    profileRows.rows.map((row) => row.record),
+    record,
+  );
+  logEmployeeProfileCleanupSummary("targeted-upsert", cleanup);
+
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "EmployeeProfiles",
+    profileRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("employee-profile-targeted-write");
+
+  return {
+    records: cleanup.records,
+  };
+}
+
 export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets() {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
@@ -973,6 +1121,7 @@ export async function mergeCentralDatabaseIntoGoogleSheets(localDatabase: Centra
     PerformanceWeeklyInputs: 0,
     AgencyDatabase: 0,
     CreatorDatabase: 0,
+    EmployeeProfiles: 0,
     AppSettings: 0,
     errors: [] as string[],
   };
@@ -1131,6 +1280,37 @@ async function replaceWorksheetRows(
     `${quoteSheetName(worksheetName)}!A1:${lastColumn}${rows.length + 1}`,
     [headers, ...rows.map((row) => headers.map((header) => row[header] ?? ""))],
   );
+}
+
+async function createWorksheetBackup(
+  spreadsheetId: string,
+  sourceWorksheetName: string,
+  values: unknown[][],
+) {
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\..+/, "")
+    .replace("T", "_");
+  const backupSheetName = `${sourceWorksheetName}_Backup_${timestamp}`;
+  await batchUpdate(spreadsheetId, [
+    {
+      addSheet: {
+        properties: {
+          title: backupSheetName,
+          gridProperties: { frozenRowCount: 1 },
+        },
+      },
+    },
+  ]);
+  if (values.length > 0) {
+    await updateValues(
+      spreadsheetId,
+      `${quoteSheetName(backupSheetName)}!A1:${columnName(values[0]?.length ?? 1)}${values.length}`,
+      values,
+    );
+  }
+  return backupSheetName;
 }
 
 async function readWorksheetRecordsWithRowNumbers<T>(
@@ -1457,6 +1637,24 @@ function logPerformanceWeeklyInputCleanupSummary(
   });
 }
 
+function logEmployeeProfileCleanupSummary(
+  reason: string,
+  cleanup: {
+    removedCount: number;
+    duplicateIdCount: number;
+    emptyRecordCount: number;
+  },
+) {
+  if (cleanup.removedCount === 0) return;
+  console.info("[EmployeeProfilesCleanup]", "delete-stale-current-state-rows", {
+    reason,
+    removedCount: cleanup.removedCount,
+    emptyRows: cleanup.emptyRecordCount,
+    duplicateIdRows: cleanup.duplicateIdCount,
+    at: new Date().toISOString(),
+  });
+}
+
 async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
   spreadsheetId: string,
   reason: string,
@@ -1559,12 +1757,43 @@ async function getMetadata(spreadsheetId: string): Promise<SpreadsheetMetadata> 
 }
 
 async function readValues(spreadsheetId: string, range: string): Promise<unknown[][]> {
+  const cacheKey = valuesReadCacheKey(spreadsheetId, range);
+  const cached = valuesReadCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    logGoogleSheetsCache("values-cache-hit", {
+      spreadsheetId,
+      range,
+      ttlMs: cached.expiresAt - now,
+    });
+    return cloneSheetValues(cached.values);
+  }
+
+  const inFlight = valuesReadPromises.get(cacheKey);
+  if (inFlight) {
+    logGoogleSheetsCache("values-inflight-reuse", { spreadsheetId, range });
+    return cloneSheetValues(await inFlight);
+  }
+
   const encodedRange = encodeURIComponent(range);
+  logGoogleSheetsCache("values-cache-miss", { spreadsheetId, range });
   logGoogleSheetsRead("values.get", { spreadsheetId, range });
-  const result = (await googleFetch(
+  const promise = googleFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}?valueRenderOption=UNFORMATTED_VALUE`,
-  )) as { values?: unknown[][] };
-  return result.values ?? [];
+  )
+    .then((result) => ((result as { values?: unknown[][] }).values ?? []) as unknown[][])
+    .then((values) => {
+      valuesReadCache.set(cacheKey, {
+        values: cloneSheetValues(values),
+        expiresAt: Date.now() + valuesReadCacheTtlMs,
+      });
+      return values;
+    })
+    .finally(() => {
+      valuesReadPromises.delete(cacheKey);
+    });
+  valuesReadPromises.set(cacheKey, promise);
+  return cloneSheetValues(await promise);
 }
 
 async function updateValues(spreadsheetId: string, range: string, values: unknown[][]) {
@@ -1579,6 +1808,7 @@ async function updateValues(spreadsheetId: string, range: string, values: unknow
       }),
     },
   );
+  invalidateValuesReadCache(spreadsheetId, `update:${range}`);
 }
 
 async function clearValues(spreadsheetId: string, range: string) {
@@ -1590,6 +1820,7 @@ async function clearValues(spreadsheetId: string, range: string) {
       body: JSON.stringify({}),
     },
   );
+  invalidateValuesReadCache(spreadsheetId, `clear:${range}`);
 }
 
 async function batchUpdate(spreadsheetId: string, requests: Array<Record<string, unknown>>) {
@@ -1598,6 +1829,35 @@ async function batchUpdate(spreadsheetId: string, requests: Array<Record<string,
     method: "POST",
     body: JSON.stringify({ requests }),
   });
+  invalidateValuesReadCache(spreadsheetId, "batchUpdate");
+}
+
+function valuesReadCacheKey(spreadsheetId: string, range: string) {
+  return `${spreadsheetId}::${range}`;
+}
+
+function cloneSheetValues(values: unknown[][]) {
+  return values.map((row) => [...row]);
+}
+
+function invalidateValuesReadCache(spreadsheetId: string, reason: string) {
+  const prefix = `${spreadsheetId}::`;
+  let removed = 0;
+  for (const key of valuesReadCache.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    valuesReadCache.delete(key);
+    removed += 1;
+  }
+  for (const key of valuesReadPromises.keys()) {
+    if (key.startsWith(prefix)) valuesReadPromises.delete(key);
+  }
+  if (removed > 0) {
+    logGoogleSheetsCache("values-cache-invalidated", {
+      spreadsheetId,
+      reason,
+      removed,
+    });
+  }
 }
 
 async function googleFetch(url: string, init: RequestInit = {}) {
@@ -1790,6 +2050,8 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         agencyName: stringValue(row.agencyName),
         contactName: stringValue(row.contactName),
         contactRole: stringValue(row.contactRole),
+        contact: stringValue(row.contact),
+        contactsJson: stringValue(row.contactsJson),
         email: stringValue(row.email),
         line: stringValue(row.line),
         instagram: stringValue(row.instagram),
@@ -1822,6 +2084,27 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         createdAt: stringValue(row.createdAt),
         updatedAt: stringValue(row.updatedAt),
       })),
+      EmployeeProfiles: cleanupEmployeeProfileRecords(
+        rowsBySheet.EmployeeProfiles.map((row) => ({
+          profileId: stringValue(row.profileId) || "employee-profile-default",
+          displayName: stringValue(row.displayName),
+          role: stringValue(row.role),
+          avatarUrl: stringValue(row.avatarUrl),
+          bio: stringValue(row.bio),
+          joiningDate: stringValue(row.joiningDate),
+          timezone: stringValue(row.timezone),
+          primaryMarkets: stringValue(row.primaryMarkets),
+          responsibilities: stringValue(row.responsibilities),
+          workEmail: stringValue(row.workEmail),
+          phone: stringValue(row.phone),
+          lineId: stringValue(row.lineId),
+          telegram: stringValue(row.telegram),
+          preferredContactMethod: stringValue(row.preferredContactMethod),
+          accountsJson: stringValue(row.accountsJson) || "[]",
+          createdAt: stringValue(row.createdAt),
+          updatedAt: stringValue(row.updatedAt),
+        })),
+      ).records,
       AppSettings: rowsBySheet.AppSettings.map((row) => ({
         settingKey: stringValue(row.settingKey),
         settingValue: stringValue(row.settingValue),
@@ -1867,6 +2150,10 @@ function getRowsForWorksheet(
   database: CentralAppDatabase,
   worksheetName: "CreatorDatabase",
 ): CreatorDatabaseRecord[];
+function getRowsForWorksheet(
+  database: CentralAppDatabase,
+  worksheetName: "EmployeeProfiles",
+): EmployeeProfileRecord[];
 function getRowsForWorksheet(
   database: CentralAppDatabase,
   worksheetName: "AppSettings",
@@ -1947,6 +2234,16 @@ function numberValue(value: unknown) {
 
 function stringValue(value: unknown) {
   return value == null ? "" : String(value);
+}
+
+function createAgencyContactValue(record: AgencyDatabaseRecord) {
+  return [
+    stringValue(record.contact).trim(),
+    record.email ? `Email: ${stringValue(record.email).trim()}` : "",
+    record.line ? `LINE: ${stringValue(record.line).trim()}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function cloneDatabase(database: CentralAppDatabase): CentralAppDatabase {

@@ -23,14 +23,25 @@ import {
 
 import { TopBar } from "@/components/TopBar";
 import {
+  listEmployeeProfilesFromGoogleSheetsOnly,
+  saveEmployeeProfileToGoogleSheetsOnly,
+} from "@/storage/appRepository";
+import {
   launchpadCategories,
+  launchpadLinksToAccounts,
   launchpadServices,
   loadLaunchpadLinks,
   saveLaunchpadLinks,
   type LaunchpadLinks,
   type LaunchpadService,
 } from "./launchpad";
-import { loadEmployeeProfile, saveEmployeeProfile } from "./storage";
+import {
+  employeeProfileFromRecord,
+  employeeProfileRecordId,
+  employeeProfileToRecord,
+  loadEmployeeProfile,
+  saveEmployeeProfile,
+} from "./storage";
 import type { EmployeeProfile } from "./types";
 
 type UrlDraft = {
@@ -39,7 +50,6 @@ type UrlDraft = {
 };
 
 export function EmployeeProfilePage() {
-  const [loaded, setLoaded] = useState(false);
   const [profile, setProfile] = useState<EmployeeProfile>(() => loadEmployeeProfile());
   const [launchpadLinks, setLaunchpadLinks] = useState<LaunchpadLinks>(() =>
     loadLaunchpadLinks(loadEmployeeProfile()),
@@ -47,23 +57,73 @@ export function EmployeeProfilePage() {
   const [profileDraft, setProfileDraft] = useState<EmployeeProfile | null>(null);
   const [urlDraft, setUrlDraft] = useState<UrlDraft | null>(null);
   const [copiedLabel, setCopiedLabel] = useState("");
+  const [storageMessage, setStorageMessage] = useState("Loading shared profile...");
+  const [storageError, setStorageError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const nextProfile = loadEmployeeProfile();
-    setProfile(nextProfile);
-    setLaunchpadLinks(loadLaunchpadLinks(nextProfile));
-    setLoaded(true);
+    let cancelled = false;
+
+    async function loadSharedProfile() {
+      try {
+        const records = await listEmployeeProfilesFromGoogleSheetsOnly();
+        if (cancelled) return;
+
+        const sharedRecord =
+          records.find((record) => record.profileId === employeeProfileRecordId) ?? records[0];
+
+        if (sharedRecord) {
+          const nextProfile = employeeProfileFromRecord(sharedRecord);
+          const nextLinks = loadLaunchpadLinks(nextProfile);
+          setProfile(nextProfile);
+          setLaunchpadLinks(nextLinks);
+          saveEmployeeProfile(nextProfile);
+          saveLaunchpadLinks(nextLinks);
+          setStorageMessage("Saved in Katlas Buddy Database");
+          setStorageError("");
+          return;
+        }
+
+        const localProfile = loadEmployeeProfile();
+        const localLinks = loadLaunchpadLinks(localProfile);
+        const migratedProfile = {
+          ...localProfile,
+          accounts: launchpadLinksToAccounts(localLinks),
+          updatedAt: new Date().toISOString(),
+        };
+        const savedRecords = await saveEmployeeProfileToGoogleSheetsOnly(
+          employeeProfileToRecord(migratedProfile),
+        );
+        if (cancelled) return;
+
+        const savedRecord =
+          savedRecords.find((record) => record.profileId === employeeProfileRecordId) ??
+          savedRecords[0];
+        const nextProfile = savedRecord ? employeeProfileFromRecord(savedRecord) : migratedProfile;
+        const nextLinks = loadLaunchpadLinks(nextProfile);
+        setProfile(nextProfile);
+        setLaunchpadLinks(nextLinks);
+        saveEmployeeProfile(nextProfile);
+        saveLaunchpadLinks(nextLinks);
+        setStorageMessage("Employee profile created in Katlas Buddy Database");
+        setStorageError("");
+      } catch (error) {
+        if (cancelled) return;
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Google Sheets is unavailable. Employee profile was not loaded from shared storage.";
+        setStorageError(message);
+        setStorageMessage("Shared profile storage unavailable");
+      }
+    }
+
+    void loadSharedProfile();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  useEffect(() => {
-    if (!loaded) return;
-    saveEmployeeProfile(profile);
-  }, [loaded, profile]);
-
-  useEffect(() => {
-    if (!loaded) return;
-    saveLaunchpadLinks(launchpadLinks);
-  }, [launchpadLinks, loaded]);
 
   const groupedServices = useMemo(
     () =>
@@ -75,18 +135,56 @@ export function EmployeeProfilePage() {
   );
   const profileInitials = getInitials(profile.displayName);
 
-  function updateProfile(nextProfile: EmployeeProfile) {
-    setProfile({
+  async function persistSharedProfile(
+    nextProfile: EmployeeProfile,
+    nextLinks: LaunchpadLinks,
+    successMessage: string,
+  ) {
+    const profileToSave = {
       ...nextProfile,
+      accounts: launchpadLinksToAccounts(nextLinks),
       updatedAt: new Date().toISOString(),
-    });
+    };
+
+    setIsSaving(true);
+    setStorageError("");
+    try {
+      const savedRecords = await saveEmployeeProfileToGoogleSheetsOnly(
+        employeeProfileToRecord(profileToSave),
+      );
+      const savedRecord =
+        savedRecords.find((record) => record.profileId === employeeProfileRecordId) ??
+        savedRecords[0];
+      const savedProfile = savedRecord ? employeeProfileFromRecord(savedRecord) : profileToSave;
+      const savedLinks = loadLaunchpadLinks(savedProfile);
+      setProfile(savedProfile);
+      setLaunchpadLinks(savedLinks);
+      saveEmployeeProfile(savedProfile);
+      saveLaunchpadLinks(savedLinks);
+      setStorageMessage(successMessage);
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Google Sheets save failed. Employee profile was not saved to shared storage.";
+      setStorageError(message);
+      setStorageMessage("Save failed");
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
   }
 
-  function saveProfile(event: FormEvent<HTMLFormElement>) {
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!profileDraft) return;
-    updateProfile(profileDraft);
-    setProfileDraft(null);
+    const saved = await persistSharedProfile(
+      profileDraft,
+      launchpadLinks,
+      "Profile saved in Katlas Buddy Database",
+    );
+    if (saved) setProfileDraft(null);
   }
 
   function handleLaunchpadClick(service: LaunchpadService) {
@@ -106,15 +204,20 @@ export function EmployeeProfilePage() {
     setUrlDraft({ service, url: launchpadLinks[service.id] ?? "" });
   }
 
-  function saveLaunchpadUrl(event: FormEvent<HTMLFormElement>) {
+  async function saveLaunchpadUrl(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!urlDraft?.url.trim()) return;
 
-    setLaunchpadLinks((current) => ({
-      ...current,
+    const nextLinks = {
+      ...launchpadLinks,
       [urlDraft.service.id]: urlDraft.url.trim(),
-    }));
-    setUrlDraft(null);
+    };
+    const saved = await persistSharedProfile(
+      profile,
+      nextLinks,
+      `${urlDraft.service.label} link saved in Katlas Buddy Database`,
+    );
+    if (saved) setUrlDraft(null);
   }
 
   async function copyValue(label: string, value: string) {
@@ -161,7 +264,7 @@ export function EmployeeProfilePage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex max-w-sm flex-col items-start gap-2 lg:items-end">
               <button
                 onClick={() => setProfileDraft(profile)}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
@@ -169,6 +272,13 @@ export function EmployeeProfilePage() {
                 <Pencil className="size-4" />
                 Edit Profile
               </button>
+              <p
+                className={`text-xs leading-5 ${
+                  storageError ? "text-destructive" : "text-muted-foreground"
+                }`}
+              >
+                {storageError || storageMessage}
+              </p>
             </div>
           </div>
 
@@ -261,6 +371,8 @@ export function EmployeeProfilePage() {
           }
           onCancel={() => setProfileDraft(null)}
           onSubmit={saveProfile}
+          isSaving={isSaving}
+          storageError={storageError}
         />
       ) : null}
 
@@ -270,6 +382,8 @@ export function EmployeeProfilePage() {
           onChange={(url) => setUrlDraft((current) => (current ? { ...current, url } : current))}
           onCancel={() => setUrlDraft(null)}
           onSubmit={saveLaunchpadUrl}
+          isSaving={isSaving}
+          storageError={storageError}
         />
       ) : null}
     </div>
@@ -281,11 +395,15 @@ function ProfileModal({
   onChange,
   onCancel,
   onSubmit,
+  isSaving,
+  storageError,
 }: {
   draft: EmployeeProfile;
   onChange: (patch: Partial<EmployeeProfile>) => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  isSaving: boolean;
+  storageError: string;
 }) {
   const initials = getInitials(draft.displayName);
 
@@ -322,7 +440,8 @@ function ProfileModal({
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Avatar</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Upload a profile photo from your computer. It is saved locally in this browser.
+              Upload a profile photo from your computer. It is compressed before saving to the
+              shared profile row.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition hover:opacity-90">
@@ -426,7 +545,17 @@ function ProfileModal({
           />
         </div>
 
-        <ModalActions onCancel={onCancel} saveLabel="Save Profile" />
+        {storageError ? (
+          <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs leading-5 text-destructive">
+            {storageError}
+          </p>
+        ) : null}
+
+        <ModalActions
+          onCancel={onCancel}
+          saveLabel={isSaving ? "Saving..." : "Save Profile"}
+          disabled={isSaving}
+        />
       </form>
     </div>
   );
@@ -437,11 +566,15 @@ function LaunchpadUrlModal({
   onChange,
   onCancel,
   onSubmit,
+  isSaving,
+  storageError,
 }: {
   draft: UrlDraft;
   onChange: (url: string) => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  isSaving: boolean;
+  storageError: string;
 }) {
   const Icon = draft.service.icon;
 
@@ -483,7 +616,17 @@ function LaunchpadUrlModal({
           Store links only. Do not paste passwords, API keys, recovery codes, or private secrets.
         </p>
 
-        <ModalActions onCancel={onCancel} saveLabel="Save URL" />
+        {storageError ? (
+          <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs leading-5 text-destructive">
+            {storageError}
+          </p>
+        ) : null}
+
+        <ModalActions
+          onCancel={onCancel}
+          saveLabel={isSaving ? "Saving..." : "Save URL"}
+          disabled={isSaving}
+        />
       </form>
     </div>
   );
@@ -641,19 +784,29 @@ function ModalHeader({
   );
 }
 
-function ModalActions({ onCancel, saveLabel }: { onCancel: () => void; saveLabel: string }) {
+function ModalActions({
+  onCancel,
+  saveLabel,
+  disabled = false,
+}: {
+  onCancel: () => void;
+  saveLabel: string;
+  disabled?: boolean;
+}) {
   return (
     <div className="mt-5 flex justify-end gap-2">
       <button
         type="button"
         onClick={onCancel}
+        disabled={disabled}
         className="inline-flex h-10 items-center rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:bg-accent"
       >
         Cancel
       </button>
       <button
         type="submit"
-        className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+        disabled={disabled}
+        className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {saveLabel}
       </button>
@@ -754,7 +907,28 @@ function getInitials(name: string) {
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onload = () => {
+      const source = String(reader.result ?? "");
+      const image = new Image();
+      image.onload = () => {
+        const maxSize = 192;
+        const scale = Math.min(maxSize / image.width, maxSize / image.height, 1);
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          resolve(source);
+          return;
+        }
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      image.onerror = () => resolve(source);
+      image.src = source;
+    };
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });

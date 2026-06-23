@@ -10,6 +10,7 @@ export const centralWorksheetNames = [
   "PerformanceWeeklyInputs",
   "AgencyDatabase",
   "CreatorDatabase",
+  "EmployeeProfiles",
   "AppSettings",
 ] as const;
 
@@ -116,6 +117,8 @@ export type AgencyDatabaseRecord = {
   agencyName: string;
   contactName: string;
   contactRole: string;
+  contact: string;
+  contactsJson: string;
   email: string;
   line: string;
   instagram: string;
@@ -150,6 +153,26 @@ export type CreatorDatabaseRecord = {
   updatedAt: string;
 };
 
+export type EmployeeProfileRecord = {
+  profileId: string;
+  displayName: string;
+  role: string;
+  avatarUrl: string;
+  bio: string;
+  joiningDate: string;
+  timezone: string;
+  primaryMarkets: string;
+  responsibilities: string;
+  workEmail: string;
+  phone: string;
+  lineId: string;
+  telegram: string;
+  preferredContactMethod: string;
+  accountsJson: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AppSettingRecord = {
   settingKey: string;
   settingValue: string;
@@ -168,6 +191,7 @@ export type CentralAppDatabase = {
     PerformanceWeeklyInputs: PerformanceWeeklyInputRecord[];
     AgencyDatabase: AgencyDatabaseRecord[];
     CreatorDatabase: CreatorDatabaseRecord[];
+    EmployeeProfiles: EmployeeProfileRecord[];
     AppSettings: AppSettingRecord[];
   };
 };
@@ -274,6 +298,8 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "agencyName",
     "contactName",
     "contactRole",
+    "contact",
+    "contactsJson",
     "email",
     "line",
     "instagram",
@@ -303,6 +329,25 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "agencyName",
     "notes",
     "status",
+    "createdAt",
+    "updatedAt",
+  ],
+  EmployeeProfiles: [
+    "profileId",
+    "displayName",
+    "role",
+    "avatarUrl",
+    "bio",
+    "joiningDate",
+    "timezone",
+    "primaryMarkets",
+    "responsibilities",
+    "workEmail",
+    "phone",
+    "lineId",
+    "telegram",
+    "preferredContactMethod",
+    "accountsJson",
     "createdAt",
     "updatedAt",
   ],
@@ -351,7 +396,21 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   agencyName: ["agency name", "agency_name"],
   contactName: ["contact name", "contact_name"],
   contactRole: ["contact role", "role", "contact_role"],
+  contact: ["contact info", "contact", "contact_info"],
+  contactsJson: ["contacts json", "contacts", "contacts_json"],
   profileUrl: ["profile url", "url", "profile_url"],
+  profileId: ["profile id", "profile_id", "id"],
+  displayName: ["display name", "name", "display_name"],
+  avatarUrl: ["avatar url", "avatar", "avatar_url"],
+  joiningDate: ["joining date", "start date", "joining_date"],
+  primaryMarkets: ["primary markets", "markets", "primary_markets"],
+  responsibilities: ["main responsibilities", "responsibilities"],
+  preferredContactMethod: [
+    "preferred contact method",
+    "preferred contact",
+    "preferred_contact_method",
+  ],
+  accountsJson: ["accounts", "accounts json", "accounts_json", "launchpad links"],
   settingKey: ["setting key", "key", "setting_key"],
   settingValue: ["setting value", "value", "setting_value"],
 };
@@ -369,6 +428,7 @@ export function createEmptyCentralDatabase(): CentralAppDatabase {
       PerformanceWeeklyInputs: [],
       AgencyDatabase: [],
       CreatorDatabase: [],
+      EmployeeProfiles: [],
       AppSettings: [],
     },
   };

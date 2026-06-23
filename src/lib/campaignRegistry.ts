@@ -1,8 +1,8 @@
 import {
   createActiveCampaignCreatorInGoogleSheetsOnly,
   deleteActiveCampaignCreatorFromGoogleSheetsOnly,
+  listCampaignProfilesFromGoogleSheetsOnly,
   loadAppDatabase,
-  loadAppDatabaseFromGoogleSheetsOnly,
   listActiveCampaignCreatorsFromGoogleSheetsOnly,
   listCampaignMemoryCardsFromGoogleSheetsOnly,
   replaceCampaignMemoryCardsForCampaignInGoogleSheetsOnly,
@@ -119,11 +119,19 @@ export function loadCampaignRegistry(): GlobalCampaignRegistry {
 }
 
 export async function loadCampaignRegistryFromGoogleSheetsOnly(options: { reason?: string } = {}) {
-  await listCampaignMemoryCardsFromGoogleSheetsOnly();
-  const database = await loadAppDatabaseFromGoogleSheetsOnly({
+  console.info("[CampaignRegistry]", "load-targeted", {
     reason: options.reason ?? "loadCampaignRegistryFromGoogleSheetsOnly",
-    force: true,
+    at: new Date().toISOString(),
   });
+  const [campaignProfiles, memoryResult, creatorResult] = await Promise.all([
+    listCampaignProfilesFromGoogleSheetsOnly(),
+    listCampaignMemoryCardsFromGoogleSheetsOnly(),
+    listActiveCampaignCreatorsFromGoogleSheetsOnly(),
+  ]);
+  const database = loadAppDatabase();
+  database.worksheets.CampaignProfiles = campaignProfiles;
+  database.worksheets.CampaignMemoryCards = memoryResult.records;
+  database.worksheets.ActiveCampaignCreators = creatorResult.records;
   return databaseToCampaignRegistry(database);
 }
 

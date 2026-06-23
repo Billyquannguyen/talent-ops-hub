@@ -3,11 +3,13 @@ import {
   requiredWorksheetHeaders,
   worksheetHeaderAliases,
   type ActiveCampaignCreatorRecord,
+  type AgencyDatabaseRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
   type CentralWorksheetName,
+  type EmployeeProfileRecord,
   type OutreachTemplateRecord,
   type PerformanceBenchmarkRecord,
   type PerformanceWeeklyInputRecord,
@@ -28,16 +30,21 @@ import {
   deleteOutreachTemplateRecord,
   deleteSourcingTemplateRecord,
   getGoogleSheetsConnectionStatus,
+  listAppSettingRecords,
   listActiveCampaignCreatorRecords,
   listCampaignMemoryCardRecords,
+  listCampaignProfileRecords,
+  listEmployeeProfileRecords,
   listOutreachTemplateRecords,
   listPerformanceBenchmarkRecords,
   listPerformanceWeeklyInputRecords,
   loadCreatorSourcingGoogleSheetsDatabase,
   loadGoogleSheetsDatabase,
+  migrateAgencyDatabaseContactsRecord,
   migrateLocalDatabaseToGoogleSheets,
   replaceCampaignMemoryCardsForCampaignRecord,
   saveAppSettingRecord,
+  saveEmployeeProfileRecord,
   saveGoogleSheetsDatabase,
   savePerformanceBenchmarkRecord,
   savePerformanceWeeklyInputRecord,
@@ -66,6 +73,13 @@ export type GoogleSheetsDatabaseResult = {
 };
 
 export type MigrationReport = Record<CentralWorksheetName, number> & { errors: string[] };
+
+export type AgencyDatabaseContactMigrationReport = {
+  backupSheetName: string;
+  rowsRead: number;
+  rowsBackfilled: number;
+  rowsWithExistingContactsJson: number;
+};
 
 export type SourcingTemplateCleanupReport = {
   beforeRows: number;
@@ -145,6 +159,18 @@ export type AppSettingsResult = {
   status: StorageStatus;
 };
 
+export type CampaignProfilesResult = {
+  ok: boolean;
+  records: CampaignProfileRecord[];
+  status: StorageStatus;
+};
+
+export type EmployeeProfilesResult = {
+  ok: boolean;
+  records: EmployeeProfileRecord[];
+  status: StorageStatus;
+};
+
 export async function getGoogleSheetsStorageStatus(): Promise<StorageStatus> {
   return getGoogleSheetsConnectionStatus();
 }
@@ -163,6 +189,19 @@ export async function loadCreatorSourcingDatabaseFromGoogleSheets(
   } = {},
 ): Promise<GoogleSheetsDatabaseResult> {
   return loadCreatorSourcingGoogleSheetsDatabase({ data: { reason: options.reason } });
+}
+
+export async function listCampaignProfilesFromGoogleSheets(): Promise<CampaignProfilesResult> {
+  return listCampaignProfileRecords();
+}
+
+export async function migrateAgencyDatabaseContactsInGoogleSheets(): Promise<{
+  ok: boolean;
+  records: AgencyDatabaseRecord[];
+  report: AgencyDatabaseContactMigrationReport | null;
+  status: StorageStatus;
+}> {
+  return migrateAgencyDatabaseContactsRecord();
 }
 
 export async function saveDatabaseToGoogleSheets(
@@ -301,6 +340,20 @@ export async function saveAppSettingToGoogleSheets(
   record: AppSettingRecord,
 ): Promise<AppSettingsResult> {
   return saveAppSettingRecord({ data: { record } });
+}
+
+export async function listAppSettingsFromGoogleSheets(): Promise<AppSettingsResult> {
+  return listAppSettingRecords();
+}
+
+export async function listEmployeeProfilesFromGoogleSheets(): Promise<EmployeeProfilesResult> {
+  return listEmployeeProfileRecords();
+}
+
+export async function saveEmployeeProfileToGoogleSheets(
+  record: EmployeeProfileRecord,
+): Promise<EmployeeProfilesResult> {
+  return saveEmployeeProfileRecord({ data: { record } });
 }
 
 export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets(): Promise<{

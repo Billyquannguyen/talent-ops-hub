@@ -15,24 +15,30 @@ import {
   deleteOutreachTemplateFromGoogleSheets,
   deleteSourcingTemplateFromGoogleSheets,
   getGoogleSheetsStorageStatus,
+  listAppSettingsFromGoogleSheets,
   listActiveCampaignCreatorsFromGoogleSheets,
   listCampaignMemoryCardsFromGoogleSheets,
+  listCampaignProfilesFromGoogleSheets,
+  listEmployeeProfilesFromGoogleSheets,
   listOutreachTemplatesFromGoogleSheets,
   listPerformanceBenchmarksFromGoogleSheets,
   listPerformanceWeeklyInputsFromGoogleSheets,
   loadCreatorSourcingDatabaseFromGoogleSheets,
   loadDatabaseFromGoogleSheets,
+  migrateAgencyDatabaseContactsInGoogleSheets,
   migrateDatabaseToGoogleSheets,
   replaceCampaignMemoryCardsForCampaignInGoogleSheets,
   saveDatabaseToGoogleSheets,
   saveAppSettingToGoogleSheets,
   savePerformanceBenchmarkToGoogleSheets,
   savePerformanceWeeklyInputToGoogleSheets,
+  saveEmployeeProfileToGoogleSheets,
   saveSourcingTemplateToGoogleSheets,
   updateActiveCampaignCreatorInGoogleSheets,
   updateCampaignMemoryCardInGoogleSheets,
   updateOutreachTemplateInGoogleSheets,
   type ActiveCampaignCreatorCleanupReport,
+  type AgencyDatabaseContactMigrationReport,
   type CampaignMemoryCardCleanupReport,
   type GoogleSheetsDatabaseResult,
   type MigrationReport,
@@ -47,6 +53,7 @@ import {
   type CampaignMemoryCardRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
+  type EmployeeProfileRecord,
   type OutreachTemplateRecord,
   type PerformanceBenchmarkRecord,
   type PerformanceWeeklyInputRecord,
@@ -126,6 +133,36 @@ export async function saveSourcingTemplateToGoogleSheetsOnly(
   }
   clearPrimaryDatabaseCache();
   return cloneCentralDatabase(result.database);
+}
+
+export async function listCampaignProfilesFromGoogleSheetsOnly(): Promise<CampaignProfileRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "list-campaign-profiles-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listCampaignProfilesFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberCampaignProfiles(result.records);
+  return result.records;
+}
+
+export async function migrateAgencyDatabaseContactsInGoogleSheetsOnly(): Promise<{
+  records: CentralAppDatabase["worksheets"]["AgencyDatabase"];
+  report: AgencyDatabaseContactMigrationReport;
+}> {
+  console.info("[AppRepositoryGoogleSheets]", "migrate-agency-database-contacts-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await migrateAgencyDatabaseContactsInGoogleSheets();
+  if (!result.ok || !result.report) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  return {
+    records: result.records,
+    report: result.report,
+  };
 }
 
 export async function deleteSourcingTemplateFromGoogleSheetsOnly(
@@ -535,6 +572,46 @@ export async function saveAppSettingToGoogleSheetsOnly(
   return result.records;
 }
 
+export async function listAppSettingsFromGoogleSheetsOnly(): Promise<AppSettingRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "list-app-settings-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listAppSettingsFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberAppSettings(result.records);
+  return result.records;
+}
+
+export async function listEmployeeProfilesFromGoogleSheetsOnly(): Promise<EmployeeProfileRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "list-employee-profiles-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listEmployeeProfilesFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberEmployeeProfiles(result.records);
+  return result.records;
+}
+
+export async function saveEmployeeProfileToGoogleSheetsOnly(
+  record: EmployeeProfileRecord,
+): Promise<EmployeeProfileRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "save-employee-profile-start", {
+    profileId: record.profileId,
+    at: new Date().toISOString(),
+  });
+  const result = await saveEmployeeProfileToGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberEmployeeProfiles(result.records);
+  return result.records;
+}
+
 export function saveAppDatabase(database: CentralAppDatabase) {
   saveCentralDatabaseToLocalStorage(database);
   if (typeof window !== "undefined") {
@@ -725,6 +802,12 @@ function rememberCampaignMemoryCards(
   saveCentralDatabaseToLocalStorage(database);
 }
 
+function rememberCampaignProfiles(records: CampaignProfileRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.CampaignProfiles = records;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
 function rememberActiveCampaignCreators(records: ActiveCampaignCreatorRecord[]) {
   const database = loadAppDatabase();
   database.worksheets.ActiveCampaignCreators = records;
@@ -746,6 +829,12 @@ function rememberPerformanceWeeklyInputs(records: PerformanceWeeklyInputRecord[]
 function rememberAppSettings(records: AppSettingRecord[]) {
   const database = loadAppDatabase();
   database.worksheets.AppSettings = records;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
+function rememberEmployeeProfiles(records: EmployeeProfileRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.EmployeeProfiles = records;
   saveCentralDatabaseToLocalStorage(database);
 }
 
