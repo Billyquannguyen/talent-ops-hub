@@ -11,6 +11,7 @@ export const centralWorksheetNames = [
   "AgencyDatabase",
   "CreatorDatabase",
   "EmployeeProfiles",
+  "CampaignPromptVault",
   "AppSettings",
 ] as const;
 
@@ -173,6 +174,19 @@ export type EmployeeProfileRecord = {
   updatedAt: string;
 };
 
+export type CampaignPromptVaultRecord = {
+  promptId: string;
+  campaignId: string;
+  campaignName: string;
+  category: string;
+  title: string;
+  content: string;
+  input: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AppSettingRecord = {
   settingKey: string;
   settingValue: string;
@@ -192,6 +206,7 @@ export type CentralAppDatabase = {
     AgencyDatabase: AgencyDatabaseRecord[];
     CreatorDatabase: CreatorDatabaseRecord[];
     EmployeeProfiles: EmployeeProfileRecord[];
+    CampaignPromptVault: CampaignPromptVaultRecord[];
     AppSettings: AppSettingRecord[];
   };
 };
@@ -351,6 +366,18 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "createdAt",
     "updatedAt",
   ],
+  CampaignPromptVault: [
+    "promptId",
+    "campaignId",
+    "campaignName",
+    "category",
+    "title",
+    "content",
+    "input",
+    "notes",
+    "createdAt",
+    "updatedAt",
+  ],
   AppSettings: ["settingKey", "settingValue", "updatedAt"],
 };
 
@@ -400,6 +427,8 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   contactsJson: ["contacts json", "contacts", "contacts_json"],
   profileUrl: ["profile url", "url", "profile_url"],
   profileId: ["profile id", "profile_id", "id"],
+  promptId: ["prompt id", "prompt_id", "id"],
+  input: ["input", "prompt input", "source input", "attachment input", "context input"],
   displayName: ["display name", "name", "display_name"],
   avatarUrl: ["avatar url", "avatar", "avatar_url"],
   joiningDate: ["joining date", "start date", "joining_date"],
@@ -429,6 +458,7 @@ export function createEmptyCentralDatabase(): CentralAppDatabase {
       AgencyDatabase: [],
       CreatorDatabase: [],
       EmployeeProfiles: [],
+      CampaignPromptVault: [],
       AppSettings: [],
     },
   };

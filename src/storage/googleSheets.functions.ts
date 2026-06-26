@@ -6,6 +6,7 @@ import type {
   AgencyDatabaseRecord,
   AppSettingRecord,
   CampaignMemoryCardRecord,
+  CampaignPromptVaultRecord,
   CentralAppDatabase,
   EmployeeProfileRecord,
   OutreachTemplateRecord,
@@ -1246,6 +1247,125 @@ export const listEmployeeProfileRecords = createServerFn({ method: "POST" }).han
     };
   }
 });
+
+export const listCampaignPromptVaultRecords = createServerFn({ method: "POST" }).handler(
+  async () => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      listCampaignPromptVaultInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as CampaignPromptVaultRecord[],
+          status,
+        };
+      }
+
+      const result = await listCampaignPromptVaultInGoogleSheets();
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CampaignPromptVaultRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  },
+);
+
+export const saveCampaignPromptVaultRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertCampaignPromptVaultInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as CampaignPromptVaultRecord[],
+          status,
+        };
+      }
+
+      const result = await upsertCampaignPromptVaultInGoogleSheets(
+        data.record as CampaignPromptVaultRecord,
+      );
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CampaignPromptVaultRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const deleteCampaignPromptVaultRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ promptId: z.string() }))
+  .handler(async ({ data }) => {
+    const {
+      deleteCampaignPromptVaultInGoogleSheets,
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as CampaignPromptVaultRecord[],
+          status,
+        };
+      }
+
+      const result = await deleteCampaignPromptVaultInGoogleSheets(data.promptId);
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CampaignPromptVaultRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
 
 export const saveEmployeeProfileRecord = createServerFn({ method: "POST" })
   .inputValidator(z.object({ record: z.any() }))

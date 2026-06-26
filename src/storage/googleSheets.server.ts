@@ -11,6 +11,7 @@ import {
   type AgencyDatabaseRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
+  type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
   type CentralWorksheetName,
@@ -51,6 +52,11 @@ import {
   upsertPerformanceWeeklyInputRecord,
 } from "./performanceRecords";
 import { cleanupEmployeeProfileRecords, upsertEmployeeProfileRecord } from "./employeeProfiles";
+import {
+  cleanupCampaignPromptVaultRecords,
+  removeCampaignPromptVaultRecord,
+  upsertCampaignPromptVaultRecord,
+} from "./campaignPromptVault";
 
 type GoogleSheetsConfig = {
   spreadsheetId: string;
@@ -94,6 +100,7 @@ const rowIdFields: Record<CentralWorksheetName, string> = {
   AgencyDatabase: "id",
   CreatorDatabase: "id",
   EmployeeProfiles: "profileId",
+  CampaignPromptVault: "promptId",
   AppSettings: "settingKey",
 };
 
@@ -1057,6 +1064,91 @@ export async function upsertEmployeeProfileInGoogleSheets(record: EmployeeProfil
   };
 }
 
+export async function listCampaignPromptVaultInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const promptRows = await readWorksheetRecordsWithRowNumbers<CampaignPromptVaultRecord>(
+    spreadsheetId,
+    "CampaignPromptVault",
+  );
+  const cleanup = cleanupCampaignPromptVaultRecords(promptRows.rows.map((row) => row.record));
+  logCampaignPromptVaultCleanupSummary("list-current-state", cleanup);
+
+  if (cleanup.removedCount > 0) {
+    await writeCurrentStateWorksheetRows(
+      spreadsheetId,
+      "CampaignPromptVault",
+      promptRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("campaign-prompt-vault-list-cleanup");
+  }
+
+  return {
+    records: cleanup.records,
+  };
+}
+
+export async function upsertCampaignPromptVaultInGoogleSheets(record: CampaignPromptVaultRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const promptRows = await readWorksheetRecordsWithRowNumbers<CampaignPromptVaultRecord>(
+    spreadsheetId,
+    "CampaignPromptVault",
+  );
+  const cleanup = upsertCampaignPromptVaultRecord(
+    promptRows.rows.map((row) => row.record),
+    record,
+  );
+  logCampaignPromptVaultCleanupSummary("targeted-upsert", cleanup);
+
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignPromptVault",
+    promptRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("campaign-prompt-vault-targeted-write");
+
+  return {
+    records: cleanup.records,
+  };
+}
+
+export async function deleteCampaignPromptVaultInGoogleSheets(promptId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const promptRows = await readWorksheetRecordsWithRowNumbers<CampaignPromptVaultRecord>(
+    spreadsheetId,
+    "CampaignPromptVault",
+  );
+  const cleanup = removeCampaignPromptVaultRecord(
+    promptRows.rows.map((row) => row.record),
+    promptId,
+  );
+  logCampaignPromptVaultCleanupSummary("targeted-delete", cleanup);
+
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignPromptVault",
+    promptRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("campaign-prompt-vault-targeted-delete");
+
+  return {
+    records: cleanup.records,
+  };
+}
+
 export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets() {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
@@ -1122,6 +1214,7 @@ export async function mergeCentralDatabaseIntoGoogleSheets(localDatabase: Centra
     AgencyDatabase: 0,
     CreatorDatabase: 0,
     EmployeeProfiles: 0,
+    CampaignPromptVault: 0,
     AppSettings: 0,
     errors: [] as string[],
   };
@@ -1655,6 +1748,24 @@ function logEmployeeProfileCleanupSummary(
   });
 }
 
+function logCampaignPromptVaultCleanupSummary(
+  reason: string,
+  cleanup: {
+    removedCount: number;
+    duplicateIdCount: number;
+    emptyRecordCount: number;
+  },
+) {
+  if (cleanup.removedCount === 0) return;
+  console.info("[CampaignPromptVaultCleanup]", "delete-stale-current-state-rows", {
+    reason,
+    removedCount: cleanup.removedCount,
+    emptyRows: cleanup.emptyRecordCount,
+    duplicateIdRows: cleanup.duplicateIdCount,
+    at: new Date().toISOString(),
+  });
+}
+
 async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
   spreadsheetId: string,
   reason: string,
@@ -2105,6 +2216,20 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
           updatedAt: stringValue(row.updatedAt),
         })),
       ).records,
+      CampaignPromptVault: cleanupCampaignPromptVaultRecords(
+        rowsBySheet.CampaignPromptVault.map((row) => ({
+          promptId: stringValue(row.promptId),
+          campaignId: stringValue(row.campaignId),
+          campaignName: stringValue(row.campaignName),
+          category: stringValue(row.category),
+          title: stringValue(row.title),
+          content: stringValue(row.content),
+          input: stringValue(row.input),
+          notes: stringValue(row.notes),
+          createdAt: stringValue(row.createdAt),
+          updatedAt: stringValue(row.updatedAt),
+        })),
+      ).records,
       AppSettings: rowsBySheet.AppSettings.map((row) => ({
         settingKey: stringValue(row.settingKey),
         settingValue: stringValue(row.settingValue),
@@ -2154,6 +2279,10 @@ function getRowsForWorksheet(
   database: CentralAppDatabase,
   worksheetName: "EmployeeProfiles",
 ): EmployeeProfileRecord[];
+function getRowsForWorksheet(
+  database: CentralAppDatabase,
+  worksheetName: "CampaignPromptVault",
+): CampaignPromptVaultRecord[];
 function getRowsForWorksheet(
   database: CentralAppDatabase,
   worksheetName: "AppSettings",

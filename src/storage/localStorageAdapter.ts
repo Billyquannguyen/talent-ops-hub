@@ -4,6 +4,7 @@ import {
   type AgencyDatabaseRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
+  type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
   type CreatorDatabaseRecord,
@@ -334,6 +335,10 @@ function normalizeCentralDatabase(value: unknown): CentralAppDatabase {
       AgencyDatabase: normalizeArray(worksheets.AgencyDatabase, normalizeAgencyDatabaseRecord),
       CreatorDatabase: normalizeArray(worksheets.CreatorDatabase, normalizeCreatorDatabaseRecord),
       EmployeeProfiles: normalizeArray(worksheets.EmployeeProfiles, normalizeEmployeeProfileRecord),
+      CampaignPromptVault: normalizeArray(
+        worksheets.CampaignPromptVault,
+        normalizeCampaignPromptVaultRecord,
+      ),
       AppSettings: normalizeArray(worksheets.AppSettings, normalizeAppSetting),
     },
   };
@@ -398,6 +403,24 @@ function normalizeMemoryCard(value: unknown): CampaignMemoryCardRecord {
     title: stringValue(row.title) || "Memory",
     content: stringValue(row.content),
     preferredLanguages: stringValue(row.preferredLanguages),
+    createdAt,
+    updatedAt: stringValue(row.updatedAt) || createdAt,
+  };
+}
+
+function normalizeCampaignPromptVaultRecord(value: unknown): CampaignPromptVaultRecord {
+  const row = isRecord(value) ? value : {};
+  const now = new Date().toISOString();
+  const createdAt = stringValue(row.createdAt) || now;
+  return {
+    promptId: stringValue(row.promptId) || stringValue(row.id) || createId("prompt"),
+    campaignId: stringValue(row.campaignId),
+    campaignName: stringValue(row.campaignName),
+    category: stringValue(row.category) || "Custom",
+    title: stringValue(row.title) || "Untitled Prompt",
+    content: stringValue(row.content),
+    input: stringValue(row.input),
+    notes: stringValue(row.notes),
     createdAt,
     updatedAt: stringValue(row.updatedAt) || createdAt,
   };

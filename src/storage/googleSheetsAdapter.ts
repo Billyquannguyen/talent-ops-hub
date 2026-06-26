@@ -6,6 +6,7 @@ import {
   type AgencyDatabaseRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
+  type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
   type CentralWorksheetName,
@@ -27,12 +28,14 @@ import {
   createOutreachTemplateRecord,
   deleteActiveCampaignCreatorRecord,
   deleteCampaignMemoryCardRecord,
+  deleteCampaignPromptVaultRecord,
   deleteOutreachTemplateRecord,
   deleteSourcingTemplateRecord,
   getGoogleSheetsConnectionStatus,
   listAppSettingRecords,
   listActiveCampaignCreatorRecords,
   listCampaignMemoryCardRecords,
+  listCampaignPromptVaultRecords,
   listCampaignProfileRecords,
   listEmployeeProfileRecords,
   listOutreachTemplateRecords,
@@ -44,6 +47,7 @@ import {
   migrateLocalDatabaseToGoogleSheets,
   replaceCampaignMemoryCardsForCampaignRecord,
   saveAppSettingRecord,
+  saveCampaignPromptVaultRecord,
   saveEmployeeProfileRecord,
   saveGoogleSheetsDatabase,
   savePerformanceBenchmarkRecord,
@@ -168,6 +172,12 @@ export type CampaignProfilesResult = {
 export type EmployeeProfilesResult = {
   ok: boolean;
   records: EmployeeProfileRecord[];
+  status: StorageStatus;
+};
+
+export type CampaignPromptVaultResult = {
+  ok: boolean;
+  records: CampaignPromptVaultRecord[];
   status: StorageStatus;
 };
 
@@ -354,6 +364,22 @@ export async function saveEmployeeProfileToGoogleSheets(
   record: EmployeeProfileRecord,
 ): Promise<EmployeeProfilesResult> {
   return saveEmployeeProfileRecord({ data: { record } });
+}
+
+export async function listCampaignPromptVaultFromGoogleSheets(): Promise<CampaignPromptVaultResult> {
+  return listCampaignPromptVaultRecords();
+}
+
+export async function saveCampaignPromptVaultToGoogleSheets(
+  record: CampaignPromptVaultRecord,
+): Promise<CampaignPromptVaultResult> {
+  return saveCampaignPromptVaultRecord({ data: { record } });
+}
+
+export async function deleteCampaignPromptVaultFromGoogleSheets(
+  promptId: string,
+): Promise<CampaignPromptVaultResult> {
+  return deleteCampaignPromptVaultRecord({ data: { promptId } });
 }
 
 export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets(): Promise<{

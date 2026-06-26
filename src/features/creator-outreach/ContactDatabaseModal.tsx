@@ -27,7 +27,6 @@ export function DatabaseViewModal({
   onChangeAgencyDraft,
   onSaveAgency,
   onDeleteAgency,
-  onMigrateAgencyContacts,
   onNewCreator,
   onEditCreator,
   onChangeCreatorDraft,
@@ -74,16 +73,6 @@ export function DatabaseViewModal({
             </p>
             <h2 className="mt-1 text-xl font-semibold">{title}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
-            {view === "agency" ? (
-              <button
-                type="button"
-                onClick={onMigrateAgencyContacts}
-                disabled={isSaving || isLoading}
-                className="mt-3 inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Run Safe Contact Migration
-              </button>
-            ) : null}
           </div>
           <button
             type="button"
@@ -109,6 +98,7 @@ export function DatabaseViewModal({
               isSaving={isSaving}
               onNew={onNewAgency}
               onEdit={onEditAgency}
+              onAddContact={(record) => onEditAgency(addBlankContactToAgencyRecord(record))}
               onDelete={onDeleteAgency}
               onCopy={onCopy}
             />
@@ -155,6 +145,7 @@ function AgencyDatabaseTable({
   isSaving,
   onNew,
   onEdit,
+  onAddContact,
   onDelete,
   onCopy,
 }: {
@@ -163,6 +154,7 @@ function AgencyDatabaseTable({
   isSaving: boolean;
   onNew: () => void;
   onEdit: (record: AgencyDatabaseRecord) => void;
+  onAddContact: (record: AgencyDatabaseRecord) => void;
   onDelete: (recordId: string) => void;
   onCopy: (text: string, label: string) => void | Promise<void>;
 }) {
@@ -197,7 +189,7 @@ function AgencyDatabaseTable({
     () =>
       filteredRecords.map((record) => ({
         ...record,
-        contacts: getAgencyContacts(record),
+        contacts: getAgencyContacts(record).filter(hasAgencyContactContent),
       })),
     [filteredRecords],
   );
@@ -240,7 +232,11 @@ function AgencyDatabaseTable({
                 <tr key={record.id} className="border-t border-border align-top">
                   <td className="px-3 py-3 font-medium">{record.agencyName || "Untitled"}</td>
                   <td className="min-w-[280px] px-3 py-3">
-                    <AgencyContactList contacts={record.contacts} onCopy={onCopy} />
+                    <AgencyContactList
+                      contacts={record.contacts}
+                      onAddContact={() => onAddContact(record)}
+                      onCopy={onCopy}
+                    />
                   </td>
                   <td className="px-3 py-3">
                     <ContactValue value={record.instagram} label="Instagram" onCopy={onCopy} />
@@ -272,29 +268,44 @@ function AgencyDatabaseTable({
 
 function AgencyContactList({
   contacts,
+  onAddContact,
   onCopy,
 }: {
   contacts: AgencyContact[];
+  onAddContact: () => void;
   onCopy: (text: string, label: string) => void | Promise<void>;
 }) {
-  if (!contacts.length) return <span className="text-muted-foreground">-</span>;
   return (
     <div className="space-y-2">
-      {contacts.map((contact) => (
-        <div key={contact.id} className="rounded-lg border border-border/70 bg-background/40 p-2">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{contact.name || "Contact"}</p>
-              {contact.role ? (
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">{contact.role}</p>
-              ) : null}
+      {contacts.length ? (
+        contacts.map((contact) => (
+          <div key={contact.id} className="rounded-lg border border-border/70 bg-background/40 p-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{contact.name || "Contact"}</p>
+                {contact.role ? (
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{contact.role}</p>
+                ) : null}
+              </div>
+            </div>
+            <div className="mt-1">
+              <ContactValue value={contact.contact} label="Contact" onCopy={onCopy} />
             </div>
           </div>
-          <div className="mt-1">
-            <ContactValue value={contact.contact} label="Contact" onCopy={onCopy} />
-          </div>
+        ))
+      ) : (
+        <div className="rounded-lg border border-dashed border-border/80 bg-background/30 px-3 py-2 text-xs text-muted-foreground">
+          No contacts yet.
         </div>
-      ))}
+      )}
+      <button
+        type="button"
+        onClick={onAddContact}
+        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-cyan-300/25 bg-cyan-300/5 px-2.5 text-xs font-medium text-cyan-100 transition hover:border-cyan-200/40 hover:bg-cyan-300/10"
+      >
+        <Plus className="size-3.5" />
+        Add Contact
+      </button>
     </div>
   );
 }
@@ -1061,6 +1072,19 @@ function getAgencyContacts(record: AgencyDatabaseRecord): AgencyContact[] {
   }
 
   return [createBlankAgencyContact()];
+}
+
+function addBlankContactToAgencyRecord(record: AgencyDatabaseRecord): AgencyDatabaseRecord {
+  const contacts = getAgencyContacts(record).filter(hasAgencyContactContent);
+  const nextContacts = [...contacts, createBlankAgencyContact()];
+  return {
+    ...record,
+    contactsJson: serializeAgencyContacts(nextContacts),
+  };
+}
+
+function hasAgencyContactContent(contact: AgencyContact) {
+  return Boolean(contact.name.trim() || contact.role.trim() || contact.contact.trim());
 }
 
 function parseAgencyContacts(value: string): AgencyContact[] {

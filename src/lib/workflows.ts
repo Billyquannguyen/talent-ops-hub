@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, Gauge, MessageSquareText, Search } from "lucide-react";
+import { BriefcaseBusiness, FileText, Gauge, MessageSquareText, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type WorkflowCard = {
@@ -36,6 +36,15 @@ export const workflowCards: WorkflowCard[] = [
     status: "ready",
     route: "/active-campaigns",
     icon: BriefcaseBusiness,
+  },
+  {
+    id: "prompt-vault",
+    title: "Prompt Vault",
+    description:
+      "Store, find, edit, and copy campaign-specific workflow prompts generated in ChatGPT.",
+    status: "ready",
+    route: "/prompt-vault",
+    icon: FileText,
   },
   {
     id: "employee-performance",

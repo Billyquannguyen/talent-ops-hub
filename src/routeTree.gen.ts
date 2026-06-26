@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RosterRouteImport } from './routes/roster'
+import { Route as PromptVaultRouteImport } from './routes/prompt-vault'
 import { Route as OutreachRouteImport } from './routes/outreach'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as HelpRouteImport } from './routes/help'
@@ -37,6 +38,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const RosterRoute = RosterRouteImport.update({
   id: '/roster',
   path: '/roster',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PromptVaultRoute = PromptVaultRouteImport.update({
+  id: '/prompt-vault',
+  path: '/prompt-vault',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OutreachRoute = OutreachRouteImport.update({
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
   '/outreach': typeof OutreachRoute
+  '/prompt-vault': typeof PromptVaultRoute
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
   '/outreach': typeof OutreachRoute
+  '/prompt-vault': typeof PromptVaultRoute
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
   '/outreach': typeof OutreachRoute
+  '/prompt-vault': typeof PromptVaultRoute
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
@@ -206,6 +215,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/inbox'
     | '/outreach'
+    | '/prompt-vault'
     | '/roster'
     | '/settings'
     | '/active-campaigns/$campaignId'
@@ -226,6 +236,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/inbox'
     | '/outreach'
+    | '/prompt-vault'
     | '/roster'
     | '/settings'
     | '/active-campaigns/$campaignId'
@@ -247,6 +258,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/inbox'
     | '/outreach'
+    | '/prompt-vault'
     | '/roster'
     | '/settings'
     | '/active-campaigns/$campaignId'
@@ -269,6 +281,7 @@ export interface RootRouteChildren {
   HelpRoute: typeof HelpRoute
   InboxRoute: typeof InboxRoute
   OutreachRoute: typeof OutreachRoute
+  PromptVaultRoute: typeof PromptVaultRoute
   RosterRoute: typeof RosterRoute
   SettingsRoute: typeof SettingsRoute
   ApiTranslateRoute: typeof ApiTranslateRoute
@@ -288,6 +301,13 @@ declare module '@tanstack/react-router' {
       path: '/roster'
       fullPath: '/roster'
       preLoaderRoute: typeof RosterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prompt-vault': {
+      id: '/prompt-vault'
+      path: '/prompt-vault'
+      fullPath: '/prompt-vault'
+      preLoaderRoute: typeof PromptVaultRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/outreach': {
@@ -441,6 +461,7 @@ const rootRouteChildren: RootRouteChildren = {
   HelpRoute: HelpRoute,
   InboxRoute: InboxRoute,
   OutreachRoute: OutreachRoute,
+  PromptVaultRoute: PromptVaultRoute,
   RosterRoute: RosterRoute,
   SettingsRoute: SettingsRoute,
   ApiTranslateRoute: ApiTranslateRoute,

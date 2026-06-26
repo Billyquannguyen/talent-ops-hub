@@ -12,12 +12,14 @@ import {
   createOutreachTemplateInGoogleSheets,
   deleteActiveCampaignCreatorFromGoogleSheets,
   deleteCampaignMemoryCardFromGoogleSheets,
+  deleteCampaignPromptVaultFromGoogleSheets,
   deleteOutreachTemplateFromGoogleSheets,
   deleteSourcingTemplateFromGoogleSheets,
   getGoogleSheetsStorageStatus,
   listAppSettingsFromGoogleSheets,
   listActiveCampaignCreatorsFromGoogleSheets,
   listCampaignMemoryCardsFromGoogleSheets,
+  listCampaignPromptVaultFromGoogleSheets,
   listCampaignProfilesFromGoogleSheets,
   listEmployeeProfilesFromGoogleSheets,
   listOutreachTemplatesFromGoogleSheets,
@@ -30,6 +32,7 @@ import {
   replaceCampaignMemoryCardsForCampaignInGoogleSheets,
   saveDatabaseToGoogleSheets,
   saveAppSettingToGoogleSheets,
+  saveCampaignPromptVaultToGoogleSheets,
   savePerformanceBenchmarkToGoogleSheets,
   savePerformanceWeeklyInputToGoogleSheets,
   saveEmployeeProfileToGoogleSheets,
@@ -51,6 +54,7 @@ import {
   type ActiveCampaignCreatorRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
+  type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
   type EmployeeProfileRecord,
@@ -612,6 +616,53 @@ export async function saveEmployeeProfileToGoogleSheetsOnly(
   return result.records;
 }
 
+export async function listCampaignPromptVaultFromGoogleSheetsOnly(): Promise<
+  CampaignPromptVaultRecord[]
+> {
+  console.info("[AppRepositoryGoogleSheets]", "list-campaign-prompt-vault-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listCampaignPromptVaultFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberCampaignPromptVault(result.records);
+  return result.records;
+}
+
+export async function saveCampaignPromptVaultToGoogleSheetsOnly(
+  record: CampaignPromptVaultRecord,
+): Promise<CampaignPromptVaultRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "save-campaign-prompt-vault-start", {
+    promptId: record.promptId,
+    campaignId: record.campaignId,
+    at: new Date().toISOString(),
+  });
+  const result = await saveCampaignPromptVaultToGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignPromptVault(result.records);
+  return result.records;
+}
+
+export async function deleteCampaignPromptVaultFromGoogleSheetsOnly(
+  promptId: string,
+): Promise<CampaignPromptVaultRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "delete-campaign-prompt-vault-start", {
+    promptId,
+    at: new Date().toISOString(),
+  });
+  const result = await deleteCampaignPromptVaultFromGoogleSheets(promptId);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignPromptVault(result.records);
+  return result.records;
+}
+
 export function saveAppDatabase(database: CentralAppDatabase) {
   saveCentralDatabaseToLocalStorage(database);
   if (typeof window !== "undefined") {
@@ -835,6 +886,12 @@ function rememberAppSettings(records: AppSettingRecord[]) {
 function rememberEmployeeProfiles(records: EmployeeProfileRecord[]) {
   const database = loadAppDatabase();
   database.worksheets.EmployeeProfiles = records;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
+function rememberCampaignPromptVault(records: CampaignPromptVaultRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.CampaignPromptVault = records;
   saveCentralDatabaseToLocalStorage(database);
 }
 
