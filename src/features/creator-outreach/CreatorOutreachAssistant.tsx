@@ -19,6 +19,7 @@ import {
   Pencil,
   Plus,
   SmilePlus,
+  Sparkles,
   Settings2,
   Trash2,
   Users,
@@ -68,14 +69,19 @@ import {
   createId as createOutreachId,
   extractTemplateFields,
 } from "./messageComposer";
-import { detectLanguage, getLanguageBadge, getLanguageLabel, translateText } from "./translation";
+import {
+  detectLanguage,
+  getLanguageBadge,
+  getLanguageLabel,
+  polishReply,
+  suggestedOutreachLanguages,
+  translateText,
+} from "./translation";
 import {
   creatorMessageSources,
-  outreachLanguages,
   type ChannelType,
   type CreatorMessageSource,
   type KatlasBuddyDatabase,
-  type OutreachLanguage,
   type OutreachTemplate,
 } from "./types";
 
@@ -111,11 +117,11 @@ export function CreatorOutreachAssistant() {
     loadCampaignRegistry(),
   );
   const [creatorMessage, setCreatorMessage] = useState("");
-  const [detectedLanguage, setDetectedLanguage] = useState<OutreachLanguage>("english");
+  const [detectedLanguage, setDetectedLanguage] = useState("English");
   const [englishTranslation, setEnglishTranslation] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [replyEditor, setReplyEditor] = useState("");
-  const [targetLanguage, setTargetLanguage] = useState<OutreachLanguage>("thai");
+  const [targetLanguage, setTargetLanguage] = useState("Thai");
   const [translatedReply, setTranslatedReply] = useState("");
   const [isNewTemplateModalOpen, setIsNewTemplateModalOpen] = useState(false);
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
@@ -157,7 +163,7 @@ export function CreatorOutreachAssistant() {
   const selectedTemplate =
     replyTemplateOptions.find((template) => template.id === selectedTemplateId) ??
     replyTemplateOptions[0];
-  const defaultTargetLanguage = settings.defaultTargetLanguage ?? "english";
+  const defaultTargetLanguage = getLanguageLabel(settings.defaultTargetLanguage ?? "english");
 
   useEffect(() => {
     selectedTemplateIdRef.current = selectedTemplateId;
@@ -198,7 +204,7 @@ export function CreatorOutreachAssistant() {
     setCampaignRegistry(loadedRegistry);
     selectedTemplateIdRef.current = loadedTemplateId;
     setSelectedTemplateId(loadedTemplateId);
-    setTargetLanguage(loadedDatabase.worksheets.Settings.defaultTargetLanguage);
+    setTargetLanguage(getLanguageLabel(loadedDatabase.worksheets.Settings.defaultTargetLanguage));
     setSelectedMemoryCampaignId(loadedRegistry.campaigns[0]?.id ?? "");
     setLoaded(true);
 
@@ -248,7 +254,7 @@ export function CreatorOutreachAssistant() {
     let cancelled = false;
 
     if (!creatorMessage.trim()) {
-      setDetectedLanguage("english");
+      setDetectedLanguage("English");
       setEnglishTranslation("");
       setTranslationStatus("");
       return;
@@ -268,7 +274,7 @@ export function CreatorOutreachAssistant() {
           const translation = await translateText({
             text: creatorMessage,
             sourceLanguage: language,
-            targetLanguage: "english",
+            targetLanguage: "English",
           });
 
           if (!cancelled) {
@@ -471,6 +477,18 @@ export function CreatorOutreachAssistant() {
       setCopyStatus(`${label} copied.`);
     } catch {
       setCopyStatus("Copy failed.");
+    }
+  }
+
+  async function polishCurrentReply() {
+    if (!replyEditor.trim()) return;
+    setTranslationStatus("Polishing reply...");
+    try {
+      const polished = await polishReply(replyEditor, "English");
+      setReplyEditor(polished);
+      setTranslationStatus("");
+    } catch (error) {
+      setTranslationStatus(getTranslationErrorMessage(error));
     }
   }
 
@@ -1019,6 +1037,14 @@ export function CreatorOutreachAssistant() {
 
             <div className="mt-3 flex min-h-10 flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
               <button
+                onClick={polishCurrentReply}
+                disabled={!replyEditor.trim()}
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Sparkles className="size-4" />
+                Polish Reply
+              </button>
+              <button
                 onClick={() => copyText(replyEditor, "Original reply")}
                 disabled={!replyEditor.trim()}
                 className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
@@ -1142,8 +1168,8 @@ export function CreatorOutreachAssistant() {
 function getTranslationErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "Translation is unavailable.";
 
-  if (/translation|translate|api key|configured/i.test(message)) {
-    return "Translation is not configured yet. Add the server translation API key.";
+  if (/translation|translate|api key|configured|openrouter/i.test(message)) {
+    return "AI translation is not configured yet. Add OPENROUTER_API_KEY and OPENROUTER_DEFAULT_MODEL on the server.";
   }
 
   return `Translation unavailable: ${message}`;
@@ -1611,7 +1637,7 @@ function CampaignMemoryWidget({
   onInsert,
 }: {
   isOpen: boolean;
-  detectedLanguage: OutreachLanguage;
+  detectedLanguage: string;
   registry: GlobalCampaignRegistry;
   selectedCampaignId: string;
   onToggle: () => void;
@@ -1766,11 +1792,10 @@ function getDuplicateTemplateName(baseName: string, templates: OutreachTemplate[
   return `${cleanBase} ${counter}`;
 }
 
-function resolveReplyTargetLanguage(
-  detectedLanguage: OutreachLanguage,
-  projectLanguage: OutreachLanguage,
-) {
-  return detectedLanguage === "english" ? projectLanguage : detectedLanguage;
+function resolveReplyTargetLanguage(detectedLanguage: string, projectLanguage: string) {
+  return getLanguageLabel(detectedLanguage).toLowerCase() === "english"
+    ? getLanguageLabel(projectLanguage)
+    : getLanguageLabel(detectedLanguage);
 }
 
 function isTemplateCompatibleWithSource(template: OutreachTemplate, source: CreatorMessageSource) {
@@ -2026,24 +2051,21 @@ function TextInput({
   );
 }
 
-function LanguageSelect({
-  value,
-  onChange,
-}: {
-  value: OutreachLanguage;
-  onChange: (value: OutreachLanguage) => void;
-}) {
+function LanguageSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value as OutreachLanguage)}
-      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-    >
-      {outreachLanguages.map((language) => (
-        <option key={language.code} value={language.code}>
-          {language.label}
-        </option>
-      ))}
-    </select>
+    <>
+      <input
+        value={value}
+        list="outreach-language-suggestions"
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Type any language"
+        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+      />
+      <datalist id="outreach-language-suggestions">
+        {suggestedOutreachLanguages.map((language) => (
+          <option key={language} value={language} />
+        ))}
+      </datalist>
+    </>
   );
 }

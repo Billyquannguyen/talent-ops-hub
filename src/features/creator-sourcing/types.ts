@@ -86,13 +86,22 @@ export type SourcingProject = {
 
 export type ColumnMap = Partial<Record<EasyKolField, string>>;
 
-export type ContactField = "email" | "line" | "whatsapp" | "instagram";
+export type ContactField =
+  | "email"
+  | "line"
+  | "whatsapp"
+  | "phone"
+  | "instagram"
+  | "tiktok"
+  | "youtube"
+  | "website"
+  | "other";
 
 export type ContactDiscovery = {
   field: ContactField;
   value: string;
   source: "Email Column" | "Description" | "URL" | "External Discovery";
-  discoveryMethod: "Regex" | "URL Match" | "Not implemented";
+  discoveryMethod: "Regex" | "URL Match" | "Not implemented" | "AI Extraction";
   provider: string;
   confidence: number;
   sourceUrl?: string;
@@ -108,6 +117,11 @@ export type ContactInfo = {
   discoveryMethod: string;
   discoveries: ContactDiscovery[];
   externalDiscoveryStatus?: string;
+  phone?: string;
+  tiktok?: string;
+  youtube?: string;
+  website?: string;
+  other?: string;
 };
 
 export type PreviewRow = {

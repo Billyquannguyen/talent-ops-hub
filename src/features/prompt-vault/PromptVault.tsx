@@ -31,6 +31,7 @@ export function PromptVault() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<CampaignPromptVaultRecord | null>(null);
+  const [editorMode, setEditorMode] = useState<"single" | "universal">("single");
   const [viewingPrompt, setViewingPrompt] = useState<CampaignPromptVaultRecord | null>(null);
 
   const activeCampaigns = useMemo(() => campaigns.filter(isActiveCampaign), [campaigns]);
@@ -98,27 +99,29 @@ export function PromptVault() {
     };
   }, []);
 
-  function openNewPrompt() {
+  function openNewUniversalCategory() {
     const campaign = campaignOptions[0];
     if (!campaign) return;
+    setEditorMode("universal");
     setDraft(createPromptDraft(campaign));
   }
 
   function openEditPrompt(prompt: CampaignPromptVaultRecord) {
+    setEditorMode("single");
     setDraft({ ...prompt });
   }
 
   async function savePrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft || !draft.campaignId || !draft.title.trim() || !draft.content.trim()) return;
+    if (!draft) return;
+    const category = getPromptCategory(draft);
+    if (!category || !draft.content.trim()) return;
 
     const campaign = campaigns.find((item) => item.campaignId === draft.campaignId);
     const now = new Date().toISOString();
-    const record: CampaignPromptVaultRecord = {
+    const baseRecord = {
       ...draft,
-      campaignName: campaign?.campaignName ?? draft.campaignName,
-      category: draft.category.trim() || "Custom",
-      title: draft.title.trim(),
+      category,
       content: draft.content.trim(),
       input: draft.input.trim(),
       notes: draft.notes.trim(),
@@ -129,10 +132,40 @@ export function PromptVault() {
     setIsSaving(true);
     setError("");
     try {
-      const nextRecords = await saveCampaignPromptVaultToGoogleSheetsOnly(record);
+      let nextRecords: CampaignPromptVaultRecord[] = [];
+      if (editorMode === "universal" && !draft.createdAt) {
+        for (const campaignOption of campaignOptions) {
+          const existingPrompt = prompts.find(
+            (prompt) =>
+              prompt.campaignId === campaignOption.campaignId &&
+              prompt.category.trim().toLowerCase() === category.toLowerCase(),
+          );
+          nextRecords = await saveCampaignPromptVaultToGoogleSheetsOnly({
+            ...baseRecord,
+            promptId: existingPrompt?.promptId || createId("prompt"),
+            campaignId: campaignOption.campaignId,
+            campaignName: campaignOption.campaignName,
+            title: createPromptTitle(campaignOption.campaignName, category),
+            createdAt: existingPrompt?.createdAt || now,
+            updatedAt: now,
+          });
+        }
+      } else {
+        const campaignName = campaign?.campaignName ?? draft.campaignName;
+        const record: CampaignPromptVaultRecord = {
+          ...baseRecord,
+          campaignName,
+          title: createPromptTitle(campaignName, category),
+        };
+        nextRecords = await saveCampaignPromptVaultToGoogleSheetsOnly(record);
+      }
       setPrompts(nextRecords);
       setDraft(null);
-      setStatus("Prompt saved.");
+      setStatus(
+        editorMode === "universal" && !draft.createdAt
+          ? "Universal category saved to all active campaigns."
+          : "Prompt saved.",
+      );
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -193,12 +226,12 @@ export function PromptVault() {
             </div>
             <button
               type="button"
-              onClick={openNewPrompt}
+              onClick={openNewUniversalCategory}
               disabled={!campaignOptions.length || isLoading}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="size-4" />
-              Add Prompt
+              Add Universal Category
             </button>
           </div>
         </section>
@@ -281,7 +314,7 @@ export function PromptVault() {
           ) : (
             <EmptyPromptState
               hasCampaigns={Boolean(campaignOptions.length)}
-              onAdd={openNewPrompt}
+              onAdd={openNewUniversalCategory}
             />
           )}
         </section>
@@ -290,6 +323,7 @@ export function PromptVault() {
       {draft ? (
         <PromptEditorModal
           draft={draft}
+          mode={editorMode}
           campaigns={campaignOptions}
           isSaving={isSaving}
           onChange={setDraft}
@@ -368,6 +402,7 @@ function PromptCard({
 
 function PromptEditorModal({
   draft,
+  mode,
   campaigns,
   isSaving,
   onChange,
@@ -375,6 +410,7 @@ function PromptEditorModal({
   onClose,
 }: {
   draft: CampaignPromptVaultRecord;
+  mode: "single" | "universal";
   campaigns: CampaignProfileRecord[];
   isSaving: boolean;
   onChange: (draft: CampaignPromptVaultRecord) => void;
@@ -382,6 +418,14 @@ function PromptEditorModal({
   onClose: () => void;
 }) {
   const selectedCategory = suggestedCategories.includes(draft.category) ? draft.category : "Custom";
+  const category = getPromptCategory(draft);
+  const selectedCampaignName =
+    campaigns.find((campaign) => campaign.campaignId === draft.campaignId)?.campaignName ||
+    draft.campaignName;
+  const generatedTitle =
+    mode === "universal"
+      ? `Each campaign name + ${category || "category"}`
+      : createPromptTitle(selectedCampaignName, category || "Category");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
@@ -393,8 +437,17 @@ function PromptEditorModal({
           <div>
             <p className="text-xs font-semibold uppercase text-muted-foreground">Prompt Vault</p>
             <h2 className="mt-1 text-xl font-semibold">
-              {draft.createdAt ? "Edit Prompt" : "Add Prompt"}
+              {draft.createdAt
+                ? "Edit Prompt Category"
+                : mode === "universal"
+                  ? "Add Universal Category"
+                  : "Add Prompt Category"}
             </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {mode === "universal" && !draft.createdAt
+                ? "This creates one prompt row for every active campaign."
+                : "The title is generated from campaign name and category."}
+            </p>
           </div>
           <button
             type="button"
@@ -408,26 +461,36 @@ function PromptEditorModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="grid gap-3 md:grid-cols-2">
-            <FieldLabel label="Campaign">
-              <select
-                value={draft.campaignId}
-                onChange={(event) => {
-                  const campaign = campaigns.find((item) => item.campaignId === event.target.value);
-                  onChange({
-                    ...draft,
-                    campaignId: campaign?.campaignId ?? event.target.value,
-                    campaignName: campaign?.campaignName ?? draft.campaignName,
-                  });
-                }}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-              >
-                {campaigns.map((campaign) => (
-                  <option key={campaign.campaignId} value={campaign.campaignId}>
-                    {campaign.campaignName}
-                  </option>
-                ))}
-              </select>
-            </FieldLabel>
+            {mode === "universal" && !draft.createdAt ? (
+              <FieldLabel label="Campaigns">
+                <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-muted-foreground">
+                  All active campaigns
+                </div>
+              </FieldLabel>
+            ) : (
+              <FieldLabel label="Campaign">
+                <select
+                  value={draft.campaignId}
+                  onChange={(event) => {
+                    const campaign = campaigns.find(
+                      (item) => item.campaignId === event.target.value,
+                    );
+                    onChange({
+                      ...draft,
+                      campaignId: campaign?.campaignId ?? event.target.value,
+                      campaignName: campaign?.campaignName ?? draft.campaignName,
+                    });
+                  }}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                >
+                  {campaigns.map((campaign) => (
+                    <option key={campaign.campaignId} value={campaign.campaignId}>
+                      {campaign.campaignName}
+                    </option>
+                  ))}
+                </select>
+              </FieldLabel>
+            )}
 
             <FieldLabel label="Category">
               <select
@@ -460,11 +523,11 @@ function PromptEditorModal({
           ) : null}
 
           <div className="mt-3">
-            <TextInput
-              label="Title"
-              value={draft.title}
-              onChange={(title) => onChange({ ...draft, title })}
-            />
+            <FieldLabel label="Generated Title">
+              <div className="flex min-h-10 items-center rounded-md border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                {generatedTitle}
+              </div>
+            </FieldLabel>
           </div>
 
           <div className="mt-3">
@@ -514,10 +577,10 @@ function PromptEditorModal({
           </button>
           <button
             type="submit"
-            disabled={isSaving || !draft.campaignId || !draft.title.trim() || !draft.content.trim()}
+            disabled={isSaving || !draft.campaignId || !category || !draft.content.trim()}
             className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Save Prompt
+            {mode === "universal" && !draft.createdAt ? "Save To All Campaigns" : "Save Prompt"}
           </button>
         </div>
       </form>
@@ -618,7 +681,7 @@ function EmptyPromptState({ hasCampaigns, onAdd }: { hasCampaigns: boolean; onAd
       </h2>
       <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
         {hasCampaigns
-          ? "Add a prompt to store campaign-specific workflow instructions for later reuse."
+          ? "Add a universal category to create one campaign-specific prompt for every active campaign."
           : "Prompt Vault uses Campaign Profiles as the source of truth."}
       </p>
       {hasCampaigns ? (
@@ -628,7 +691,7 @@ function EmptyPromptState({ hasCampaigns, onAdd }: { hasCampaigns: boolean; onAd
           className="mt-4 inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
         >
           <Plus className="size-4" />
-          Add Prompt
+          Add Universal Category
         </button>
       ) : null}
     </div>
@@ -721,6 +784,16 @@ function formatDate(value: string) {
     day: "numeric",
     year: "numeric",
   }).format(date);
+}
+
+function getPromptCategory(prompt: CampaignPromptVaultRecord) {
+  return prompt.category.trim();
+}
+
+function createPromptTitle(campaignName: string, category: string) {
+  const cleanCampaignName = campaignName.trim() || "Campaign";
+  const cleanCategory = category.trim() || "Prompt";
+  return `${cleanCampaignName} - ${cleanCategory}`;
 }
 
 function getTimestamp(value: string) {

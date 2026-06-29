@@ -29,6 +29,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ActiveCampaignsIndexRouteImport } from './routes/active-campaigns.index'
 import { Route as ApiTranslateRouteImport } from './routes/api/translate'
 import { Route as ActiveCampaignsCampaignIdRouteImport } from './routes/active-campaigns.$campaignId'
+import { Route as ApiAiOutreachRouteImport } from './routes/api/ai/outreach'
+import { Route as ApiAiEnrichContactsRouteImport } from './routes/api/ai/enrich-contacts'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -131,6 +133,16 @@ const ActiveCampaignsCampaignIdRoute =
     path: '/$campaignId',
     getParentRoute: () => ActiveCampaignsRoute,
   } as any)
+const ApiAiOutreachRoute = ApiAiOutreachRouteImport.update({
+  id: '/api/ai/outreach',
+  path: '/api/ai/outreach',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiEnrichContactsRoute = ApiAiEnrichContactsRouteImport.update({
+  id: '/api/ai/enrich-contacts',
+  path: '/api/ai/enrich-contacts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -153,6 +165,8 @@ export interface FileRoutesByFullPath {
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
   '/api/translate': typeof ApiTranslateRoute
   '/active-campaigns/': typeof ActiveCampaignsIndexRoute
+  '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
+  '/api/ai/outreach': typeof ApiAiOutreachRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -174,6 +188,8 @@ export interface FileRoutesByTo {
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
   '/api/translate': typeof ApiTranslateRoute
   '/active-campaigns': typeof ActiveCampaignsIndexRoute
+  '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
+  '/api/ai/outreach': typeof ApiAiOutreachRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -197,6 +213,8 @@ export interface FileRoutesById {
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
   '/api/translate': typeof ApiTranslateRoute
   '/active-campaigns/': typeof ActiveCampaignsIndexRoute
+  '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
+  '/api/ai/outreach': typeof ApiAiOutreachRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -221,6 +239,8 @@ export interface FileRouteTypes {
     | '/active-campaigns/$campaignId'
     | '/api/translate'
     | '/active-campaigns/'
+    | '/api/ai/enrich-contacts'
+    | '/api/ai/outreach'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -242,6 +262,8 @@ export interface FileRouteTypes {
     | '/active-campaigns/$campaignId'
     | '/api/translate'
     | '/active-campaigns'
+    | '/api/ai/enrich-contacts'
+    | '/api/ai/outreach'
   id:
     | '__root__'
     | '/'
@@ -264,6 +286,8 @@ export interface FileRouteTypes {
     | '/active-campaigns/$campaignId'
     | '/api/translate'
     | '/active-campaigns/'
+    | '/api/ai/enrich-contacts'
+    | '/api/ai/outreach'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -285,6 +309,8 @@ export interface RootRouteChildren {
   RosterRoute: typeof RosterRoute
   SettingsRoute: typeof SettingsRoute
   ApiTranslateRoute: typeof ApiTranslateRoute
+  ApiAiEnrichContactsRoute: typeof ApiAiEnrichContactsRoute
+  ApiAiOutreachRoute: typeof ApiAiOutreachRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -429,6 +455,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ActiveCampaignsCampaignIdRouteImport
       parentRoute: typeof ActiveCampaignsRoute
     }
+    '/api/ai/outreach': {
+      id: '/api/ai/outreach'
+      path: '/api/ai/outreach'
+      fullPath: '/api/ai/outreach'
+      preLoaderRoute: typeof ApiAiOutreachRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ai/enrich-contacts': {
+      id: '/api/ai/enrich-contacts'
+      path: '/api/ai/enrich-contacts'
+      fullPath: '/api/ai/enrich-contacts'
+      preLoaderRoute: typeof ApiAiEnrichContactsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -465,6 +505,8 @@ const rootRouteChildren: RootRouteChildren = {
   RosterRoute: RosterRoute,
   SettingsRoute: SettingsRoute,
   ApiTranslateRoute: ApiTranslateRoute,
+  ApiAiEnrichContactsRoute: ApiAiEnrichContactsRoute,
+  ApiAiOutreachRoute: ApiAiOutreachRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

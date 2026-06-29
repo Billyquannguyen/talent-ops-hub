@@ -40,7 +40,12 @@ import type {
   CampaignProfileRecord,
   SourcingTemplateRecord,
 } from "@/storage/schema";
-import { buildPreviewRow, hasContactInfo, runEnrichmentPipeline } from "./enrichment";
+import {
+  buildContactEnrichmentReport,
+  buildPreviewRow,
+  hasContactInfo,
+  runEnrichmentPipeline,
+} from "./enrichment";
 import { exportPreviewSpreadsheet, parseSpreadsheet } from "./excel";
 import {
   emptyFilters,
@@ -54,7 +59,9 @@ import {
   easyKolFields,
   type EmailAvailability,
   type ContactEnrichmentReport,
+  type ContactField,
   type ContactInfo,
+  type CreatorEnrichmentResult,
   type EasyKolField,
   type FilterSettings,
   type PreviewRow,
@@ -263,7 +270,7 @@ export function CreatorSourcingAssistant() {
           loadedProjects[0];
         setProjects(loadedProjects);
         setActiveProjectId(nextCampaignId);
-        setFilters(selectedProject?.filters ?? { ...emptyFilters });
+        setFilters({ ...emptyFilters });
         setDraftTemplate(cloneTemplate(selectedProject?.template ?? []));
         setDraftTemplateName(selectedProject?.templateName ?? "");
         setProjectsLoaded(true);
@@ -297,12 +304,6 @@ export function CreatorSourcingAssistant() {
   }, [activeProjectId]);
 
   useEffect(() => {
-    const project = projectsRef.current.find((item) => item.campaignId === activeProjectId);
-    if (!project) return;
-    setFilters((current) => (filtersEqual(current, project.filters) ? current : project.filters));
-  }, [activeProjectId, projects]);
-
-  useEffect(() => {
     if (!activeProjectId) {
       setDraftTemplate([]);
       setTemplateMessage("");
@@ -314,17 +315,6 @@ export function CreatorSourcingAssistant() {
     setDraftTemplateName(project.templateName);
     setTemplateMessage("");
   }, [activeProjectId, activeTemplateId, projectsLoaded]);
-
-  useEffect(() => {
-    if (!activeProjectId) return;
-    setProjects((current) =>
-      current.map((project) =>
-        project.campaignId === activeProjectId && !filtersEqual(project.filters, filters)
-          ? { ...project, filters }
-          : project,
-      ),
-    );
-  }, [activeProjectId, filters]);
 
   useEffect(() => {
     setPreviewReady(false);
@@ -417,7 +407,6 @@ export function CreatorSourcingAssistant() {
           nextProjects.find((project) => project.campaignId === targetCampaignId) ??
           nextProjects[0];
         setActiveProjectId(nextProject?.campaignId ?? "");
-        setFilters(nextProject?.filters ?? { ...emptyFilters });
         setDraftTemplate(cloneTemplate(nextProject?.template ?? []));
         setDraftTemplateName(nextProject?.templateName ?? "");
         setTemplateMessage(successMessage);
@@ -453,7 +442,6 @@ export function CreatorSourcingAssistant() {
       setProjects(loadedProjects);
       if (activeCampaignIdRef.current === targetCampaignId) {
         setActiveProjectId(nextProject?.campaignId ?? "");
-        setFilters(nextProject?.filters ?? { ...emptyFilters });
         setDraftTemplate(cloneTemplate(nextProject?.template ?? []));
         setDraftTemplateName(nextProject?.templateName ?? "");
         setTemplateMessage("Template deleted from Google Sheets.");
@@ -601,7 +589,6 @@ export function CreatorSourcingAssistant() {
       closeTemplateUi: true,
     });
     if (!nextProject) return;
-    setFilters(nextProject.filters);
     setDraftTemplate(cloneTemplate(nextProject.template));
     setDraftTemplateName(nextProject.templateName);
   }
@@ -690,13 +677,34 @@ export function CreatorSourcingAssistant() {
         columnMap,
       });
 
+      let enrichmentResults = result.results;
+      let aiStatusMessage = "";
+      try {
+        setStatusMessage("Fetching public links...");
+        await wait(220);
+        setStatusMessage("Extracting contacts with AI...");
+        const aiResult = await enrichContactsWithAI(filteredCreators);
+        enrichmentResults = mergeAIEnrichmentResults(result.results, aiResult.results);
+        aiStatusMessage =
+          aiResult.skipped > 0
+            ? ` AI checked ${aiResult.processed} creators. ${aiResult.skipped} skipped by batch limit.`
+            : ` AI checked ${aiResult.processed} creators.`;
+      } catch (error) {
+        aiStatusMessage =
+          error instanceof Error
+            ? ` OpenRouter enrichment unavailable: ${error.message}`
+            : " OpenRouter enrichment unavailable.";
+      }
+
       setStatusMessage("Generating Contacts...");
       await wait(220);
       setContactInfoByCreatorId(
-        Object.fromEntries(result.results.map((row) => [row.creatorId, row.contactInfo] as const)),
+        Object.fromEntries(
+          enrichmentResults.map((row) => [row.creatorId, row.contactInfo] as const),
+        ),
       );
-      setEnrichmentReport(result.report);
-      setStatusMessage("Done.");
+      setEnrichmentReport(buildContactEnrichmentReport(enrichmentResults));
+      setStatusMessage(`Done.${aiStatusMessage}`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
       setStatusMessage("");
@@ -2921,24 +2929,6 @@ function clearFilterValue(filters: FilterSettings, key: keyof FilterSettings) {
   if (key === "keyword") filters.keyword = "";
 }
 
-function filtersEqual(first: FilterSettings, second: FilterSettings): boolean {
-  return (Object.keys(emptyFilters) as Array<keyof FilterSettings>).every((key) =>
-    filterValueEqual(first[key], second[key]),
-  );
-}
-
-function filterValueEqual(
-  first: FilterSettings[keyof FilterSettings],
-  second: FilterSettings[keyof FilterSettings],
-) {
-  if (Array.isArray(first) || Array.isArray(second)) {
-    if (!Array.isArray(first) || !Array.isArray(second)) return false;
-    if (first.length !== second.length) return false;
-    return first.every((value, index) => value === second[index]);
-  }
-  return first === second;
-}
-
 function loadProjects(database: {
   worksheets: {
     AppSettings: AppSettingRecord[];
@@ -2971,7 +2961,6 @@ function createProjectFromCampaign(
     templates.length > 0 ? templates : [createDefaultSourcingTemplate(campaign.campaignId)];
   const activeTemplateId =
     settings.get(`sourcing.activeTemplate.${campaign.campaignId}`) || ensuredTemplates[0]?.id || "";
-  const filters = parseJsonSetting(settings.get(`sourcing.filters.${campaign.campaignId}`));
 
   return activateProjectTemplate(
     {
@@ -2979,7 +2968,7 @@ function createProjectFromCampaign(
       campaignId: campaign.campaignId,
       name: campaign.campaignName,
       createdAt: campaign.createdAt,
-      filters: normalizeFilters(filters),
+      filters: { ...emptyFilters },
       templates: ensuredTemplates,
       activeTemplateId,
       template: [],
@@ -3232,6 +3221,124 @@ function normalizeEmailAvailabilityArray(
     ? value.filter((item): item is EmailAvailability => item === "has" || item === "none")
     : [];
   return Array.from(new Set([legacyValue, ...values].filter(Boolean))) as EmailAvailability[];
+}
+
+type AIContactEnrichmentResponse =
+  | {
+      ok: true;
+      results: AIContactEnrichmentResult[];
+      processed: number;
+      skipped: number;
+      maxCreators: number;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+type AIContactEnrichmentResult = {
+  creatorId: string;
+  contactsText: string;
+  contacts: Partial<Record<ContactField, string>>;
+  confidence: "high" | "medium" | "low";
+  source: string;
+  reasoning: string;
+  sourcesChecked: string[];
+  warnings: string[];
+  modelUsed: string;
+};
+
+async function enrichContactsWithAI(
+  creators: UploadedCreator[],
+): Promise<Extract<AIContactEnrichmentResponse, { ok: true }>> {
+  const response = await fetch("/api/ai/enrich-contacts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      creators: creators.map((creator) => ({
+        creatorId: creator.id,
+        data: creator.data,
+      })),
+      maxCreators: 10,
+    }),
+  });
+  const payload = (await response.json().catch(() => ({
+    ok: false,
+    error: "AI enrichment API returned an invalid response.",
+  }))) as AIContactEnrichmentResponse;
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.ok ? "AI enrichment failed." : payload.error);
+  }
+
+  return payload;
+}
+
+function mergeAIEnrichmentResults(
+  localResults: CreatorEnrichmentResult[],
+  aiResults: AIContactEnrichmentResult[],
+): CreatorEnrichmentResult[] {
+  const aiByCreatorId = new Map(aiResults.map((result) => [result.creatorId, result]));
+
+  return localResults.map((result) => {
+    const aiResult = aiByCreatorId.get(result.creatorId);
+    if (!aiResult) return result;
+
+    return {
+      creatorId: result.creatorId,
+      contactInfo: mergeContactInfoWithAI(result.contactInfo, aiResult),
+    };
+  });
+}
+
+function mergeContactInfoWithAI(
+  localContactInfo: ContactInfo,
+  aiResult: AIContactEnrichmentResult,
+): ContactInfo {
+  const aiConfidence = getAIConfidenceScore(aiResult.confidence);
+  const aiDiscoveries = (
+    Object.entries(aiResult.contacts) as Array<[ContactField, string | undefined]>
+  )
+    .filter(([, value]) => Boolean(value?.trim()))
+    .map(([field, value]) => ({
+      field,
+      value: value?.trim() ?? "",
+      source: "External Discovery" as const,
+      discoveryMethod: "AI Extraction" as const,
+      provider: aiResult.modelUsed ? `OpenRouter ${aiResult.modelUsed}` : "OpenRouter",
+      confidence: aiConfidence,
+      sourceUrl: aiResult.sourcesChecked.find((source) => /^https?:\/\//i.test(source)),
+    }));
+
+  return {
+    ...localContactInfo,
+    email: localContactInfo.email || aiResult.contacts.email,
+    line: localContactInfo.line || aiResult.contacts.line,
+    whatsapp: localContactInfo.whatsapp || aiResult.contacts.whatsapp,
+    phone: localContactInfo.phone || aiResult.contacts.phone,
+    instagram: localContactInfo.instagram || aiResult.contacts.instagram,
+    tiktok: localContactInfo.tiktok || aiResult.contacts.tiktok,
+    youtube: localContactInfo.youtube || aiResult.contacts.youtube,
+    website: localContactInfo.website || aiResult.contacts.website,
+    other: localContactInfo.other || aiResult.contacts.other,
+    sourceUrl:
+      localContactInfo.sourceUrl ||
+      aiResult.sourcesChecked.find((source) => /^https?:\/\//i.test(source)),
+    confidence: Math.max(localContactInfo.confidence, aiConfidence),
+    discoveryMethod: aiDiscoveries.length
+      ? `OpenRouter: ${aiResult.source || "available sources"}`
+      : localContactInfo.discoveryMethod,
+    discoveries: [...localContactInfo.discoveries, ...aiDiscoveries],
+    externalDiscoveryStatus: aiDiscoveries.length
+      ? `AI enrichment complete: ${aiResult.reasoning || "contacts extracted"}`
+      : `AI enrichment complete: ${aiResult.reasoning || "no extra contacts found"}`,
+  };
+}
+
+function getAIConfidenceScore(confidence: AIContactEnrichmentResult["confidence"]): number {
+  if (confidence === "high") return 90;
+  if (confidence === "medium") return 70;
+  return 45;
 }
 
 function cloneTemplate(template: TemplateColumn[]): TemplateColumn[] {

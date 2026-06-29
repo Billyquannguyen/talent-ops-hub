@@ -2,77 +2,81 @@ import type { OutreachLanguage } from "./types";
 
 export type TranslationRequest = {
   text: string;
-  sourceLanguage: OutreachLanguage;
-  targetLanguage: OutreachLanguage;
+  sourceLanguage: string;
+  targetLanguage: string;
 };
 
-type ApiDetectResponse =
+type ApiOutreachResponse =
   | {
       ok: true;
-      action: "detect";
-      detectedLanguage: TranslationApiLanguageCode;
-      confidence?: number;
-      provider: string;
-    }
-  | {
-      ok: false;
-      error: string;
-    };
-
-type ApiTranslateResponse =
-  | {
-      ok: true;
-      action: "translate";
+      detectedLanguage: string;
       translatedText: string;
-      sourceLanguage: TranslationApiLanguageCode | "auto";
-      targetLanguage: TranslationApiLanguageCode;
-      provider: string;
+      polishedText: string;
+      modelUsed: string;
+      warnings: string[];
     }
   | {
       ok: false;
       error: string;
     };
 
-type TranslationApiLanguageCode = "en" | "th" | "tl" | "vi" | "id" | "ko" | "es";
+export const suggestedOutreachLanguages = [
+  "English",
+  "Thai",
+  "Vietnamese",
+  "Filipino",
+  "Indonesian",
+  "Korean",
+  "Spanish",
+  "Chinese",
+  "Japanese",
+  "Malay",
+  "Arabic",
+  "French",
+  "German",
+] as const;
 
-const outreachToApiLanguage: Record<OutreachLanguage, TranslationApiLanguageCode> = {
-  english: "en",
-  thai: "th",
-  filipino: "tl",
-  vietnamese: "vi",
-  indonesian: "id",
-  korean: "ko",
-  spanish: "es",
-};
+const languageAliases = new Map<string, string>([
+  ["en", "English"],
+  ["english", "English"],
+  ["th", "Thai"],
+  ["thai", "Thai"],
+  ["vi", "Vietnamese"],
+  ["vietnamese", "Vietnamese"],
+  ["tl", "Filipino"],
+  ["fil", "Filipino"],
+  ["tagalog", "Filipino"],
+  ["filipino", "Filipino"],
+  ["id", "Indonesian"],
+  ["indonesian", "Indonesian"],
+  ["ko", "Korean"],
+  ["kr", "Korean"],
+  ["korean", "Korean"],
+  ["es", "Spanish"],
+  ["spanish", "Spanish"],
+  ["zh", "Chinese"],
+  ["chinese", "Chinese"],
+  ["ja", "Japanese"],
+  ["japanese", "Japanese"],
+  ["ms", "Malay"],
+  ["malay", "Malay"],
+  ["ar", "Arabic"],
+  ["arabic", "Arabic"],
+  ["fr", "French"],
+  ["french", "French"],
+  ["de", "German"],
+  ["german", "German"],
+]);
 
-const apiToOutreachLanguage: Record<TranslationApiLanguageCode, OutreachLanguage> = {
-  en: "english",
-  th: "thai",
-  tl: "filipino",
-  vi: "vietnamese",
-  id: "indonesian",
-  ko: "korean",
-  es: "spanish",
-};
+export async function detectLanguage(text: string): Promise<string> {
+  if (!text.trim()) return "English";
 
-export async function detectLanguage(text: string): Promise<OutreachLanguage> {
-  if (!text.trim()) return "english";
-
-  const response = await fetch("/api/translate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "detect", text }),
+  const payload = await callOutreachAI({
+    action: "detect-language",
+    text,
   });
-  const payload = (await response.json().catch(() => ({
-    ok: false,
-    error: "Translation API returned an invalid response.",
-  }))) as ApiDetectResponse;
 
-  if (!response.ok || !payload.ok) {
-    throw new Error(payload.ok ? "Language detection failed." : payload.error);
-  }
-
-  return apiToOutreachLanguage[payload.detectedLanguage] ?? "english";
+  return getLanguageLabel(payload.detectedLanguage || "English");
 }
 
 export async function translateText({
@@ -80,52 +84,79 @@ export async function translateText({
   sourceLanguage,
   targetLanguage,
 }: TranslationRequest): Promise<string> {
-  if (!text.trim() || sourceLanguage === targetLanguage) return text;
+  const source = getLanguageLabel(sourceLanguage || "Auto Detect");
+  const target = getLanguageLabel(targetLanguage || "English");
+  if (!text.trim() || source.toLowerCase() === target.toLowerCase()) return text;
 
-  const response = await fetch("/api/translate", {
+  const payload = await callOutreachAI({
+    action: target.toLowerCase() === "english" ? "translate-to-english" : "translate-reply",
+    text,
+    sourceLanguage: source,
+    targetLanguage: target,
+  });
+
+  return payload.translatedText || payload.polishedText || text;
+}
+
+export async function polishReply(text: string, targetLanguage: string): Promise<string> {
+  if (!text.trim()) return text;
+
+  const payload = await callOutreachAI({
+    action: "polish-reply",
+    text,
+    targetLanguage: getLanguageLabel(targetLanguage),
+  });
+
+  return payload.polishedText || payload.translatedText || text;
+}
+
+export function getLanguageLabel(language: string | OutreachLanguage): string {
+  const raw = String(language || "English").trim();
+  if (!raw) return "English";
+  return languageAliases.get(raw.toLowerCase()) ?? raw;
+}
+
+export function getLanguageBadge(language: string | OutreachLanguage): string {
+  const label = getLanguageLabel(language);
+  const badges: Record<string, string> = {
+    English: "🇬🇧 English",
+    Thai: "🇹🇭 Thai",
+    Filipino: "🇵🇭 Filipino",
+    Vietnamese: "🇻🇳 Vietnamese",
+    Indonesian: "🇮🇩 Indonesian",
+    Korean: "🇰🇷 Korean",
+    Spanish: "🇪🇸 Spanish",
+    Chinese: "🇨🇳 Chinese",
+    Japanese: "🇯🇵 Japanese",
+    Malay: "🇲🇾 Malay",
+    Arabic: "Arabic",
+    French: "🇫🇷 French",
+    German: "🇩🇪 German",
+  };
+  return badges[label] ?? label;
+}
+
+async function callOutreachAI(body: {
+  action: "detect-language" | "translate-to-english" | "translate-reply" | "polish-reply";
+  text: string;
+  sourceLanguage?: string;
+  targetLanguage?: string;
+  tone?: string;
+  campaignContext?: string;
+}): Promise<Extract<ApiOutreachResponse, { ok: true }>> {
+  const response = await fetch("/api/ai/outreach", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "translate",
-      text,
-      sourceLanguage: outreachToApiLanguage[sourceLanguage],
-      targetLanguage: outreachToApiLanguage[targetLanguage],
-    }),
+    body: JSON.stringify(body),
   });
   const payload = (await response.json().catch(() => ({
     ok: false,
-    error: "Translation API returned an invalid response.",
-  }))) as ApiTranslateResponse;
+    error: "AI outreach API returned an invalid response.",
+  }))) as ApiOutreachResponse;
 
   if (!response.ok || !payload.ok) {
-    throw new Error(payload.ok ? "Translation failed." : payload.error);
+    throw new Error(payload.ok ? "AI outreach request failed." : payload.error);
   }
 
-  return payload.translatedText;
-}
-
-export function getLanguageLabel(language: OutreachLanguage): string {
-  const labels: Record<OutreachLanguage, string> = {
-    english: "English",
-    thai: "Thai",
-    filipino: "Filipino",
-    vietnamese: "Vietnamese",
-    indonesian: "Indonesian",
-    korean: "Korean",
-    spanish: "Spanish",
-  };
-  return labels[language];
-}
-
-export function getLanguageBadge(language: OutreachLanguage): string {
-  const labels: Record<OutreachLanguage, string> = {
-    english: "🇬🇧 English",
-    thai: "🇹🇭 Thai",
-    filipino: "🇵🇭 Filipino",
-    vietnamese: "🇻🇳 Vietnamese",
-    indonesian: "🇮🇩 Indonesian",
-    korean: "🇰🇷 Korean",
-    spanish: "🇪🇸 Spanish",
-  };
-  return labels[language];
+  return payload;
 }

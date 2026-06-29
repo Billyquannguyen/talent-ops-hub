@@ -15,7 +15,17 @@ import type {
 const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const urlRegex = /https?:\/\/[^\s"'<>),\]]+/gi;
 const phoneRegex = /(?:\+?\d[\d\s().-]{7,}\d)/g;
-const contactFields: ContactField[] = ["email", "line", "whatsapp", "instagram"];
+const contactFields: ContactField[] = [
+  "email",
+  "line",
+  "whatsapp",
+  "phone",
+  "instagram",
+  "tiktok",
+  "youtube",
+  "website",
+  "other",
+];
 
 export type LocalExtractorInput = {
   data: CreatorRow;
@@ -156,9 +166,7 @@ export function extractContactInfo(data: CreatorRow, columnMap: ColumnMap): Cont
 }
 
 export function hasContactInfo(contactInfo: ContactInfo): boolean {
-  return Boolean(
-    contactInfo.email || contactInfo.line || contactInfo.whatsapp || contactInfo.instagram,
-  );
+  return contactFields.some((field) => Boolean(contactInfo[field]));
 }
 
 export function formatContacts(contactInfo: ContactInfo): string {
@@ -172,8 +180,23 @@ export function formatContacts(contactInfo: ContactInfo): string {
   if (contactInfo.whatsapp) {
     lines.push(`Whatsapp: ${contactInfo.whatsapp}`);
   }
+  if (contactInfo.phone) {
+    lines.push(`Phone: ${contactInfo.phone}`);
+  }
   if (contactInfo.instagram) {
     lines.push(`Instagram: ${contactInfo.instagram}`);
+  }
+  if (contactInfo.tiktok) {
+    lines.push(`TikTok: ${contactInfo.tiktok}`);
+  }
+  if (contactInfo.youtube) {
+    lines.push(`YouTube: ${contactInfo.youtube}`);
+  }
+  if (contactInfo.website) {
+    lines.push(`Website: ${contactInfo.website}`);
+  }
+  if (contactInfo.other) {
+    lines.push(`Other: ${contactInfo.other}`);
   }
   return lines.join("\n");
 }
@@ -223,7 +246,12 @@ function mergeContactDiscoveries(
     email: bestByField.email?.value,
     line: bestByField.line?.value,
     whatsapp: bestByField.whatsapp?.value,
+    phone: bestByField.phone?.value,
     instagram: bestByField.instagram?.value,
+    tiktok: bestByField.tiktok?.value,
+    youtube: bestByField.youtube?.value,
+    website: bestByField.website?.value,
+    other: bestByField.other?.value,
     sourceUrl: strongestDiscovery?.sourceUrl,
     confidence: strongestDiscovery?.confidence ?? 0,
     discoveryMethod: strongestDiscovery
@@ -234,7 +262,9 @@ function mergeContactDiscoveries(
   };
 }
 
-function buildContactEnrichmentReport(results: CreatorEnrichmentResult[]): ContactEnrichmentReport {
+export function buildContactEnrichmentReport(
+  results: CreatorEnrichmentResult[],
+): ContactEnrichmentReport {
   const creatorsWithContact = results.filter((result) => hasContactInfo(result.contactInfo)).length;
 
   return {
