@@ -2,6 +2,7 @@ import {
   createActiveCampaignCreatorInGoogleSheetsOnly,
   deleteActiveCampaignCreatorFromGoogleSheetsOnly,
   listCampaignProfilesFromGoogleSheetsOnly,
+  loadActiveCampaignsBundleFromGoogleSheetsOnly,
   loadAppDatabase,
   listActiveCampaignCreatorsFromGoogleSheetsOnly,
   listCampaignMemoryCardsFromGoogleSheetsOnly,
@@ -132,6 +133,20 @@ export async function loadCampaignRegistryFromGoogleSheetsOnly(options: { reason
   database.worksheets.CampaignProfiles = campaignProfiles;
   database.worksheets.CampaignMemoryCards = memoryResult.records;
   database.worksheets.ActiveCampaignCreators = creatorResult.records;
+  return databaseToCampaignRegistry(database);
+}
+
+export async function loadActiveCampaignRegistryFromGoogleSheetsOnly(
+  options: { reason?: string } = {},
+) {
+  console.info("[CampaignRegistry]", "load-active-campaigns-bundle", {
+    reason: options.reason ?? "loadActiveCampaignRegistryFromGoogleSheetsOnly",
+    at: new Date().toISOString(),
+  });
+  const bundle = await loadActiveCampaignsBundleFromGoogleSheetsOnly();
+  const database = loadAppDatabase();
+  database.worksheets.CampaignProfiles = bundle.campaignProfiles;
+  database.worksheets.ActiveCampaignCreators = bundle.activeCampaignCreators;
   return databaseToCampaignRegistry(database);
 }
 

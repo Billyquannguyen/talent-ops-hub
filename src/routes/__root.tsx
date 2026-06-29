@@ -18,7 +18,6 @@ import {
   markPasswordGateUnlocked,
   passwordGateLockEvent,
 } from "@/lib/passwordGate";
-import { refreshAppDatabaseFromPrimary } from "@/storage/appRepository";
 
 function NotFoundComponent() {
   return (
@@ -131,7 +130,6 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  const [storageReady, setStorageReady] = useState(false);
   const [gateStatus, setGateStatus] = useState<PasswordGateStatus | null>(null);
   const [gateReady, setGateReady] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -166,25 +164,12 @@ function RootComponent() {
 
   useEffect(() => {
     function lockApp() {
-      setStorageReady(false);
       setIsUnlocked(gateStatus?.mode === "dev-bypass");
     }
 
     window.addEventListener(passwordGateLockEvent, lockApp);
     return () => window.removeEventListener(passwordGateLockEvent, lockApp);
   }, [gateStatus?.mode]);
-
-  useEffect(() => {
-    if (!isUnlocked) return;
-    let cancelled = false;
-    setStorageReady(false);
-    void refreshAppDatabaseFromPrimary().finally(() => {
-      if (!cancelled) setStorageReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isUnlocked]);
 
   function unlockApp() {
     markPasswordGateUnlocked();
@@ -199,7 +184,7 @@ function RootComponent() {
         </div>
       ) : !isUnlocked && gateStatus ? (
         <PasswordGate status={gateStatus} onUnlocked={unlockApp} />
-      ) : storageReady ? (
+      ) : isUnlocked ? (
         <>
           {gateStatus?.mode === "dev-bypass" ? (
             <div className="fixed bottom-4 left-4 z-[80] max-w-sm rounded-lg border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-xs text-amber-100 shadow-lg backdrop-blur">
@@ -208,11 +193,7 @@ function RootComponent() {
           ) : null}
           <Outlet />
         </>
-      ) : (
-        <div className="flex min-h-screen items-center justify-center bg-background px-5 text-center text-sm text-muted-foreground">
-          Connecting storage...
-        </div>
-      )}
+      ) : null}
     </QueryClientProvider>
   );
 }

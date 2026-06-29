@@ -5,8 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import { TopBar } from "@/components/TopBar";
 import {
   deleteCampaignPromptVaultFromGoogleSheetsOnly,
-  listCampaignProfilesFromGoogleSheetsOnly,
-  listCampaignPromptVaultFromGoogleSheetsOnly,
+  loadPromptVaultBundleFromGoogleSheetsOnly,
   saveCampaignPromptVaultToGoogleSheetsOnly,
 } from "@/storage/appRepository";
 import type { CampaignProfileRecord, CampaignPromptVaultRecord } from "@/storage/schema";
@@ -76,14 +75,11 @@ export function PromptVault() {
     setIsLoading(true);
     setError("");
 
-    void Promise.all([
-      listCampaignProfilesFromGoogleSheetsOnly(),
-      listCampaignPromptVaultFromGoogleSheetsOnly(),
-    ])
-      .then(([campaignRecords, promptRecords]) => {
+    void loadPromptVaultBundleFromGoogleSheetsOnly()
+      .then((bundle) => {
         if (cancelled) return;
-        setCampaigns(campaignRecords);
-        setPrompts(promptRecords);
+        setCampaigns(bundle.campaignProfiles);
+        setPrompts(bundle.campaignPromptVault);
       })
       .catch((loadError) => {
         if (cancelled) return;

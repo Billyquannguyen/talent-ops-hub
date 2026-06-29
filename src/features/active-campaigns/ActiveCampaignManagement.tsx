@@ -10,7 +10,7 @@ import {
   deleteSelectedCreatorRecordFromGoogleSheets,
   getCampaignCreators,
   loadCampaignRegistry,
-  loadCampaignRegistryFromGoogleSheetsOnly,
+  loadActiveCampaignRegistryFromGoogleSheetsOnly,
   saveSelectedCreatorRecordToGoogleSheets,
   selectedCreatorStatuses,
   updateSelectedCreatorRecordInGoogleSheets,
@@ -47,7 +47,7 @@ export function ActiveCampaignManagement({
     });
     void (async () => {
       try {
-        const googleRegistry = await loadCampaignRegistryFromGoogleSheetsOnly({
+        const googleRegistry = await loadActiveCampaignRegistryFromGoogleSheetsOnly({
           reason: "active-campaigns:load",
         });
         if (cancelled) return;

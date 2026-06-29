@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronDown, Lock, LockKeyhole } from "lucide-react";
 
+import { EmployeeProfileBadge } from "@/components/EmployeeProfileBadge";
 import { lockPasswordGate } from "@/lib/passwordGate";
 import { workflowCards } from "@/lib/workflows";
 
@@ -137,9 +138,7 @@ function DashboardTopBar() {
         >
           <LockKeyhole className="size-3.5" />
         </button>
-        <div className="grid size-8 place-items-center rounded-full bg-accent text-[11px] font-semibold ring-1 ring-border">
-          KM
-        </div>
+        <EmployeeProfileBadge size="sm" className="border-border bg-accent" />
       </div>
     </div>
   );

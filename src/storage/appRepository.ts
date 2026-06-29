@@ -11,28 +11,38 @@ import {
   createCampaignMemoryCardInGoogleSheets,
   createOutreachTemplateInGoogleSheets,
   deleteActiveCampaignCreatorFromGoogleSheets,
+  deleteAgencyDatabaseFromGoogleSheets,
   deleteCampaignMemoryCardFromGoogleSheets,
   deleteCampaignPromptVaultFromGoogleSheets,
+  deleteCreatorDatabaseFromGoogleSheets,
   deleteOutreachTemplateFromGoogleSheets,
   deleteSourcingTemplateFromGoogleSheets,
   getGoogleSheetsStorageStatus,
+  listAgencyDatabaseFromGoogleSheets,
   listAppSettingsFromGoogleSheets,
   listActiveCampaignCreatorsFromGoogleSheets,
   listCampaignMemoryCardsFromGoogleSheets,
   listCampaignPromptVaultFromGoogleSheets,
   listCampaignProfilesFromGoogleSheets,
+  listCreatorDatabaseFromGoogleSheets,
   listEmployeeProfilesFromGoogleSheets,
   listOutreachTemplatesFromGoogleSheets,
   listPerformanceBenchmarksFromGoogleSheets,
   listPerformanceWeeklyInputsFromGoogleSheets,
+  loadActiveCampaignsBundleFromGoogleSheets,
+  loadCreatorOutreachBundleFromGoogleSheets,
   loadCreatorSourcingDatabaseFromGoogleSheets,
   loadDatabaseFromGoogleSheets,
+  loadPerformanceBundleFromGoogleSheets,
+  loadPromptVaultBundleFromGoogleSheets,
   migrateAgencyDatabaseContactsInGoogleSheets,
   migrateDatabaseToGoogleSheets,
   replaceCampaignMemoryCardsForCampaignInGoogleSheets,
+  saveAgencyDatabaseToGoogleSheets,
   saveDatabaseToGoogleSheets,
   saveAppSettingToGoogleSheets,
   saveCampaignPromptVaultToGoogleSheets,
+  saveCreatorDatabaseToGoogleSheets,
   savePerformanceBenchmarkToGoogleSheets,
   savePerformanceWeeklyInputToGoogleSheets,
   saveEmployeeProfileToGoogleSheets,
@@ -42,10 +52,14 @@ import {
   updateOutreachTemplateInGoogleSheets,
   type ActiveCampaignCreatorCleanupReport,
   type AgencyDatabaseContactMigrationReport,
+  type ActiveCampaignsBundleResult,
+  type CreatorOutreachBundleResult,
   type CampaignMemoryCardCleanupReport,
   type GoogleSheetsDatabaseResult,
   type MigrationReport,
   type OutreachTemplateCleanupReport,
+  type PerformanceBundleResult,
+  type PromptVaultBundleResult,
   type SourcingTemplateCleanupReport,
 } from "./googleSheetsAdapter";
 
@@ -57,6 +71,8 @@ import {
   type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
+  type AgencyDatabaseRecord,
+  type CreatorDatabaseRecord,
   type EmployeeProfileRecord,
   type OutreachTemplateRecord,
   type PerformanceBenchmarkRecord,
@@ -107,6 +123,62 @@ export async function loadCreatorSourcingDatabaseFromGoogleSheetsOnly(
   return cloneCentralDatabase(result.database);
 }
 
+export async function loadCreatorOutreachBundleFromGoogleSheetsOnly(): Promise<CreatorOutreachBundleResult> {
+  console.info("[AppRepositoryGoogleSheets]", "load-creator-outreach-bundle-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await loadCreatorOutreachBundleFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberCampaignProfiles(result.campaignProfiles);
+  rememberOutreachTemplates(result.outreachTemplates);
+  rememberCampaignMemoryCards(result.campaignMemoryCards, result.campaignProfiles);
+  return result;
+}
+
+export async function loadActiveCampaignsBundleFromGoogleSheetsOnly(): Promise<ActiveCampaignsBundleResult> {
+  console.info("[AppRepositoryGoogleSheets]", "load-active-campaigns-bundle-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await loadActiveCampaignsBundleFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberCampaignProfiles(result.campaignProfiles);
+  rememberActiveCampaignCreators(result.activeCampaignCreators);
+  return result;
+}
+
+export async function loadPerformanceBundleFromGoogleSheetsOnly(): Promise<PerformanceBundleResult> {
+  console.info("[AppRepositoryGoogleSheets]", "load-performance-bundle-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await loadPerformanceBundleFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberCampaignProfiles(result.campaignProfiles);
+  rememberPerformanceBenchmarks(result.performanceBenchmarks);
+  rememberPerformanceWeeklyInputs(result.performanceWeeklyInputs);
+  rememberActiveCampaignCreators(result.activeCampaignCreators);
+  rememberAppSettings(result.appSettings);
+  return result;
+}
+
+export async function loadPromptVaultBundleFromGoogleSheetsOnly(): Promise<PromptVaultBundleResult> {
+  console.info("[AppRepositoryGoogleSheets]", "load-prompt-vault-bundle-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await loadPromptVaultBundleFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberCampaignProfiles(result.campaignProfiles);
+  rememberCampaignPromptVault(result.campaignPromptVault);
+  return result;
+}
+
 export async function saveAppDatabaseToGoogleSheetsOnly(
   database: CentralAppDatabase,
   options: { reason?: string } = {},
@@ -148,6 +220,96 @@ export async function listCampaignProfilesFromGoogleSheetsOnly(): Promise<Campai
     throw new Error(getStorageFailureMessage(result.status));
   }
   rememberCampaignProfiles(result.records);
+  return result.records;
+}
+
+export async function listAgencyDatabaseFromGoogleSheetsOnly(): Promise<AgencyDatabaseRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "list-agency-database-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listAgencyDatabaseFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberAgencyDatabase(result.records);
+  return result.records;
+}
+
+export async function saveAgencyDatabaseRecordToGoogleSheetsOnly(
+  record: AgencyDatabaseRecord,
+): Promise<AgencyDatabaseRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "save-agency-database-record-start", {
+    id: record.id,
+    agencyName: record.agencyName,
+    at: new Date().toISOString(),
+  });
+  const result = await saveAgencyDatabaseToGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberAgencyDatabase(result.records);
+  return result.records;
+}
+
+export async function deleteAgencyDatabaseRecordFromGoogleSheetsOnly(
+  recordId: string,
+): Promise<AgencyDatabaseRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "delete-agency-database-record-start", {
+    recordId,
+    at: new Date().toISOString(),
+  });
+  const result = await deleteAgencyDatabaseFromGoogleSheets(recordId);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberAgencyDatabase(result.records);
+  return result.records;
+}
+
+export async function listCreatorDatabaseFromGoogleSheetsOnly(): Promise<CreatorDatabaseRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "list-creator-database-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listCreatorDatabaseFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberCreatorDatabase(result.records);
+  return result.records;
+}
+
+export async function saveCreatorDatabaseRecordToGoogleSheetsOnly(
+  record: CreatorDatabaseRecord,
+): Promise<CreatorDatabaseRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "save-creator-database-record-start", {
+    id: record.id,
+    creatorName: record.creatorName,
+    at: new Date().toISOString(),
+  });
+  const result = await saveCreatorDatabaseToGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCreatorDatabase(result.records);
+  return result.records;
+}
+
+export async function deleteCreatorDatabaseRecordFromGoogleSheetsOnly(
+  recordId: string,
+): Promise<CreatorDatabaseRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "delete-creator-database-record-start", {
+    recordId,
+    at: new Date().toISOString(),
+  });
+  const result = await deleteCreatorDatabaseFromGoogleSheets(recordId);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCreatorDatabase(result.records);
   return result.records;
 }
 
@@ -859,6 +1021,12 @@ function rememberCampaignProfiles(records: CampaignProfileRecord[]) {
   saveCentralDatabaseToLocalStorage(database);
 }
 
+function rememberOutreachTemplates(records: OutreachTemplateRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.OutreachTemplates = records;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
 function rememberActiveCampaignCreators(records: ActiveCampaignCreatorRecord[]) {
   const database = loadAppDatabase();
   database.worksheets.ActiveCampaignCreators = records;
@@ -892,6 +1060,18 @@ function rememberEmployeeProfiles(records: EmployeeProfileRecord[]) {
 function rememberCampaignPromptVault(records: CampaignPromptVaultRecord[]) {
   const database = loadAppDatabase();
   database.worksheets.CampaignPromptVault = records;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
+function rememberAgencyDatabase(records: AgencyDatabaseRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.AgencyDatabase = records;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
+function rememberCreatorDatabase(records: CreatorDatabaseRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.CreatorDatabase = records;
   saveCentralDatabaseToLocalStorage(database);
 }
 

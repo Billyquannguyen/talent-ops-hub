@@ -6,7 +6,8 @@ import {
 } from "./types";
 import type { EmployeeProfileRecord } from "@/storage/schema";
 
-const employeeProfileStorageKey = "katlas-employee-profile-v1";
+export const employeeProfileStorageKey = "katlas-employee-profile-v1";
+export const employeeProfileUpdatedEvent = "katlas-employee-profile-updated";
 export const employeeProfileRecordId = "employee-profile-default";
 
 const defaultAccounts: EmployeeAccountLink[] = [
@@ -41,6 +42,7 @@ export function loadEmployeeProfile(): EmployeeProfile {
 export function saveEmployeeProfile(profile: EmployeeProfile) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(employeeProfileStorageKey, JSON.stringify(profile));
+  window.dispatchEvent(new CustomEvent(employeeProfileUpdatedEvent, { detail: profile }));
 }
 
 export function employeeProfileToRecord(profile: EmployeeProfile): EmployeeProfileRecord {

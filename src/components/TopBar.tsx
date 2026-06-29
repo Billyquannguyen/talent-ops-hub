@@ -2,6 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { ChevronDown, LockKeyhole } from "lucide-react";
 
 import { lockPasswordGate } from "@/lib/passwordGate";
+import { EmployeeProfileBadge } from "./EmployeeProfileBadge";
 
 const navItems = [
   { to: "/", label: "AI Slave" },
@@ -52,9 +53,7 @@ export function TopBar() {
           >
             <LockKeyhole className="size-3.5" />
           </button>
-          <div className="hidden size-9 shrink-0 place-items-center rounded-full border border-border bg-accent/80 text-[11px] font-semibold ring-1 ring-border sm:grid">
-            KM
-          </div>
+          <EmployeeProfileBadge />
         </div>
       </div>
     </header>

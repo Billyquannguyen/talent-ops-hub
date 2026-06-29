@@ -12,11 +12,7 @@ import {
 
 import { TopBar } from "@/components/TopBar";
 import {
-  listActiveCampaignCreatorsFromGoogleSheetsOnly,
-  listAppSettingsFromGoogleSheetsOnly,
-  listCampaignProfilesFromGoogleSheetsOnly,
-  listPerformanceBenchmarksFromGoogleSheetsOnly,
-  listPerformanceWeeklyInputsFromGoogleSheetsOnly,
+  loadPerformanceBundleFromGoogleSheetsOnly,
   loadAppDatabase,
   saveAppSettingToGoogleSheetsOnly,
   savePerformanceBenchmarkToGoogleSheetsOnly,
@@ -101,26 +97,14 @@ export function EmployeePerformanceTracking() {
         console.info("[EmployeePerformance]", "load-targeted-sheets", {
           at: new Date().toISOString(),
         });
-        const [
-          campaignProfiles,
-          performanceBenchmarks,
-          performanceWeeklyInputs,
-          activeCreators,
-          settings,
-        ] = await Promise.all([
-          listCampaignProfilesFromGoogleSheetsOnly(),
-          listPerformanceBenchmarksFromGoogleSheetsOnly(),
-          listPerformanceWeeklyInputsFromGoogleSheetsOnly(),
-          listActiveCampaignCreatorsFromGoogleSheetsOnly(),
-          listAppSettingsFromGoogleSheetsOnly(),
-        ]);
+        const bundle = await loadPerformanceBundleFromGoogleSheetsOnly();
         if (cancelled) return;
         const database = loadAppDatabase();
-        database.worksheets.CampaignProfiles = campaignProfiles;
-        database.worksheets.PerformanceBenchmarks = performanceBenchmarks;
-        database.worksheets.PerformanceWeeklyInputs = performanceWeeklyInputs;
-        database.worksheets.ActiveCampaignCreators = activeCreators;
-        database.worksheets.AppSettings = settings;
+        database.worksheets.CampaignProfiles = bundle.campaignProfiles;
+        database.worksheets.PerformanceBenchmarks = bundle.performanceBenchmarks;
+        database.worksheets.PerformanceWeeklyInputs = bundle.performanceWeeklyInputs;
+        database.worksheets.ActiveCampaignCreators = bundle.activeCampaignCreators;
+        database.worksheets.AppSettings = bundle.appSettings;
         hydrateFromDatabase(database, "google-sheets");
         setStatusMessage("Performance data loaded from Google Sheets.");
       } catch (error) {

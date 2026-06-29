@@ -30,7 +30,6 @@ import { TopBar } from "@/components/TopBar";
 import {
   campaignMemoryLanguages,
   loadCampaignRegistry,
-  loadCampaignRegistryFromGoogleSheetsOnly,
   saveCampaignMemoryForCampaign,
   type CampaignMemoryLanguage,
   type CampaignMemoryCard,
@@ -38,15 +37,21 @@ import {
 } from "@/lib/campaignRegistry";
 import {
   createOutreachTemplateInGoogleSheetsOnly,
+  deleteAgencyDatabaseRecordFromGoogleSheetsOnly,
+  deleteCreatorDatabaseRecordFromGoogleSheetsOnly,
   deleteOutreachTemplateFromGoogleSheetsOnly,
-  listOutreachTemplatesFromGoogleSheetsOnly,
-  loadAppDatabaseFromGoogleSheetsOnly,
+  listAgencyDatabaseFromGoogleSheetsOnly,
+  listCreatorDatabaseFromGoogleSheetsOnly,
+  loadCreatorOutreachBundleFromGoogleSheetsOnly,
   migrateAgencyDatabaseContactsInGoogleSheetsOnly,
-  saveAppDatabaseToGoogleSheetsOnly,
+  saveAgencyDatabaseRecordToGoogleSheetsOnly,
+  saveCreatorDatabaseRecordToGoogleSheetsOnly,
   updateOutreachTemplateInGoogleSheetsOnly,
 } from "@/storage/appRepository";
 import type {
   AgencyDatabaseRecord,
+  CampaignMemoryCardRecord,
+  CampaignProfileRecord,
   CreatorDatabaseRecord,
   OutreachTemplateRecord,
 } from "@/storage/schema";
@@ -199,21 +204,15 @@ export function CreatorOutreachAssistant() {
 
     void (async () => {
       try {
-        const [templateResult, registryResult] = await Promise.all([
-          listOutreachTemplatesFromGoogleSheetsOnly(),
-          loadCampaignRegistryFromGoogleSheetsOnly({
-            reason: "creator-outreach:load-campaign-memory",
-          }),
-        ]);
+        const bundle = await loadCreatorOutreachBundleFromGoogleSheetsOnly();
         if (cancelled) return;
-        applyOutreachTemplateRecords(templateResult.records);
+        const registryResult = createOutreachRegistryFromBundle(
+          bundle.campaignProfiles,
+          bundle.campaignMemoryCards,
+        );
+        applyOutreachTemplateRecords(bundle.outreachTemplates);
         setCampaignRegistry(registryResult);
         setSelectedMemoryCampaignId((current) => current || registryResult.campaigns[0]?.id || "");
-        if (templateResult.report?.removedRows) {
-          setCopyStatus(
-            `Cleaned ${templateResult.report.removedRows} stale outreach template rows.`,
-          );
-        }
       } catch (error) {
         if (cancelled) return;
         setCopyStatus(
@@ -480,11 +479,11 @@ export function CreatorOutreachAssistant() {
     setDatabaseError("");
     setIsDatabaseLoading(true);
     try {
-      const appDatabase = await loadAppDatabaseFromGoogleSheetsOnly({
-        reason: `creator-outreach:open-${view}-database`,
-      });
-      setAgencyRecords(appDatabase.worksheets.AgencyDatabase);
-      setCreatorRecords(appDatabase.worksheets.CreatorDatabase);
+      if (view === "agency") {
+        setAgencyRecords(await listAgencyDatabaseFromGoogleSheetsOnly());
+      } else {
+        setCreatorRecords(await listCreatorDatabaseFromGoogleSheetsOnly());
+      }
     } catch (error) {
       setDatabaseError(
         error instanceof Error
@@ -559,9 +558,6 @@ export function CreatorOutreachAssistant() {
     setIsDatabaseSaving(true);
     setDatabaseError("");
     try {
-      const appDatabase = await loadAppDatabaseFromGoogleSheetsOnly({
-        reason: "creator-outreach:save-agency-preload",
-      });
       const now = new Date().toISOString();
       const agencyContacts = normalizeAgencyContactRows(record);
       const firstContact = agencyContacts[0] ?? {
@@ -583,17 +579,8 @@ export function CreatorOutreachAssistant() {
         createdAt: record.createdAt || now,
         updatedAt: now,
       };
-      const exists = appDatabase.worksheets.AgencyDatabase.some((item) => item.id === record.id);
-      appDatabase.worksheets.AgencyDatabase = exists
-        ? appDatabase.worksheets.AgencyDatabase.map((item) =>
-            item.id === record.id ? savedRecord : item,
-          )
-        : [savedRecord, ...appDatabase.worksheets.AgencyDatabase];
-      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(appDatabase, {
-        reason: "creator-outreach:save-agency",
-      });
-      setAgencyRecords(savedDatabase.worksheets.AgencyDatabase);
-      setCreatorRecords(savedDatabase.worksheets.CreatorDatabase);
+      const records = await saveAgencyDatabaseRecordToGoogleSheetsOnly(savedRecord);
+      setAgencyRecords(records);
       setAgencyDraft(null);
       setCopyStatus("Agency saved to Google Sheets.");
     } catch (error) {
@@ -614,9 +601,6 @@ export function CreatorOutreachAssistant() {
     setIsDatabaseSaving(true);
     setDatabaseError("");
     try {
-      const appDatabase = await loadAppDatabaseFromGoogleSheetsOnly({
-        reason: "creator-outreach:save-creator-preload",
-      });
       const now = new Date().toISOString();
       const savedRecord = {
         ...record,
@@ -627,17 +611,8 @@ export function CreatorOutreachAssistant() {
         createdAt: record.createdAt || now,
         updatedAt: now,
       };
-      const exists = appDatabase.worksheets.CreatorDatabase.some((item) => item.id === record.id);
-      appDatabase.worksheets.CreatorDatabase = exists
-        ? appDatabase.worksheets.CreatorDatabase.map((item) =>
-            item.id === record.id ? savedRecord : item,
-          )
-        : [savedRecord, ...appDatabase.worksheets.CreatorDatabase];
-      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(appDatabase, {
-        reason: "creator-outreach:save-creator",
-      });
-      setAgencyRecords(savedDatabase.worksheets.AgencyDatabase);
-      setCreatorRecords(savedDatabase.worksheets.CreatorDatabase);
+      const records = await saveCreatorDatabaseRecordToGoogleSheetsOnly(savedRecord);
+      setCreatorRecords(records);
       setCreatorDraft(null);
       setCopyStatus("Creator saved to Google Sheets.");
     } catch (error) {
@@ -660,17 +635,8 @@ export function CreatorOutreachAssistant() {
     setIsDatabaseSaving(true);
     setDatabaseError("");
     try {
-      const appDatabase = await loadAppDatabaseFromGoogleSheetsOnly({
-        reason: "creator-outreach:delete-agency-preload",
-      });
-      appDatabase.worksheets.AgencyDatabase = appDatabase.worksheets.AgencyDatabase.filter(
-        (record) => record.id !== recordId,
-      );
-      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(appDatabase, {
-        reason: "creator-outreach:delete-agency",
-      });
-      setAgencyRecords(savedDatabase.worksheets.AgencyDatabase);
-      setCreatorRecords(savedDatabase.worksheets.CreatorDatabase);
+      const records = await deleteAgencyDatabaseRecordFromGoogleSheetsOnly(recordId);
+      setAgencyRecords(records);
       setCopyStatus("Agency deleted from Google Sheets.");
     } catch (error) {
       setDatabaseError(
@@ -719,17 +685,8 @@ export function CreatorOutreachAssistant() {
     setIsDatabaseSaving(true);
     setDatabaseError("");
     try {
-      const appDatabase = await loadAppDatabaseFromGoogleSheetsOnly({
-        reason: "creator-outreach:delete-creator-preload",
-      });
-      appDatabase.worksheets.CreatorDatabase = appDatabase.worksheets.CreatorDatabase.filter(
-        (record) => record.id !== recordId,
-      );
-      const savedDatabase = await saveAppDatabaseToGoogleSheetsOnly(appDatabase, {
-        reason: "creator-outreach:delete-creator",
-      });
-      setAgencyRecords(savedDatabase.worksheets.AgencyDatabase);
-      setCreatorRecords(savedDatabase.worksheets.CreatorDatabase);
+      const records = await deleteCreatorDatabaseRecordFromGoogleSheetsOnly(recordId);
+      setCreatorRecords(records);
       setCopyStatus("Creator deleted from Google Sheets.");
     } catch (error) {
       setDatabaseError(
@@ -1972,6 +1929,42 @@ function ReplyTypeField({
       </div>
     </div>
   );
+}
+
+function createOutreachRegistryFromBundle(
+  campaignProfiles: CampaignProfileRecord[],
+  memoryCards: CampaignMemoryCardRecord[],
+): GlobalCampaignRegistry {
+  return {
+    campaigns: campaignProfiles.map((campaign) => ({
+      id: campaign.campaignId,
+      campaignName: campaign.campaignName,
+      campaignCode: campaign.campaignCode,
+      preferredLanguages: parseCampaignMemoryLanguages(campaign.preferredLanguages),
+      memoryCards: memoryCards
+        .filter((card) => card.campaignId === campaign.campaignId)
+        .map(
+          (card): CampaignMemoryCard => ({
+            id: card.cardId,
+            title: card.title,
+            content: card.content,
+          }),
+        ),
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt,
+    })),
+    creatorRecords: [],
+  };
+}
+
+function parseCampaignMemoryLanguages(value: string): CampaignMemoryLanguage[] {
+  const parsed = value
+    .split(",")
+    .map((language) => language.trim())
+    .filter((language): language is CampaignMemoryLanguage =>
+      campaignMemoryLanguages.includes(language as CampaignMemoryLanguage),
+    );
+  return parsed.length ? parsed : ["English"];
 }
 
 function ReplyTypeToggle({

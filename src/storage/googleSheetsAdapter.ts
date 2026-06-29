@@ -10,6 +10,7 @@ import {
   type CampaignProfileRecord,
   type CentralAppDatabase,
   type CentralWorksheetName,
+  type CreatorDatabaseRecord,
   type EmployeeProfileRecord,
   type OutreachTemplateRecord,
   type PerformanceBenchmarkRecord,
@@ -27,27 +28,37 @@ import {
   createCampaignMemoryCardRecord,
   createOutreachTemplateRecord,
   deleteActiveCampaignCreatorRecord,
+  deleteAgencyDatabaseRecord,
   deleteCampaignMemoryCardRecord,
   deleteCampaignPromptVaultRecord,
+  deleteCreatorDatabaseRecord,
   deleteOutreachTemplateRecord,
   deleteSourcingTemplateRecord,
   getGoogleSheetsConnectionStatus,
+  listAgencyDatabaseRecords,
   listAppSettingRecords,
   listActiveCampaignCreatorRecords,
   listCampaignMemoryCardRecords,
   listCampaignPromptVaultRecords,
   listCampaignProfileRecords,
+  listCreatorDatabaseRecords,
   listEmployeeProfileRecords,
   listOutreachTemplateRecords,
   listPerformanceBenchmarkRecords,
   listPerformanceWeeklyInputRecords,
+  loadActiveCampaignsBundle,
+  loadCreatorOutreachBundle,
   loadCreatorSourcingGoogleSheetsDatabase,
   loadGoogleSheetsDatabase,
+  loadPerformanceBundle,
+  loadPromptVaultBundle,
   migrateAgencyDatabaseContactsRecord,
   migrateLocalDatabaseToGoogleSheets,
   replaceCampaignMemoryCardsForCampaignRecord,
+  saveAgencyDatabaseRecord,
   saveAppSettingRecord,
   saveCampaignPromptVaultRecord,
+  saveCreatorDatabaseRecord,
   saveEmployeeProfileRecord,
   saveGoogleSheetsDatabase,
   savePerformanceBenchmarkRecord,
@@ -181,6 +192,50 @@ export type CampaignPromptVaultResult = {
   status: StorageStatus;
 };
 
+export type CreatorOutreachBundleResult = {
+  ok: boolean;
+  campaignProfiles: CampaignProfileRecord[];
+  outreachTemplates: OutreachTemplateRecord[];
+  campaignMemoryCards: CampaignMemoryCardRecord[];
+  status: StorageStatus;
+};
+
+export type ActiveCampaignsBundleResult = {
+  ok: boolean;
+  campaignProfiles: CampaignProfileRecord[];
+  activeCampaignCreators: ActiveCampaignCreatorRecord[];
+  status: StorageStatus;
+};
+
+export type PerformanceBundleResult = {
+  ok: boolean;
+  campaignProfiles: CampaignProfileRecord[];
+  performanceBenchmarks: PerformanceBenchmarkRecord[];
+  performanceWeeklyInputs: PerformanceWeeklyInputRecord[];
+  activeCampaignCreators: ActiveCampaignCreatorRecord[];
+  appSettings: AppSettingRecord[];
+  status: StorageStatus;
+};
+
+export type PromptVaultBundleResult = {
+  ok: boolean;
+  campaignProfiles: CampaignProfileRecord[];
+  campaignPromptVault: CampaignPromptVaultRecord[];
+  status: StorageStatus;
+};
+
+export type AgencyDatabaseResult = {
+  ok: boolean;
+  records: AgencyDatabaseRecord[];
+  status: StorageStatus;
+};
+
+export type CreatorDatabaseResult = {
+  ok: boolean;
+  records: CreatorDatabaseRecord[];
+  status: StorageStatus;
+};
+
 export async function getGoogleSheetsStorageStatus(): Promise<StorageStatus> {
   return getGoogleSheetsConnectionStatus();
 }
@@ -201,8 +256,56 @@ export async function loadCreatorSourcingDatabaseFromGoogleSheets(
   return loadCreatorSourcingGoogleSheetsDatabase({ data: { reason: options.reason } });
 }
 
+export async function loadCreatorOutreachBundleFromGoogleSheets(): Promise<CreatorOutreachBundleResult> {
+  return loadCreatorOutreachBundle();
+}
+
+export async function loadActiveCampaignsBundleFromGoogleSheets(): Promise<ActiveCampaignsBundleResult> {
+  return loadActiveCampaignsBundle();
+}
+
+export async function loadPerformanceBundleFromGoogleSheets(): Promise<PerformanceBundleResult> {
+  return loadPerformanceBundle();
+}
+
+export async function loadPromptVaultBundleFromGoogleSheets(): Promise<PromptVaultBundleResult> {
+  return loadPromptVaultBundle();
+}
+
 export async function listCampaignProfilesFromGoogleSheets(): Promise<CampaignProfilesResult> {
   return listCampaignProfileRecords();
+}
+
+export async function listAgencyDatabaseFromGoogleSheets(): Promise<AgencyDatabaseResult> {
+  return listAgencyDatabaseRecords();
+}
+
+export async function saveAgencyDatabaseToGoogleSheets(
+  record: AgencyDatabaseRecord,
+): Promise<AgencyDatabaseResult> {
+  return saveAgencyDatabaseRecord({ data: { record } });
+}
+
+export async function deleteAgencyDatabaseFromGoogleSheets(
+  recordId: string,
+): Promise<AgencyDatabaseResult> {
+  return deleteAgencyDatabaseRecord({ data: { recordId } });
+}
+
+export async function listCreatorDatabaseFromGoogleSheets(): Promise<CreatorDatabaseResult> {
+  return listCreatorDatabaseRecords();
+}
+
+export async function saveCreatorDatabaseToGoogleSheets(
+  record: CreatorDatabaseRecord,
+): Promise<CreatorDatabaseResult> {
+  return saveCreatorDatabaseRecord({ data: { record } });
+}
+
+export async function deleteCreatorDatabaseFromGoogleSheets(
+  recordId: string,
+): Promise<CreatorDatabaseResult> {
+  return deleteCreatorDatabaseRecord({ data: { recordId } });
 }
 
 export async function migrateAgencyDatabaseContactsInGoogleSheets(): Promise<{

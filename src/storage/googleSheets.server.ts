@@ -190,14 +190,7 @@ async function readCentralDatabaseFromGoogleSheetsUncached(spreadsheetId: string
   logGoogleSheetsCache("database-cache-miss", { reason });
   await ensureDatabaseShape(spreadsheetId);
 
-  const rowsBySheet = Object.fromEntries(
-    await Promise.all(
-      centralWorksheetNames.map(async (worksheetName) => [
-        worksheetName,
-        await readWorksheetRows(spreadsheetId, worksheetName),
-      ]),
-    ),
-  ) as Record<CentralWorksheetName, SheetRows>;
+  const rowsBySheet = await readWorksheetRowsBatch(spreadsheetId, centralWorksheetNames);
 
   const database = rowsToDatabase(rowsBySheet);
   databaseReadCache = {
@@ -206,6 +199,26 @@ async function readCentralDatabaseFromGoogleSheetsUncached(spreadsheetId: string
     expiresAt: Date.now() + databaseReadCacheTtlMs,
   };
   return database;
+}
+
+async function readWorksheetSubsetFromGoogleSheets(
+  spreadsheetId: string,
+  worksheetNames: CentralWorksheetName[],
+  reason: string,
+) {
+  logGoogleSheetsCache("worksheet-subset-cache-miss", {
+    reason,
+    worksheets: worksheetNames.join(","),
+  });
+  await ensureDatabaseShape(spreadsheetId);
+
+  const rowsBySheet = createEmptyRowsBySheet();
+  const subsetRows = await readWorksheetRowsBatch(spreadsheetId, worksheetNames);
+  for (const worksheetName of worksheetNames) {
+    rowsBySheet[worksheetName] = subsetRows[worksheetName] ?? [];
+  }
+
+  return rowsToDatabase(rowsBySheet);
 }
 
 export async function writeCentralDatabaseToGoogleSheets(database: CentralAppDatabase) {
@@ -237,6 +250,76 @@ export async function writeCentralDatabaseToGoogleSheets(database: CentralAppDat
     worksheets: centralWorksheetNames.length,
   });
   return cloneDatabase(savedDatabase);
+}
+
+export async function readCreatorOutreachBundleFromGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  const database = await readWorksheetSubsetFromGoogleSheets(
+    spreadsheetId,
+    ["CampaignProfiles", "OutreachTemplates", "CampaignMemoryCards"],
+    "creator-outreach:bundle",
+  );
+
+  return {
+    campaignProfiles: database.worksheets.CampaignProfiles,
+    outreachTemplates: database.worksheets.OutreachTemplates,
+    campaignMemoryCards: database.worksheets.CampaignMemoryCards,
+  };
+}
+
+export async function readActiveCampaignsBundleFromGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  const database = await readWorksheetSubsetFromGoogleSheets(
+    spreadsheetId,
+    ["CampaignProfiles", "ActiveCampaignCreators"],
+    "active-campaigns:bundle",
+  );
+
+  return {
+    campaignProfiles: database.worksheets.CampaignProfiles,
+    activeCampaignCreators: database.worksheets.ActiveCampaignCreators,
+  };
+}
+
+export async function readPerformanceBundleFromGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  const database = await readWorksheetSubsetFromGoogleSheets(
+    spreadsheetId,
+    [
+      "CampaignProfiles",
+      "PerformanceBenchmarks",
+      "PerformanceWeeklyInputs",
+      "ActiveCampaignCreators",
+      "AppSettings",
+    ],
+    "employee-performance:bundle",
+  );
+
+  return {
+    campaignProfiles: database.worksheets.CampaignProfiles,
+    performanceBenchmarks: database.worksheets.PerformanceBenchmarks,
+    performanceWeeklyInputs: database.worksheets.PerformanceWeeklyInputs,
+    activeCampaignCreators: database.worksheets.ActiveCampaignCreators,
+    appSettings: database.worksheets.AppSettings,
+  };
+}
+
+export async function readPromptVaultBundleFromGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  const database = await readWorksheetSubsetFromGoogleSheets(
+    spreadsheetId,
+    ["CampaignProfiles", "CampaignPromptVault"],
+    "prompt-vault:bundle",
+  );
+
+  return {
+    campaignProfiles: database.worksheets.CampaignProfiles,
+    campaignPromptVault: database.worksheets.CampaignPromptVault,
+  };
 }
 
 export async function readCreatorSourcingDatabaseFromGoogleSheets(
@@ -348,6 +431,134 @@ export async function migrateAgencyDatabaseContactsInGoogleSheets() {
   };
 }
 
+export async function listAgencyDatabaseInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  return {
+    records: await readNormalizedWorksheetRecords<AgencyDatabaseRecord>(
+      spreadsheetId,
+      "AgencyDatabase",
+    ),
+  };
+}
+
+export async function upsertAgencyDatabaseInGoogleSheets(record: AgencyDatabaseRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const agencyRows = await readWorksheetRecordsWithRowNumbers<AgencyDatabaseRecord>(
+    spreadsheetId,
+    "AgencyDatabase",
+  );
+  const records = normalizeWorksheetRecords(
+    "AgencyDatabase",
+    agencyRows.rows.map((row) => row.record as Record<string, unknown>),
+  ) as AgencyDatabaseRecord[];
+  const nextRecord = (
+    normalizeWorksheetRecords("AgencyDatabase", [
+      record as Record<string, unknown>,
+    ]) as AgencyDatabaseRecord[]
+  )[0];
+  const existingIndex = records.findIndex((item) => item.id === nextRecord.id);
+  const nextRows =
+    existingIndex === -1
+      ? [nextRecord, ...records]
+      : records.map((item, index) => (index === existingIndex ? nextRecord : item));
+
+  await writeCurrentStateWorksheetRows(spreadsheetId, "AgencyDatabase", agencyRows, nextRows);
+  invalidateDatabaseReadCache("agency-database-targeted-write");
+
+  return { records: nextRows };
+}
+
+export async function deleteAgencyDatabaseInGoogleSheets(recordId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const agencyRows = await readWorksheetRecordsWithRowNumbers<AgencyDatabaseRecord>(
+    spreadsheetId,
+    "AgencyDatabase",
+  );
+  const records = normalizeWorksheetRecords(
+    "AgencyDatabase",
+    agencyRows.rows.map((row) => row.record as Record<string, unknown>),
+  ) as AgencyDatabaseRecord[];
+  const nextRows = records.filter((record) => record.id !== recordId);
+
+  await writeCurrentStateWorksheetRows(spreadsheetId, "AgencyDatabase", agencyRows, nextRows);
+  invalidateDatabaseReadCache("agency-database-targeted-delete");
+
+  return { records: nextRows };
+}
+
+export async function listCreatorDatabaseInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  return {
+    records: await readNormalizedWorksheetRecords<CreatorDatabaseRecord>(
+      spreadsheetId,
+      "CreatorDatabase",
+    ),
+  };
+}
+
+export async function upsertCreatorDatabaseInGoogleSheets(record: CreatorDatabaseRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const creatorRows = await readWorksheetRecordsWithRowNumbers<CreatorDatabaseRecord>(
+    spreadsheetId,
+    "CreatorDatabase",
+  );
+  const records = normalizeWorksheetRecords(
+    "CreatorDatabase",
+    creatorRows.rows.map((row) => row.record as Record<string, unknown>),
+  ) as CreatorDatabaseRecord[];
+  const nextRecord = (
+    normalizeWorksheetRecords("CreatorDatabase", [
+      record as Record<string, unknown>,
+    ]) as CreatorDatabaseRecord[]
+  )[0];
+  const existingIndex = records.findIndex((item) => item.id === nextRecord.id);
+  const nextRows =
+    existingIndex === -1
+      ? [nextRecord, ...records]
+      : records.map((item, index) => (index === existingIndex ? nextRecord : item));
+
+  await writeCurrentStateWorksheetRows(spreadsheetId, "CreatorDatabase", creatorRows, nextRows);
+  invalidateDatabaseReadCache("creator-database-targeted-write");
+
+  return { records: nextRows };
+}
+
+export async function deleteCreatorDatabaseInGoogleSheets(recordId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const creatorRows = await readWorksheetRecordsWithRowNumbers<CreatorDatabaseRecord>(
+    spreadsheetId,
+    "CreatorDatabase",
+  );
+  const records = normalizeWorksheetRecords(
+    "CreatorDatabase",
+    creatorRows.rows.map((row) => row.record as Record<string, unknown>),
+  ) as CreatorDatabaseRecord[];
+  const nextRows = records.filter((record) => record.id !== recordId);
+
+  await writeCurrentStateWorksheetRows(spreadsheetId, "CreatorDatabase", creatorRows, nextRows);
+  invalidateDatabaseReadCache("creator-database-targeted-delete");
+
+  return { records: nextRows };
+}
+
 export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTemplateRecord) {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
@@ -369,10 +580,7 @@ export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTempl
     sourcingCleanup.records,
   );
 
-  const appSettingRows = await readWorksheetRecordsWithRowNumbers<AppSettingRecord>(
-    spreadsheetId,
-    "AppSettings",
-  );
+  const appSettingRows = await readAppSettingsRecordsWithRowNumbers(spreadsheetId);
   const appSettings = upsertAppSettingRecord(
     appSettingRows.rows.map((row) => row.record),
     `sourcing.activeTemplate.${record.campaignId}`,
@@ -415,10 +623,7 @@ export async function deleteSourcingTemplateInGoogleSheets(templateId: string) {
     sourcingCleanup.records,
   );
 
-  const appSettingRows = await readWorksheetRecordsWithRowNumbers<AppSettingRecord>(
-    spreadsheetId,
-    "AppSettings",
-  );
+  const appSettingRows = await readAppSettingsRecordsWithRowNumbers(spreadsheetId);
   const settingKey = `sourcing.activeTemplate.${existing.campaignId}`;
   const currentSetting = appSettingRows.rows
     .map((row) => row.record)
@@ -968,10 +1173,7 @@ export async function upsertAppSettingInGoogleSheets(record: AppSettingRecord) {
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
 
-  const settingsRows = await readWorksheetRecordsWithRowNumbers<AppSettingRecord>(
-    spreadsheetId,
-    "AppSettings",
-  );
+  const settingsRows = await readAppSettingsRecordsWithRowNumbers(spreadsheetId);
   const now = new Date().toISOString();
   const nextRecord: AppSettingRecord = {
     settingKey: stringValue(record.settingKey),
@@ -1001,7 +1203,7 @@ export async function listAppSettingsInGoogleSheets() {
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
 
-  const records = (await readWorksheetRows(spreadsheetId, "AppSettings")) as AppSettingRecord[];
+  const records = await readAppSettingsRows(spreadsheetId);
 
   return {
     records,
@@ -1155,7 +1357,7 @@ export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets() {
   await ensureDatabaseShape(spreadsheetId);
 
   const [settingsRows, sourcingRows] = await Promise.all([
-    readWorksheetRecordsWithRowNumbers<AppSettingRecord>(spreadsheetId, "AppSettings"),
+    readAppSettingsRecordsWithRowNumbers(spreadsheetId),
     readWorksheetRecordsWithRowNumbers<SourcingTemplateRecord>(spreadsheetId, "SourcingTemplates"),
   ]);
   const settings = settingsRows.rows.map((row) => row.record);
@@ -1276,43 +1478,29 @@ async function ensureDatabaseShape(spreadsheetId: string) {
     return;
   }
 
-  let metadata = await getMetadata(spreadsheetId);
+  const metadata = await getMetadata(spreadsheetId);
   const existingSheets = new Map(
     (metadata.sheets ?? []).map((sheet) => [sheet.properties.title, sheet.properties.sheetId]),
   );
-  const requests = centralWorksheetNames
-    .filter((worksheetName) => !existingSheets.has(worksheetName))
-    .map((worksheetName) => ({
-      addSheet: {
-        properties: {
-          title: worksheetName,
-          gridProperties: { frozenRowCount: 1 },
-        },
+  const missingWorksheetNames = centralWorksheetNames.filter(
+    (worksheetName) => !existingSheets.has(worksheetName),
+  );
+  const requests = missingWorksheetNames.map((worksheetName) => ({
+    addSheet: {
+      properties: {
+        title: worksheetName,
+        gridProperties: { frozenRowCount: 1 },
       },
-    }));
+    },
+  }));
 
   if (requests.length > 0) {
     await batchUpdate(spreadsheetId, requests);
-    metadata = await getMetadata(spreadsheetId);
-  }
-
-  const freezeRequests = (metadata.sheets ?? [])
-    .filter((sheet) =>
-      centralWorksheetNames.includes(sheet.properties.title as CentralWorksheetName),
-    )
-    .map((sheet) => ({
-      updateSheetProperties: {
-        properties: {
-          sheetId: sheet.properties.sheetId,
-          gridProperties: { frozenRowCount: 1 },
-        },
-        fields: "gridProperties.frozenRowCount",
-      },
-    }));
-  if (freezeRequests.length > 0) await batchUpdate(spreadsheetId, freezeRequests);
-
-  for (const worksheetName of centralWorksheetNames) {
-    await ensureHeaders(spreadsheetId, worksheetName);
+    await Promise.all(
+      missingWorksheetNames.map((worksheetName) =>
+        writeRequiredHeaders(spreadsheetId, worksheetName),
+      ),
+    );
   }
 
   databaseShapeCache = {
@@ -1327,24 +1515,67 @@ async function ensureHeaders(spreadsheetId: string, worksheetName: CentralWorksh
   const existingHeaders = (currentHeaderRow[0] ?? []).map(stringValue).filter(Boolean);
   const headerMap = buildHeaderMap(existingHeaders, requiredHeaders);
   const missingHeaders = requiredHeaders.filter((header) => headerMap[header] === undefined);
+  if (existingHeaders.length > 0 && missingHeaders.length === 0) return;
+
   const nextHeaders =
     existingHeaders.length > 0 ? [...existingHeaders, ...missingHeaders] : requiredHeaders;
 
+  await updateHeaderRow(spreadsheetId, worksheetName, nextHeaders);
+}
+
+async function writeRequiredHeaders(spreadsheetId: string, worksheetName: CentralWorksheetName) {
+  await updateHeaderRow(spreadsheetId, worksheetName, requiredWorksheetHeaders[worksheetName]);
+}
+
+async function updateHeaderRow(
+  spreadsheetId: string,
+  worksheetName: CentralWorksheetName,
+  headers: string[],
+) {
   await updateValues(
     spreadsheetId,
-    `${quoteSheetName(worksheetName)}!A1:${columnName(nextHeaders.length)}1`,
-    [nextHeaders],
+    `${quoteSheetName(worksheetName)}!A1:${columnName(headers.length)}1`,
+    [headers],
   );
 }
 
 async function readWorksheetRows(spreadsheetId: string, worksheetName: CentralWorksheetName) {
   const values = await readValues(spreadsheetId, `${quoteSheetName(worksheetName)}!A1:Z1000`);
+  return parseWorksheetRowsFromValues(worksheetName, values);
+}
+
+async function readWorksheetRowsBatch(
+  spreadsheetId: string,
+  worksheetNames: readonly CentralWorksheetName[],
+) {
+  const ranges = worksheetNames.map((worksheetName) => `${quoteSheetName(worksheetName)}!A1:Z1000`);
+  const valuesByRange = await readValuesBatch(spreadsheetId, ranges);
+  const rowsBySheet = createEmptyRowsBySheet();
+
+  worksheetNames.forEach((worksheetName, index) => {
+    rowsBySheet[worksheetName] = parseWorksheetRowsFromValues(
+      worksheetName,
+      valuesByRange.get(ranges[index]) ?? [],
+    );
+  });
+
+  return rowsBySheet;
+}
+
+function parseWorksheetRowsFromValues(worksheetName: CentralWorksheetName, values: unknown[][]) {
   const headers = (values[0] ?? []).map(stringValue);
   const headerMap = buildHeaderMap(headers, requiredWorksheetHeaders[worksheetName]);
   const missingHeaders = requiredWorksheetHeaders[worksheetName].filter(
     (header) => headerMap[header] === undefined,
   );
   if (missingHeaders.length > 0) {
+    if (worksheetName === "AppSettings") {
+      console.warn("[AppSettingsRepair]", "missing-headers-ignored-for-read", {
+        missingHeaders,
+        at: new Date().toISOString(),
+      });
+      return [];
+    }
     throw new Error(`${worksheetName} is missing required headers: ${missingHeaders.join(", ")}`);
   }
 
@@ -1358,6 +1589,83 @@ async function readWorksheetRows(spreadsheetId: string, worksheetName: CentralWo
     const idField = rowIdFields[worksheetName];
     return record[idField] ? [record] : [];
   });
+}
+
+async function readNormalizedWorksheetRecords<T>(
+  spreadsheetId: string,
+  worksheetName: CentralWorksheetName,
+) {
+  const rows = await readWorksheetRows(spreadsheetId, worksheetName);
+  return normalizeWorksheetRecords(worksheetName, rows) as T[];
+}
+
+function normalizeWorksheetRecords(
+  worksheetName: CentralWorksheetName,
+  rows: Array<Record<string, unknown>>,
+) {
+  const rowsBySheet = createEmptyRowsBySheet();
+  rowsBySheet[worksheetName] = rows.map((row) =>
+    Object.fromEntries(
+      requiredWorksheetHeaders[worksheetName].map((header) => [header, stringValue(row[header])]),
+    ),
+  );
+  return rowsToDatabase(rowsBySheet).worksheets[worksheetName];
+}
+
+function createEmptyRowsBySheet() {
+  return Object.fromEntries(
+    centralWorksheetNames.map((worksheetName) => [worksheetName, [] as SheetRows]),
+  ) as Record<CentralWorksheetName, SheetRows>;
+}
+
+async function readAppSettingsRows(spreadsheetId: string): Promise<AppSettingRecord[]> {
+  const settingsRows = await readAppSettingsRecordsWithRowNumbers(spreadsheetId);
+  return settingsRows.rows.map((row) => row.record);
+}
+
+async function readAppSettingsRecordsWithRowNumbers(spreadsheetId: string): Promise<{
+  rows: Array<SheetRecordWithRowNumber<AppSettingRecord>>;
+  nextRowNumber: number;
+}> {
+  try {
+    return await readWorksheetRecordsWithRowNumbers<AppSettingRecord>(spreadsheetId, "AppSettings");
+  } catch (error) {
+    if (!isMissingHeadersError(error, "AppSettings")) throw error;
+
+    console.warn("[AppSettingsRepair]", "missing-headers-detected", {
+      message: error instanceof Error ? error.message : "AppSettings header read failed.",
+      at: new Date().toISOString(),
+    });
+
+    await ensureHeaders(spreadsheetId, "AppSettings");
+
+    try {
+      return await readWorksheetRecordsWithRowNumbers<AppSettingRecord>(
+        spreadsheetId,
+        "AppSettings",
+      );
+    } catch (retryError) {
+      if (!isMissingHeadersError(retryError, "AppSettings")) throw retryError;
+
+      console.warn("[AppSettingsRepair]", "using-empty-settings-after-header-retry", {
+        message:
+          retryError instanceof Error ? retryError.message : "AppSettings header retry failed.",
+        at: new Date().toISOString(),
+      });
+
+      return {
+        rows: [],
+        nextRowNumber: 2,
+      };
+    }
+  }
+}
+
+function isMissingHeadersError(error: unknown, worksheetName: CentralWorksheetName) {
+  return (
+    error instanceof Error &&
+    error.message.startsWith(`${worksheetName} is missing required headers:`)
+  );
 }
 
 async function replaceWorksheetRows(
@@ -1414,6 +1722,16 @@ async function readWorksheetRecordsWithRowNumbers<T>(
   nextRowNumber: number;
 }> {
   const values = await readValues(spreadsheetId, `${quoteSheetName(worksheetName)}!A1:Z1000`);
+  return parseWorksheetRecordsWithRowNumbersFromValues<T>(worksheetName, values);
+}
+
+function parseWorksheetRecordsWithRowNumbersFromValues<T>(
+  worksheetName: CentralWorksheetName,
+  values: unknown[][],
+): {
+  rows: Array<SheetRecordWithRowNumber<T>>;
+  nextRowNumber: number;
+} {
   const headers = (values[0] ?? []).map(stringValue);
   const headerMap = buildHeaderMap(headers, requiredWorksheetHeaders[worksheetName]);
   const missingHeaders = requiredWorksheetHeaders[worksheetName].filter(
@@ -1773,10 +2091,23 @@ async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
   logGoogleSheetsCache("creator-sourcing-cache-miss", { reason });
   await ensureDatabaseShape(spreadsheetId);
 
+  const campaignRange = `${quoteSheetName("CampaignProfiles")}!A1:Z1000`;
+  const sourcingRange = `${quoteSheetName("SourcingTemplates")}!A1:Z1000`;
+  const valuesByRange = await readValuesBatch(spreadsheetId, [campaignRange, sourcingRange]);
   const [campaignProfiles, sourcingRows, appSettingRows] = await Promise.all([
-    readWorksheetRows(spreadsheetId, "CampaignProfiles") as Promise<CampaignProfileRecord[]>,
-    readWorksheetRecordsWithRowNumbers<SourcingTemplateRecord>(spreadsheetId, "SourcingTemplates"),
-    readWorksheetRecordsWithRowNumbers<AppSettingRecord>(spreadsheetId, "AppSettings"),
+    Promise.resolve(
+      parseWorksheetRowsFromValues(
+        "CampaignProfiles",
+        valuesByRange.get(campaignRange) ?? [],
+      ) as CampaignProfileRecord[],
+    ),
+    Promise.resolve(
+      parseWorksheetRecordsWithRowNumbersFromValues<SourcingTemplateRecord>(
+        "SourcingTemplates",
+        valuesByRange.get(sourcingRange) ?? [],
+      ),
+    ),
+    readAppSettingsRecordsWithRowNumbers(spreadsheetId),
   ]);
   const cleanup = cleanupSourcingTemplateRecords(sourcingRows.rows.map((row) => row.record));
 
@@ -1841,8 +2172,7 @@ async function readCreatorSourcingDatabaseSubset(
     isActiveSourcingTemplateRecord,
   );
   database.worksheets.AppSettings =
-    overrides.AppSettings ??
-    ((await readWorksheetRows(spreadsheetId, "AppSettings")) as AppSettingRecord[]);
+    overrides.AppSettings ?? (await readAppSettingsRows(spreadsheetId));
   return database;
 }
 
@@ -1907,6 +2237,58 @@ async function readValues(spreadsheetId: string, range: string): Promise<unknown
   return cloneSheetValues(await promise);
 }
 
+async function readValuesBatch(
+  spreadsheetId: string,
+  ranges: readonly string[],
+): Promise<Map<string, unknown[][]>> {
+  const now = Date.now();
+  const valuesByRange = new Map<string, unknown[][]>();
+  const rangesToFetch: string[] = [];
+
+  for (const range of ranges) {
+    const cacheKey = valuesReadCacheKey(spreadsheetId, range);
+    const cached = valuesReadCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      logGoogleSheetsCache("values-cache-hit", {
+        spreadsheetId,
+        range,
+        ttlMs: cached.expiresAt - now,
+      });
+      valuesByRange.set(range, cloneSheetValues(cached.values));
+      continue;
+    }
+
+    rangesToFetch.push(range);
+  }
+
+  if (rangesToFetch.length > 0) {
+    const params = new URLSearchParams({ valueRenderOption: "UNFORMATTED_VALUE" });
+    rangesToFetch.forEach((range) => params.append("ranges", range));
+    logGoogleSheetsCache("values-batch-cache-miss", {
+      spreadsheetId,
+      ranges: rangesToFetch,
+    });
+    logGoogleSheetsRead("values.batchGet", {
+      spreadsheetId,
+      ranges: rangesToFetch,
+    });
+    const response = (await googleFetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?${params}`,
+    )) as { valueRanges?: Array<{ values?: unknown[][] }> };
+
+    rangesToFetch.forEach((range, index) => {
+      const values = response.valueRanges?.[index]?.values ?? [];
+      valuesReadCache.set(valuesReadCacheKey(spreadsheetId, range), {
+        values: cloneSheetValues(values),
+        expiresAt: Date.now() + valuesReadCacheTtlMs,
+      });
+      valuesByRange.set(range, cloneSheetValues(values));
+    });
+  }
+
+  return valuesByRange;
+}
+
 async function updateValues(spreadsheetId: string, range: string, values: unknown[][]) {
   const encodedRange = encodeURIComponent(range);
   await googleFetch(
@@ -1919,7 +2301,7 @@ async function updateValues(spreadsheetId: string, range: string, values: unknow
       }),
     },
   );
-  invalidateValuesReadCache(spreadsheetId, `update:${range}`);
+  invalidateValuesReadCache(spreadsheetId, `update:${range}`, getWorksheetNameFromRange(range));
 }
 
 async function clearValues(spreadsheetId: string, range: string) {
@@ -1931,7 +2313,7 @@ async function clearValues(spreadsheetId: string, range: string) {
       body: JSON.stringify({}),
     },
   );
-  invalidateValuesReadCache(spreadsheetId, `clear:${range}`);
+  invalidateValuesReadCache(spreadsheetId, `clear:${range}`, getWorksheetNameFromRange(range));
 }
 
 async function batchUpdate(spreadsheetId: string, requests: Array<Record<string, unknown>>) {
@@ -1951,42 +2333,104 @@ function cloneSheetValues(values: unknown[][]) {
   return values.map((row) => [...row]);
 }
 
-function invalidateValuesReadCache(spreadsheetId: string, reason: string) {
+function invalidateValuesReadCache(
+  spreadsheetId: string,
+  reason: string,
+  worksheetName?: string | null,
+) {
   const prefix = `${spreadsheetId}::`;
+  const quotedWorksheetPrefix = worksheetName ? `${prefix}${quoteSheetName(worksheetName)}!` : "";
+  const rawWorksheetPrefix = worksheetName ? `${prefix}${worksheetName}!` : "";
   let removed = 0;
   for (const key of valuesReadCache.keys()) {
     if (!key.startsWith(prefix)) continue;
+    if (
+      worksheetName &&
+      !key.startsWith(quotedWorksheetPrefix) &&
+      !key.startsWith(rawWorksheetPrefix)
+    ) {
+      continue;
+    }
     valuesReadCache.delete(key);
     removed += 1;
   }
   for (const key of valuesReadPromises.keys()) {
-    if (key.startsWith(prefix)) valuesReadPromises.delete(key);
+    if (!key.startsWith(prefix)) continue;
+    if (
+      worksheetName &&
+      !key.startsWith(quotedWorksheetPrefix) &&
+      !key.startsWith(rawWorksheetPrefix)
+    ) {
+      continue;
+    }
+    valuesReadPromises.delete(key);
   }
   if (removed > 0) {
     logGoogleSheetsCache("values-cache-invalidated", {
       spreadsheetId,
       reason,
+      worksheetName,
       removed,
     });
   }
 }
 
+function getWorksheetNameFromRange(range: string) {
+  const quotedMatch = range.match(/^'((?:''|[^'])+)'!/);
+  if (quotedMatch) return quotedMatch[1].replace(/''/g, "'");
+  const rawMatch = range.match(/^([^!]+)!/);
+  return rawMatch?.[1] ?? null;
+}
+
 async function googleFetch(url: string, init: RequestInit = {}) {
   const accessToken = await getAccessToken();
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-      "content-type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
+  const maxAttempts = 3;
+  let response: Response | null = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    response = await fetch(url, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+        ...(init.headers ?? {}),
+      },
+    });
+
+    if (response.ok || !shouldRetryGoogleSheetsResponse(response) || attempt === maxAttempts) {
+      break;
+    }
+
+    const retryAfterSeconds = Number(response.headers.get("retry-after"));
+    const delayMs = Number.isFinite(retryAfterSeconds)
+      ? retryAfterSeconds * 1000
+      : 1000 * 2 ** (attempt - 1);
+    console.warn("[GoogleSheetsRetry]", "retrying-request", {
+      status: response.status,
+      attempt,
+      nextAttemptInMs: delayMs,
+      at: new Date().toISOString(),
+    });
+    await sleep(delayMs);
+  }
+
+  if (!response) throw new Error("Google Sheets request failed before a response was received.");
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Google Sheets request failed (${response.status}): ${body}`);
   }
   if (response.status === 204) return {};
   return response.json();
+}
+
+function shouldRetryGoogleSheetsResponse(response: Response) {
+  return response.status === 429 || response.status === 500 || response.status === 503;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function getAccessToken() {

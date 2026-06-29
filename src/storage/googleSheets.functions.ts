@@ -102,6 +102,170 @@ export const loadCreatorSourcingGoogleSheetsDatabase = createServerFn({ method: 
     }
   });
 
+export const loadCreatorOutreachBundle = createServerFn({ method: "POST" }).handler(async () => {
+  const {
+    diagnosticsFromError,
+    getGoogleSheetsServerStatus,
+    readCreatorOutreachBundleFromGoogleSheets,
+  } = await import("./googleSheets.server");
+
+  try {
+    const status = getGoogleSheetsServerStatus();
+    if (!status.configured) {
+      return {
+        ok: false,
+        campaignProfiles: [] as CampaignProfileRecord[],
+        outreachTemplates: [] as OutreachTemplateRecord[],
+        campaignMemoryCards: [] as CampaignMemoryCardRecord[],
+        status,
+      };
+    }
+
+    const bundle = await readCreatorOutreachBundleFromGoogleSheets();
+    return {
+      ok: true,
+      ...bundle,
+      status,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      campaignProfiles: [] as CampaignProfileRecord[],
+      outreachTemplates: [] as OutreachTemplateRecord[],
+      campaignMemoryCards: [] as CampaignMemoryCardRecord[],
+      status: {
+        source: "googleSheets" as const,
+        shared: true,
+        configured: true,
+        diagnostics: diagnosticsFromError(error),
+      },
+    };
+  }
+});
+
+export const loadActiveCampaignsBundle = createServerFn({ method: "POST" }).handler(async () => {
+  const {
+    diagnosticsFromError,
+    getGoogleSheetsServerStatus,
+    readActiveCampaignsBundleFromGoogleSheets,
+  } = await import("./googleSheets.server");
+
+  try {
+    const status = getGoogleSheetsServerStatus();
+    if (!status.configured) {
+      return {
+        ok: false,
+        campaignProfiles: [] as CampaignProfileRecord[],
+        activeCampaignCreators: [] as ActiveCampaignCreatorRecord[],
+        status,
+      };
+    }
+
+    const bundle = await readActiveCampaignsBundleFromGoogleSheets();
+    return {
+      ok: true,
+      ...bundle,
+      status,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      campaignProfiles: [] as CampaignProfileRecord[],
+      activeCampaignCreators: [] as ActiveCampaignCreatorRecord[],
+      status: {
+        source: "googleSheets" as const,
+        shared: true,
+        configured: true,
+        diagnostics: diagnosticsFromError(error),
+      },
+    };
+  }
+});
+
+export const loadPerformanceBundle = createServerFn({ method: "POST" }).handler(async () => {
+  const {
+    diagnosticsFromError,
+    getGoogleSheetsServerStatus,
+    readPerformanceBundleFromGoogleSheets,
+  } = await import("./googleSheets.server");
+
+  try {
+    const status = getGoogleSheetsServerStatus();
+    if (!status.configured) {
+      return {
+        ok: false,
+        campaignProfiles: [] as CampaignProfileRecord[],
+        performanceBenchmarks: [] as PerformanceBenchmarkRecord[],
+        performanceWeeklyInputs: [] as PerformanceWeeklyInputRecord[],
+        activeCampaignCreators: [] as ActiveCampaignCreatorRecord[],
+        appSettings: [] as AppSettingRecord[],
+        status,
+      };
+    }
+
+    const bundle = await readPerformanceBundleFromGoogleSheets();
+    return {
+      ok: true,
+      ...bundle,
+      status,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      campaignProfiles: [] as CampaignProfileRecord[],
+      performanceBenchmarks: [] as PerformanceBenchmarkRecord[],
+      performanceWeeklyInputs: [] as PerformanceWeeklyInputRecord[],
+      activeCampaignCreators: [] as ActiveCampaignCreatorRecord[],
+      appSettings: [] as AppSettingRecord[],
+      status: {
+        source: "googleSheets" as const,
+        shared: true,
+        configured: true,
+        diagnostics: diagnosticsFromError(error),
+      },
+    };
+  }
+});
+
+export const loadPromptVaultBundle = createServerFn({ method: "POST" }).handler(async () => {
+  const {
+    diagnosticsFromError,
+    getGoogleSheetsServerStatus,
+    readPromptVaultBundleFromGoogleSheets,
+  } = await import("./googleSheets.server");
+
+  try {
+    const status = getGoogleSheetsServerStatus();
+    if (!status.configured) {
+      return {
+        ok: false,
+        campaignProfiles: [] as CampaignProfileRecord[],
+        campaignPromptVault: [] as CampaignPromptVaultRecord[],
+        status,
+      };
+    }
+
+    const bundle = await readPromptVaultBundleFromGoogleSheets();
+    return {
+      ok: true,
+      ...bundle,
+      status,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      campaignProfiles: [] as CampaignProfileRecord[],
+      campaignPromptVault: [] as CampaignPromptVaultRecord[],
+      status: {
+        source: "googleSheets" as const,
+        shared: true,
+        configured: true,
+        diagnostics: diagnosticsFromError(error),
+      },
+    };
+  }
+});
+
 export const listCampaignProfileRecords = createServerFn({ method: "POST" }).handler(async () => {
   const { diagnosticsFromError, getGoogleSheetsServerStatus, listCampaignProfilesInGoogleSheets } =
     await import("./googleSheets.server");
@@ -177,6 +341,232 @@ export const migrateAgencyDatabaseContactsRecord = createServerFn({ method: "POS
     }
   },
 );
+
+export const listAgencyDatabaseRecords = createServerFn({ method: "POST" }).handler(async () => {
+  const { diagnosticsFromError, getGoogleSheetsServerStatus, listAgencyDatabaseInGoogleSheets } =
+    await import("./googleSheets.server");
+
+  try {
+    const status = getGoogleSheetsServerStatus();
+    if (!status.configured) {
+      return {
+        ok: false,
+        records: [] as AgencyDatabaseRecord[],
+        status,
+      };
+    }
+
+    const result = await listAgencyDatabaseInGoogleSheets();
+    return {
+      ok: true,
+      records: result.records,
+      status,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      records: [] as AgencyDatabaseRecord[],
+      status: {
+        source: "googleSheets" as const,
+        shared: true,
+        configured: true,
+        diagnostics: diagnosticsFromError(error),
+      },
+    };
+  }
+});
+
+export const saveAgencyDatabaseRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertAgencyDatabaseInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as AgencyDatabaseRecord[],
+          status,
+        };
+      }
+
+      const result = await upsertAgencyDatabaseInGoogleSheets(data.record as AgencyDatabaseRecord);
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as AgencyDatabaseRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const deleteAgencyDatabaseRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ recordId: z.string() }))
+  .handler(async ({ data }) => {
+    const {
+      deleteAgencyDatabaseInGoogleSheets,
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as AgencyDatabaseRecord[],
+          status,
+        };
+      }
+
+      const result = await deleteAgencyDatabaseInGoogleSheets(data.recordId);
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as AgencyDatabaseRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const listCreatorDatabaseRecords = createServerFn({ method: "POST" }).handler(async () => {
+  const { diagnosticsFromError, getGoogleSheetsServerStatus, listCreatorDatabaseInGoogleSheets } =
+    await import("./googleSheets.server");
+
+  try {
+    const status = getGoogleSheetsServerStatus();
+    if (!status.configured) {
+      return {
+        ok: false,
+        records: [] as CreatorDatabaseRecord[],
+        status,
+      };
+    }
+
+    const result = await listCreatorDatabaseInGoogleSheets();
+    return {
+      ok: true,
+      records: result.records,
+      status,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      records: [] as CreatorDatabaseRecord[],
+      status: {
+        source: "googleSheets" as const,
+        shared: true,
+        configured: true,
+        diagnostics: diagnosticsFromError(error),
+      },
+    };
+  }
+});
+
+export const saveCreatorDatabaseRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertCreatorDatabaseInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as CreatorDatabaseRecord[],
+          status,
+        };
+      }
+
+      const result = await upsertCreatorDatabaseInGoogleSheets(
+        data.record as CreatorDatabaseRecord,
+      );
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CreatorDatabaseRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const deleteCreatorDatabaseRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ recordId: z.string() }))
+  .handler(async ({ data }) => {
+    const {
+      deleteCreatorDatabaseInGoogleSheets,
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as CreatorDatabaseRecord[],
+          status,
+        };
+      }
+
+      const result = await deleteCreatorDatabaseInGoogleSheets(data.recordId);
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CreatorDatabaseRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
 
 export const saveGoogleSheetsDatabase = createServerFn({ method: "POST" })
   .inputValidator(z.object({ database: z.any() }))
