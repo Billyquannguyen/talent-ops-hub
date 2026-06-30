@@ -6,8 +6,6 @@ export const centralWorksheetNames = [
   "OutreachTemplates",
   "CampaignMemoryCards",
   "ActiveCampaignCreators",
-  "PerformanceBenchmarks",
-  "PerformanceWeeklyInputs",
   "AgencyDatabase",
   "CreatorDatabase",
   "EmployeeProfiles",
@@ -80,39 +78,6 @@ export type ActiveCampaignCreatorRecord = {
   updatedAt: string;
 };
 
-export type PerformanceBenchmarkRecord = {
-  benchmarkId: string;
-  campaignId: string;
-  includeInPerformance: string;
-  teamSize: number;
-  targetDailyOutreach: number;
-  teamOutreachExcludingMe: number;
-  teamSubmissionsExcludingMe: number;
-  teamApprovalsExcludingMe: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type PerformanceWeeklyInputRecord = {
-  inputId: string;
-  month: string;
-  weekStart: string;
-  campaignId: string;
-  myOutreachVolume: number;
-  myCreatorSubmissions: number;
-  myCreatorApprovals: number;
-  myCampaignExecutions: number;
-  expectedProfit: number;
-  actualProfit: number;
-  outreachScore: number;
-  submissionScore: number;
-  approvalScore: number;
-  executionScore: number;
-  weeklyScore: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type AgencyDatabaseRecord = {
   id: string;
   agencyName: string;
@@ -157,19 +122,10 @@ export type CreatorDatabaseRecord = {
 export type EmployeeProfileRecord = {
   profileId: string;
   displayName: string;
-  role: string;
   avatarUrl: string;
-  bio: string;
-  joiningDate: string;
-  timezone: string;
-  primaryMarkets: string;
-  responsibilities: string;
-  workEmail: string;
-  phone: string;
-  lineId: string;
-  telegram: string;
-  preferredContactMethod: string;
-  accountsJson: string;
+  monthlySalary: number;
+  currency: string;
+  notes: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -201,8 +157,6 @@ export type CentralAppDatabase = {
     OutreachTemplates: OutreachTemplateRecord[];
     CampaignMemoryCards: CampaignMemoryCardRecord[];
     ActiveCampaignCreators: ActiveCampaignCreatorRecord[];
-    PerformanceBenchmarks: PerformanceBenchmarkRecord[];
-    PerformanceWeeklyInputs: PerformanceWeeklyInputRecord[];
     AgencyDatabase: AgencyDatabaseRecord[];
     CreatorDatabase: CreatorDatabaseRecord[];
     EmployeeProfiles: EmployeeProfileRecord[];
@@ -277,37 +231,6 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "createdAt",
     "updatedAt",
   ],
-  PerformanceBenchmarks: [
-    "benchmarkId",
-    "campaignId",
-    "includeInPerformance",
-    "teamSize",
-    "targetDailyOutreach",
-    "teamOutreachExcludingMe",
-    "teamSubmissionsExcludingMe",
-    "teamApprovalsExcludingMe",
-    "createdAt",
-    "updatedAt",
-  ],
-  PerformanceWeeklyInputs: [
-    "inputId",
-    "month",
-    "weekStart",
-    "campaignId",
-    "myOutreachVolume",
-    "myCreatorSubmissions",
-    "myCreatorApprovals",
-    "myCampaignExecutions",
-    "expectedProfit",
-    "actualProfit",
-    "outreachScore",
-    "submissionScore",
-    "approvalScore",
-    "executionScore",
-    "weeklyScore",
-    "createdAt",
-    "updatedAt",
-  ],
   AgencyDatabase: [
     "id",
     "agencyName",
@@ -350,19 +273,10 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
   EmployeeProfiles: [
     "profileId",
     "displayName",
-    "role",
     "avatarUrl",
-    "bio",
-    "joiningDate",
-    "timezone",
-    "primaryMarkets",
-    "responsibilities",
-    "workEmail",
-    "phone",
-    "lineId",
-    "telegram",
-    "preferredContactMethod",
-    "accountsJson",
+    "monthlySalary",
+    "currency",
+    "notes",
     "createdAt",
     "updatedAt",
   ],
@@ -400,26 +314,6 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   internalQuote: ["internal quote", "cost", "internal_quote"],
   externalQuote: ["external quote", "price", "external_quote"],
   profitMargin: ["profit margin", "margin", "profit_margin"],
-  benchmarkId: ["id", "benchmark id", "benchmark_id"],
-  includeInPerformance: ["include in performance", "include_in_performance", "performance enabled"],
-  teamSize: ["team size", "team_size", "members", "number of members"],
-  targetDailyOutreach: ["target daily outreach", "target outreach", "target_daily_outreach"],
-  teamOutreachExcludingMe: ["team outreach excluding me", "team outreach"],
-  teamSubmissionsExcludingMe: ["team submissions excluding me", "team submissions"],
-  teamApprovalsExcludingMe: ["team approvals excluding me", "team approvals"],
-  inputId: ["id", "input id", "input_id"],
-  weekStart: ["week start", "week_start"],
-  myOutreachVolume: ["my outreach volume", "my outreach"],
-  myCreatorSubmissions: ["my creator submissions", "my submissions"],
-  myCreatorApprovals: ["my creator approvals", "my approvals"],
-  myCampaignExecutions: ["my campaign executions", "my executions"],
-  expectedProfit: ["expected profit", "expected_profit"],
-  actualProfit: ["actual profit", "actual_profit"],
-  outreachScore: ["outreach score", "outreach_score"],
-  submissionScore: ["submission score", "submission_score"],
-  approvalScore: ["approval score", "approval_score"],
-  executionScore: ["execution score", "execution_score"],
-  weeklyScore: ["weekly score", "weekly_score", "snapshot score"],
   agencyName: ["agency name", "agency_name"],
   contactName: ["contact name", "contact_name"],
   contactRole: ["contact role", "role", "contact_role"],
@@ -431,15 +325,7 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   input: ["input", "prompt input", "source input", "attachment input", "context input"],
   displayName: ["display name", "name", "display_name"],
   avatarUrl: ["avatar url", "avatar", "avatar_url"],
-  joiningDate: ["joining date", "start date", "joining_date"],
-  primaryMarkets: ["primary markets", "markets", "primary_markets"],
-  responsibilities: ["main responsibilities", "responsibilities"],
-  preferredContactMethod: [
-    "preferred contact method",
-    "preferred contact",
-    "preferred_contact_method",
-  ],
-  accountsJson: ["accounts", "accounts json", "accounts_json", "launchpad links"],
+  monthlySalary: ["monthly salary", "salary", "monthly_salary"],
   settingKey: ["setting key", "key", "setting_key"],
   settingValue: ["setting value", "value", "setting_value"],
 };
@@ -453,8 +339,6 @@ export function createEmptyCentralDatabase(): CentralAppDatabase {
       OutreachTemplates: [],
       CampaignMemoryCards: [],
       ActiveCampaignCreators: [],
-      PerformanceBenchmarks: [],
-      PerformanceWeeklyInputs: [],
       AgencyDatabase: [],
       CreatorDatabase: [],
       EmployeeProfiles: [],

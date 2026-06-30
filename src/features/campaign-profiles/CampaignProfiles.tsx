@@ -1,12 +1,22 @@
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { BadgeDollarSign, CalendarDays, Pencil, Plus, TrendingUp, Trash2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { TopBar } from "@/components/TopBar";
+import { listEmployeeProfilesFromGoogleSheetsOnly } from "@/storage/appRepository";
+import {
+  employeeProfileFromRecord,
+  employeeProfileRecordId,
+  loadEmployeeProfile,
+  saveEmployeeProfile,
+} from "@/features/employee-profile/storage";
+import type { EmployeeProfile } from "@/features/employee-profile/types";
 import {
   campaignMemoryLanguages,
+  calculateCreatorFinancials,
   createCampaign,
   createCampaignMemoryCard,
+  loadActiveCampaignRegistryFromGoogleSheetsOnly,
   loadCampaignRegistry,
   saveCampaignRegistry,
   type GlobalCampaign,
@@ -34,6 +44,10 @@ export function CampaignProfiles() {
   const [loaded, setLoaded] = useState(false);
   const [registry, setRegistry] = useState<GlobalCampaignRegistry>(() => loadCampaignRegistry());
   const [editingDraft, setEditingDraft] = useState<CampaignDraft | null>(null);
+  const [roiMonth, setRoiMonth] = useState(() => getCurrentMonthValue());
+  const [profile, setProfile] = useState<EmployeeProfile>(() => loadEmployeeProfile());
+  const [roiStatus, setRoiStatus] = useState("Loading ROI data...");
+  const skipNextRegistrySave = useRef(false);
 
   useEffect(() => {
     setRegistry(loadCampaignRegistry());
@@ -41,9 +55,55 @@ export function CampaignProfiles() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadSharedRoiData() {
+      try {
+        const [nextRegistry, profileRecords] = await Promise.all([
+          loadActiveCampaignRegistryFromGoogleSheetsOnly({ reason: "campaign-profiles:roi" }),
+          listEmployeeProfilesFromGoogleSheetsOnly(),
+        ]);
+        if (cancelled) return;
+
+        const profileRecord =
+          profileRecords.find((record) => record.profileId === employeeProfileRecordId) ??
+          profileRecords[0];
+        if (profileRecord) {
+          const nextProfile = employeeProfileFromRecord(profileRecord);
+          setProfile(nextProfile);
+          saveEmployeeProfile(nextProfile);
+        }
+
+        skipNextRegistrySave.current = true;
+        setRegistry(nextRegistry);
+        setRoiStatus("ROI data loaded from Katlas Buddy Database");
+      } catch (error) {
+        if (cancelled) return;
+        setRoiStatus(
+          error instanceof Error
+            ? error.message
+            : "Shared ROI data unavailable. Showing local cached data.",
+        );
+      }
+    }
+
+    void loadSharedRoiData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!loaded) return;
+    if (skipNextRegistrySave.current) {
+      skipNextRegistrySave.current = false;
+      return;
+    }
     saveCampaignRegistry(registry);
   }, [loaded, registry]);
+
+  const monthlyRoi = calculateMonthlyRoi(registry, roiMonth, profile);
 
   function saveCampaign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -131,6 +191,75 @@ export function CampaignProfiles() {
             </div>
           </div>
         </section>
+
+        <Panel title="My Monthly ROI" icon={TrendingUp}>
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+            <div>
+              <p className="text-sm font-medium">Monthly ROI</p>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
+                Based on completed Active Campaign creator records for the selected month.
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">{roiStatus}</p>
+            </div>
+            <label className="block w-full max-w-xs">
+              <span className="text-xs font-medium text-muted-foreground">Month</span>
+              <div className="mt-1 flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3">
+                <CalendarDays className="size-4 text-muted-foreground" />
+                <input
+                  type="month"
+                  value={roiMonth}
+                  onChange={(event) => setRoiMonth(event.target.value)}
+                  className="w-full bg-transparent text-sm outline-none"
+                />
+              </div>
+            </label>
+          </div>
+
+          <div className="mt-5 rounded-xl border border-border bg-background p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">ROI</p>
+                {monthlyRoi.hasSalary ? (
+                  <p className="mt-2 text-4xl font-semibold tracking-tight">
+                    {formatPercent(monthlyRoi.roi)}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xl font-semibold">Salary not configured.</p>
+                )}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[560px]">
+                <RoiMetric
+                  label="Monthly Revenue"
+                  value={formatCurrency(monthlyRoi.monthlyRevenue, profile.currency)}
+                />
+                <RoiMetric
+                  label="Monthly Profit"
+                  value={formatCurrency(monthlyRoi.monthlyProfit, profile.currency)}
+                />
+                <RoiMetric
+                  label="Monthly Salary"
+                  value={
+                    monthlyRoi.hasSalary
+                      ? formatCurrency(profile.monthlySalary, profile.currency)
+                      : "Not set"
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${monthlyRoi.progressWidth}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {monthlyRoi.completedCreators.toLocaleString()} completed creator records included.
+              </p>
+            </div>
+          </div>
+        </Panel>
 
         <Panel title="Campaign List" icon={Pencil}>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
@@ -483,6 +612,18 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function RoiMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <BadgeDollarSign className="size-3.5" />
+        {label}
+      </div>
+      <p className="mt-2 text-lg font-semibold">{value}</p>
+    </div>
+  );
+}
+
 function toDraft(campaign: GlobalCampaign): CampaignDraft {
   return {
     id: campaign.id,
@@ -491,4 +632,51 @@ function toDraft(campaign: GlobalCampaign): CampaignDraft {
     preferredLanguages: campaign.preferredLanguages,
     memoryCards: campaign.memoryCards,
   };
+}
+
+function calculateMonthlyRoi(
+  registry: GlobalCampaignRegistry,
+  month: string,
+  profile: EmployeeProfile,
+) {
+  const completedCreators = registry.creatorRecords.filter((record) => {
+    const financials = calculateCreatorFinancials(record);
+    return record.month === month && record.status === "Completed" && financials.profit > 0;
+  });
+  const monthlyRevenue = completedCreators.reduce((sum, record) => sum + record.externalQuote, 0);
+  const monthlyProfit = completedCreators.reduce(
+    (sum, record) => sum + calculateCreatorFinancials(record).profit,
+    0,
+  );
+  const hasSalary = profile.monthlySalary > 0;
+  const roi = hasSalary ? (monthlyProfit / profile.monthlySalary) * 100 : 0;
+
+  return {
+    monthlyRevenue,
+    monthlyProfit,
+    completedCreators: completedCreators.length,
+    hasSalary,
+    roi,
+    progressWidth: hasSalary ? Math.max(0, Math.min(100, roi)) : 0,
+  };
+}
+
+function getCurrentMonthValue() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function formatCurrency(value: number, currency: string) {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency || "USD",
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `${currency || "USD"} ${Math.round(value).toLocaleString()}`;
+  }
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value).toLocaleString()}%`;
 }

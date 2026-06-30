@@ -50,22 +50,19 @@ function normalizeEmployeeProfileRecord(record: EmployeeProfileRecord): Employee
   return {
     profileId: stringValue(record.profileId) || "employee-profile-default",
     displayName: stringValue(record.displayName),
-    role: stringValue(record.role),
     avatarUrl: stringValue(record.avatarUrl),
-    bio: stringValue(record.bio),
-    joiningDate: stringValue(record.joiningDate),
-    timezone: stringValue(record.timezone),
-    primaryMarkets: stringValue(record.primaryMarkets),
-    responsibilities: stringValue(record.responsibilities),
-    workEmail: stringValue(record.workEmail),
-    phone: stringValue(record.phone),
-    lineId: stringValue(record.lineId),
-    telegram: stringValue(record.telegram),
-    preferredContactMethod: stringValue(record.preferredContactMethod),
-    accountsJson: stringValue(record.accountsJson) || "[]",
+    monthlySalary: numberValue(record.monthlySalary),
+    currency: stringValue(record.currency) || "USD",
+    notes: stringValue(record.notes),
     createdAt,
     updatedAt: stringValue(record.updatedAt) || createdAt,
   };
+}
+
+function numberValue(value: unknown): number {
+  const parsed =
+    typeof value === "number" ? value : Number(String(value ?? "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function stringValue(value: unknown): string {

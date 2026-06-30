@@ -10,8 +10,6 @@ import {
   type CreatorDatabaseRecord,
   type EmployeeProfileRecord,
   type OutreachTemplateRecord,
-  type PerformanceBenchmarkRecord,
-  type PerformanceWeeklyInputRecord,
   type SourcingTemplateRecord,
   type StorageDiagnostic,
 } from "./schema";
@@ -21,7 +19,6 @@ export const centralLocalStorageKey = "katlas-buddy-central-database-v1";
 const legacyCampaignRegistryStorageKey = "katlas-global-campaign-registry-v1";
 const legacySourcingStorageKey = "katlas-creator-sourcing-projects-v1";
 const legacyOutreachStorageKey = "katlas-buddy-database-v1";
-const legacyPerformanceStorageKey = "katlas-employee-performance-tracking-v1";
 
 export type LocalStorageLoadResult = {
   database: CentralAppDatabase;
@@ -76,7 +73,6 @@ function createLegacyFallback(message: string): LocalStorageLoadResult {
   mergeLegacyCampaignRegistry(database, now);
   mergeLegacySourcingTemplates(database, now);
   mergeLegacyOutreachTemplates(database, now);
-  mergeLegacyPerformance(database, now);
 
   return {
     database: normalizeCentralDatabase(database),
@@ -240,75 +236,6 @@ function mergeLegacyOutreachTemplates(database: CentralAppDatabase, now: string)
   }
 }
 
-function mergeLegacyPerformance(database: CentralAppDatabase, now: string) {
-  const legacy = readJson(legacyPerformanceStorageKey);
-  const state = isRecord(legacy) ? legacy : {};
-  const campaigns = Array.isArray(state.campaigns) ? state.campaigns : [];
-  upsertSetting(
-    database,
-    "performance.monthlyProfitKpi",
-    String(numberValue(state.monthlyProfitKpi)),
-    now,
-  );
-  upsertSetting(
-    database,
-    "performance.workingDays",
-    String(numberValue(state.workingDays) || 5),
-    now,
-  );
-
-  for (const value of campaigns) {
-    const campaign = isRecord(value) ? value : {};
-    const campaignName = stringValue(campaign.campaignName);
-    if (!campaignName.trim()) continue;
-    const campaignId =
-      stringValue(campaign.campaignId) || stringValue(campaign.id) || createId("campaign");
-    ensureCampaign(database, {
-      campaignId,
-      campaignName,
-      campaignCode: createCampaignCode(campaignName),
-      country: "",
-      preferredLanguages: "",
-      status: "Active",
-      createdAt: now,
-      updatedAt: stringValue(state.updatedAt) || now,
-    });
-
-    database.worksheets.PerformanceBenchmarks.push({
-      benchmarkId: stringValue(campaign.benchmarkId) || createId("benchmark"),
-      campaignId,
-      includeInPerformance: stringValue(campaign.includeInPerformance) || "TRUE",
-      teamSize: numberValue(campaign.teamSize) || 1,
-      targetDailyOutreach: numberValue(campaign.targetDailyOutreachVolume) || 25,
-      teamOutreachExcludingMe: numberValue(campaign.teamOutreachVolumeExcludingMe),
-      teamSubmissionsExcludingMe: numberValue(campaign.teamSubmissionsExcludingMe),
-      teamApprovalsExcludingMe: numberValue(campaign.teamApprovalsExcludingMe),
-      createdAt: now,
-      updatedAt: stringValue(state.updatedAt) || now,
-    });
-
-    database.worksheets.PerformanceWeeklyInputs.push({
-      inputId: stringValue(campaign.inputId) || createId("weekly-input"),
-      month: stringValue(campaign.month) || stringValue(campaign.weekStart).slice(0, 7),
-      weekStart: stringValue(campaign.weekStart),
-      campaignId,
-      myOutreachVolume: numberValue(campaign.myOutreachVolume),
-      myCreatorSubmissions: numberValue(campaign.myCreatorSubmissions),
-      myCreatorApprovals: numberValue(campaign.myCreatorApprovals),
-      myCampaignExecutions: numberValue(campaign.myCampaignExecutions),
-      expectedProfit: numberValue(campaign.expectedProfit),
-      actualProfit: numberValue(campaign.actualProfit),
-      outreachScore: numberValue(campaign.outreachScore),
-      submissionScore: numberValue(campaign.submissionScore),
-      approvalScore: numberValue(campaign.approvalScore),
-      executionScore: numberValue(campaign.executionScore),
-      weeklyScore: numberValue(campaign.weeklyScore),
-      createdAt: now,
-      updatedAt: stringValue(state.updatedAt) || now,
-    });
-  }
-}
-
 function normalizeCentralDatabase(value: unknown): CentralAppDatabase {
   const source = isRecord(value) ? value : {};
   const worksheets = isRecord(source.worksheets) ? source.worksheets : {};
@@ -323,14 +250,6 @@ function normalizeCentralDatabase(value: unknown): CentralAppDatabase {
       ActiveCampaignCreators: normalizeArray(
         worksheets.ActiveCampaignCreators,
         normalizeActiveCampaignCreator,
-      ),
-      PerformanceBenchmarks: normalizeArray(
-        worksheets.PerformanceBenchmarks,
-        normalizePerformanceBenchmark,
-      ),
-      PerformanceWeeklyInputs: normalizeArray(
-        worksheets.PerformanceWeeklyInputs,
-        normalizePerformanceWeeklyInput,
       ),
       AgencyDatabase: normalizeArray(worksheets.AgencyDatabase, normalizeAgencyDatabaseRecord),
       CreatorDatabase: normalizeArray(worksheets.CreatorDatabase, normalizeCreatorDatabaseRecord),
@@ -455,49 +374,6 @@ function normalizeActiveCampaignCreator(value: unknown): ActiveCampaignCreatorRe
   };
 }
 
-function normalizePerformanceBenchmark(value: unknown): PerformanceBenchmarkRecord {
-  const row = isRecord(value) ? value : {};
-  const now = new Date().toISOString();
-  const createdAt = stringValue(row.createdAt) || now;
-  return {
-    benchmarkId: stringValue(row.benchmarkId) || stringValue(row.id) || createId("benchmark"),
-    campaignId: stringValue(row.campaignId),
-    includeInPerformance: normalizeBooleanString(row.includeInPerformance, true),
-    teamSize: numberValue(row.teamSize) || 1,
-    targetDailyOutreach: numberValue(row.targetDailyOutreach) || 25,
-    teamOutreachExcludingMe: numberValue(row.teamOutreachExcludingMe),
-    teamSubmissionsExcludingMe: numberValue(row.teamSubmissionsExcludingMe),
-    teamApprovalsExcludingMe: numberValue(row.teamApprovalsExcludingMe),
-    createdAt,
-    updatedAt: stringValue(row.updatedAt) || createdAt,
-  };
-}
-
-function normalizePerformanceWeeklyInput(value: unknown): PerformanceWeeklyInputRecord {
-  const row = isRecord(value) ? value : {};
-  const now = new Date().toISOString();
-  const createdAt = stringValue(row.createdAt) || now;
-  return {
-    inputId: stringValue(row.inputId) || stringValue(row.id) || createId("weekly-input"),
-    month: stringValue(row.month) || stringValue(row.weekStart).slice(0, 7),
-    weekStart: stringValue(row.weekStart),
-    campaignId: stringValue(row.campaignId),
-    myOutreachVolume: numberValue(row.myOutreachVolume),
-    myCreatorSubmissions: numberValue(row.myCreatorSubmissions),
-    myCreatorApprovals: numberValue(row.myCreatorApprovals),
-    myCampaignExecutions: numberValue(row.myCampaignExecutions),
-    expectedProfit: numberValue(row.expectedProfit),
-    actualProfit: numberValue(row.actualProfit),
-    outreachScore: numberValue(row.outreachScore),
-    submissionScore: numberValue(row.submissionScore),
-    approvalScore: numberValue(row.approvalScore),
-    executionScore: numberValue(row.executionScore),
-    weeklyScore: numberValue(row.weeklyScore),
-    createdAt,
-    updatedAt: stringValue(row.updatedAt) || createdAt,
-  };
-}
-
 function normalizeAgencyDatabaseRecord(value: unknown): AgencyDatabaseRecord {
   const row = isRecord(value) ? value : {};
   const now = new Date().toISOString();
@@ -556,19 +432,10 @@ function normalizeEmployeeProfileRecord(value: unknown): EmployeeProfileRecord {
   return {
     profileId: stringValue(row.profileId) || stringValue(row.id) || "employee-profile-default",
     displayName: stringValue(row.displayName),
-    role: stringValue(row.role),
     avatarUrl: stringValue(row.avatarUrl),
-    bio: stringValue(row.bio),
-    joiningDate: stringValue(row.joiningDate),
-    timezone: stringValue(row.timezone),
-    primaryMarkets: stringValue(row.primaryMarkets),
-    responsibilities: stringValue(row.responsibilities),
-    workEmail: stringValue(row.workEmail),
-    phone: stringValue(row.phone),
-    lineId: stringValue(row.lineId),
-    telegram: stringValue(row.telegram),
-    preferredContactMethod: stringValue(row.preferredContactMethod),
-    accountsJson: stringValue(row.accountsJson) || "[]",
+    monthlySalary: numberValue(row.monthlySalary),
+    currency: stringValue(row.currency) || "USD",
+    notes: stringValue(row.notes),
     createdAt,
     updatedAt: stringValue(row.updatedAt) || createdAt,
   };

@@ -18,8 +18,6 @@ import {
   type CreatorDatabaseRecord,
   type EmployeeProfileRecord,
   type OutreachTemplateRecord,
-  type PerformanceBenchmarkRecord,
-  type PerformanceWeeklyInputRecord,
   type SourcingTemplateRecord,
   type StorageDiagnostic,
 } from "./schema";
@@ -45,12 +43,6 @@ import {
   removeActiveCampaignCreatorRecord,
   upsertActiveCampaignCreatorRecord,
 } from "./activeCampaignCreators";
-import {
-  cleanupPerformanceBenchmarkRecords,
-  cleanupPerformanceWeeklyInputRecords,
-  upsertPerformanceBenchmarkRecord,
-  upsertPerformanceWeeklyInputRecord,
-} from "./performanceRecords";
 import { cleanupEmployeeProfileRecords, upsertEmployeeProfileRecord } from "./employeeProfiles";
 import {
   cleanupCampaignPromptVaultRecords,
@@ -95,8 +87,6 @@ const rowIdFields: Record<CentralWorksheetName, string> = {
   OutreachTemplates: "templateId",
   CampaignMemoryCards: "cardId",
   ActiveCampaignCreators: "recordId",
-  PerformanceBenchmarks: "benchmarkId",
-  PerformanceWeeklyInputs: "inputId",
   AgencyDatabase: "id",
   CreatorDatabase: "id",
   EmployeeProfiles: "profileId",
@@ -280,30 +270,6 @@ export async function readActiveCampaignsBundleFromGoogleSheets() {
   return {
     campaignProfiles: database.worksheets.CampaignProfiles,
     activeCampaignCreators: database.worksheets.ActiveCampaignCreators,
-  };
-}
-
-export async function readPerformanceBundleFromGoogleSheets() {
-  const config = assertConfigured();
-  const spreadsheetId = await resolveSpreadsheetId(config);
-  const database = await readWorksheetSubsetFromGoogleSheets(
-    spreadsheetId,
-    [
-      "CampaignProfiles",
-      "PerformanceBenchmarks",
-      "PerformanceWeeklyInputs",
-      "ActiveCampaignCreators",
-      "AppSettings",
-    ],
-    "employee-performance:bundle",
-  );
-
-  return {
-    campaignProfiles: database.worksheets.CampaignProfiles,
-    performanceBenchmarks: database.worksheets.PerformanceBenchmarks,
-    performanceWeeklyInputs: database.worksheets.PerformanceWeeklyInputs,
-    activeCampaignCreators: database.worksheets.ActiveCampaignCreators,
-    appSettings: database.worksheets.AppSettings,
   };
 }
 
@@ -1054,120 +1020,6 @@ export async function deleteActiveCampaignCreatorInGoogleSheets(recordId: string
   };
 }
 
-export async function listPerformanceBenchmarksInGoogleSheets() {
-  const config = assertConfigured();
-  const spreadsheetId = await resolveSpreadsheetId(config);
-  await ensureDatabaseShape(spreadsheetId);
-
-  const benchmarkRows = await readWorksheetRecordsWithRowNumbers<PerformanceBenchmarkRecord>(
-    spreadsheetId,
-    "PerformanceBenchmarks",
-  );
-  const cleanup = cleanupPerformanceBenchmarkRecords(benchmarkRows.rows.map((row) => row.record));
-  logPerformanceBenchmarkCleanupSummary("list-current-state", cleanup);
-
-  if (cleanup.removedCount > 0) {
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "PerformanceBenchmarks",
-      benchmarkRows,
-      cleanup.records,
-    );
-    invalidateDatabaseReadCache("performance-benchmark-list-cleanup");
-  }
-
-  return {
-    records: cleanup.records,
-  };
-}
-
-export async function upsertPerformanceBenchmarkInGoogleSheets(record: PerformanceBenchmarkRecord) {
-  const config = assertConfigured();
-  const spreadsheetId = await resolveSpreadsheetId(config);
-  await ensureDatabaseShape(spreadsheetId);
-
-  const benchmarkRows = await readWorksheetRecordsWithRowNumbers<PerformanceBenchmarkRecord>(
-    spreadsheetId,
-    "PerformanceBenchmarks",
-  );
-  const cleanup = upsertPerformanceBenchmarkRecord(
-    benchmarkRows.rows.map((row) => row.record),
-    record,
-  );
-  logPerformanceBenchmarkCleanupSummary("targeted-upsert", cleanup);
-
-  await writeCurrentStateWorksheetRows(
-    spreadsheetId,
-    "PerformanceBenchmarks",
-    benchmarkRows,
-    cleanup.records,
-  );
-
-  invalidateDatabaseReadCache("performance-benchmark-targeted-write");
-
-  return {
-    records: cleanup.records,
-  };
-}
-
-export async function listPerformanceWeeklyInputsInGoogleSheets() {
-  const config = assertConfigured();
-  const spreadsheetId = await resolveSpreadsheetId(config);
-  await ensureDatabaseShape(spreadsheetId);
-
-  const inputRows = await readWorksheetRecordsWithRowNumbers<PerformanceWeeklyInputRecord>(
-    spreadsheetId,
-    "PerformanceWeeklyInputs",
-  );
-  const cleanup = cleanupPerformanceWeeklyInputRecords(inputRows.rows.map((row) => row.record));
-  logPerformanceWeeklyInputCleanupSummary("list-snapshots", cleanup);
-
-  if (cleanup.removedCount > 0) {
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "PerformanceWeeklyInputs",
-      inputRows,
-      cleanup.records,
-    );
-    invalidateDatabaseReadCache("performance-weekly-input-list-cleanup");
-  }
-
-  return {
-    records: cleanup.records,
-  };
-}
-
-export async function upsertPerformanceWeeklyInputInGoogleSheets(
-  record: PerformanceWeeklyInputRecord,
-) {
-  const config = assertConfigured();
-  const spreadsheetId = await resolveSpreadsheetId(config);
-  await ensureDatabaseShape(spreadsheetId);
-
-  const inputRows = await readWorksheetRecordsWithRowNumbers<PerformanceWeeklyInputRecord>(
-    spreadsheetId,
-    "PerformanceWeeklyInputs",
-  );
-  const cleanup = upsertPerformanceWeeklyInputRecord(
-    inputRows.rows.map((row) => row.record),
-    record,
-  );
-  logPerformanceWeeklyInputCleanupSummary("targeted-upsert", cleanup);
-
-  await writeCurrentStateWorksheetRows(
-    spreadsheetId,
-    "PerformanceWeeklyInputs",
-    inputRows,
-    cleanup.records,
-  );
-
-  invalidateDatabaseReadCache("performance-weekly-input-targeted-write");
-
-  return {
-    records: cleanup.records,
-  };
-}
-
 export async function upsertAppSettingInGoogleSheets(record: AppSettingRecord) {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
@@ -1411,8 +1263,6 @@ export async function mergeCentralDatabaseIntoGoogleSheets(localDatabase: Centra
     OutreachTemplates: 0,
     CampaignMemoryCards: 0,
     ActiveCampaignCreators: 0,
-    PerformanceBenchmarks: 0,
-    PerformanceWeeklyInputs: 0,
     AgencyDatabase: 0,
     CreatorDatabase: 0,
     EmployeeProfiles: 0,
@@ -2016,38 +1866,6 @@ function logActiveCampaignCreatorCleanupSummary(
   });
 }
 
-function logPerformanceBenchmarkCleanupSummary(
-  reason: string,
-  cleanup: {
-    removedCount: number;
-    duplicateCampaignRows: number;
-  },
-) {
-  if (cleanup.removedCount === 0) return;
-  console.info("[PerformanceBenchmarksCleanup]", "delete-duplicate-campaign-rows", {
-    reason,
-    removedCount: cleanup.removedCount,
-    duplicateCampaignRows: cleanup.duplicateCampaignRows,
-    at: new Date().toISOString(),
-  });
-}
-
-function logPerformanceWeeklyInputCleanupSummary(
-  reason: string,
-  cleanup: {
-    removedCount: number;
-    duplicateSnapshotRows: number;
-  },
-) {
-  if (cleanup.removedCount === 0) return;
-  console.info("[PerformanceWeeklyInputsCleanup]", "delete-duplicate-snapshot-rows", {
-    reason,
-    removedCount: cleanup.removedCount,
-    duplicateSnapshotRows: cleanup.duplicateSnapshotRows,
-    at: new Date().toISOString(),
-  });
-}
-
 function logEmployeeProfileCleanupSummary(
   reason: string,
   cleanup: {
@@ -2569,37 +2387,6 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
           updatedAt: stringValue(row.updatedAt),
         })),
       ).records,
-      PerformanceBenchmarks: rowsBySheet.PerformanceBenchmarks.map((row) => ({
-        benchmarkId: stringValue(row.benchmarkId),
-        campaignId: stringValue(row.campaignId),
-        includeInPerformance: stringValue(row.includeInPerformance),
-        teamSize: numberValue(row.teamSize),
-        targetDailyOutreach: numberValue(row.targetDailyOutreach),
-        teamOutreachExcludingMe: numberValue(row.teamOutreachExcludingMe),
-        teamSubmissionsExcludingMe: numberValue(row.teamSubmissionsExcludingMe),
-        teamApprovalsExcludingMe: numberValue(row.teamApprovalsExcludingMe),
-        createdAt: stringValue(row.createdAt),
-        updatedAt: stringValue(row.updatedAt),
-      })),
-      PerformanceWeeklyInputs: rowsBySheet.PerformanceWeeklyInputs.map((row) => ({
-        inputId: stringValue(row.inputId),
-        month: stringValue(row.month),
-        weekStart: stringValue(row.weekStart),
-        campaignId: stringValue(row.campaignId),
-        myOutreachVolume: numberValue(row.myOutreachVolume),
-        myCreatorSubmissions: numberValue(row.myCreatorSubmissions),
-        myCreatorApprovals: numberValue(row.myCreatorApprovals),
-        myCampaignExecutions: numberValue(row.myCampaignExecutions),
-        expectedProfit: numberValue(row.expectedProfit),
-        actualProfit: numberValue(row.actualProfit),
-        outreachScore: numberValue(row.outreachScore),
-        submissionScore: numberValue(row.submissionScore),
-        approvalScore: numberValue(row.approvalScore),
-        executionScore: numberValue(row.executionScore),
-        weeklyScore: numberValue(row.weeklyScore),
-        createdAt: stringValue(row.createdAt),
-        updatedAt: stringValue(row.updatedAt),
-      })),
       AgencyDatabase: rowsBySheet.AgencyDatabase.map((row) => ({
         id: stringValue(row.id),
         agencyName: stringValue(row.agencyName),
@@ -2643,19 +2430,10 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         rowsBySheet.EmployeeProfiles.map((row) => ({
           profileId: stringValue(row.profileId) || "employee-profile-default",
           displayName: stringValue(row.displayName),
-          role: stringValue(row.role),
           avatarUrl: stringValue(row.avatarUrl),
-          bio: stringValue(row.bio),
-          joiningDate: stringValue(row.joiningDate),
-          timezone: stringValue(row.timezone),
-          primaryMarkets: stringValue(row.primaryMarkets),
-          responsibilities: stringValue(row.responsibilities),
-          workEmail: stringValue(row.workEmail),
-          phone: stringValue(row.phone),
-          lineId: stringValue(row.lineId),
-          telegram: stringValue(row.telegram),
-          preferredContactMethod: stringValue(row.preferredContactMethod),
-          accountsJson: stringValue(row.accountsJson) || "[]",
+          monthlySalary: numberValue(row.monthlySalary),
+          currency: stringValue(row.currency) || "USD",
+          notes: stringValue(row.notes),
           createdAt: stringValue(row.createdAt),
           updatedAt: stringValue(row.updatedAt),
         })),
@@ -2703,14 +2481,6 @@ function getRowsForWorksheet(
   database: CentralAppDatabase,
   worksheetName: "ActiveCampaignCreators",
 ): ActiveCampaignCreatorRecord[];
-function getRowsForWorksheet(
-  database: CentralAppDatabase,
-  worksheetName: "PerformanceBenchmarks",
-): PerformanceBenchmarkRecord[];
-function getRowsForWorksheet(
-  database: CentralAppDatabase,
-  worksheetName: "PerformanceWeeklyInputs",
-): PerformanceWeeklyInputRecord[];
 function getRowsForWorksheet(
   database: CentralAppDatabase,
   worksheetName: "AgencyDatabase",

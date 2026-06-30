@@ -16,7 +16,6 @@ import { Route as OutreachRouteImport } from './routes/outreach'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as EmployeeProfileRouteImport } from './routes/employee-profile'
-import { Route as EmployeePerformanceRouteImport } from './routes/employee-performance'
 import { Route as DealsRouteImport } from './routes/deals'
 import { Route as CreatorSourcingRouteImport } from './routes/creator-sourcing'
 import { Route as CreatorOutreachRouteImport } from './routes/creator-outreach'
@@ -65,11 +64,6 @@ const HelpRoute = HelpRouteImport.update({
 const EmployeeProfileRoute = EmployeeProfileRouteImport.update({
   id: '/employee-profile',
   path: '/employee-profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EmployeePerformanceRoute = EmployeePerformanceRouteImport.update({
-  id: '/employee-performance',
-  path: '/employee-performance',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DealsRoute = DealsRouteImport.update({
@@ -154,7 +148,6 @@ export interface FileRoutesByFullPath {
   '/creator-outreach': typeof CreatorOutreachRoute
   '/creator-sourcing': typeof CreatorSourcingRoute
   '/deals': typeof DealsRoute
-  '/employee-performance': typeof EmployeePerformanceRoute
   '/employee-profile': typeof EmployeeProfileRoute
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
@@ -177,7 +170,6 @@ export interface FileRoutesByTo {
   '/creator-outreach': typeof CreatorOutreachRoute
   '/creator-sourcing': typeof CreatorSourcingRoute
   '/deals': typeof DealsRoute
-  '/employee-performance': typeof EmployeePerformanceRoute
   '/employee-profile': typeof EmployeeProfileRoute
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
@@ -202,7 +194,6 @@ export interface FileRoutesById {
   '/creator-outreach': typeof CreatorOutreachRoute
   '/creator-sourcing': typeof CreatorSourcingRoute
   '/deals': typeof DealsRoute
-  '/employee-performance': typeof EmployeePerformanceRoute
   '/employee-profile': typeof EmployeeProfileRoute
   '/help': typeof HelpRoute
   '/inbox': typeof InboxRoute
@@ -228,7 +219,6 @@ export interface FileRouteTypes {
     | '/creator-outreach'
     | '/creator-sourcing'
     | '/deals'
-    | '/employee-performance'
     | '/employee-profile'
     | '/help'
     | '/inbox'
@@ -251,7 +241,6 @@ export interface FileRouteTypes {
     | '/creator-outreach'
     | '/creator-sourcing'
     | '/deals'
-    | '/employee-performance'
     | '/employee-profile'
     | '/help'
     | '/inbox'
@@ -275,7 +264,6 @@ export interface FileRouteTypes {
     | '/creator-outreach'
     | '/creator-sourcing'
     | '/deals'
-    | '/employee-performance'
     | '/employee-profile'
     | '/help'
     | '/inbox'
@@ -300,7 +288,6 @@ export interface RootRouteChildren {
   CreatorOutreachRoute: typeof CreatorOutreachRoute
   CreatorSourcingRoute: typeof CreatorSourcingRoute
   DealsRoute: typeof DealsRoute
-  EmployeePerformanceRoute: typeof EmployeePerformanceRoute
   EmployeeProfileRoute: typeof EmployeeProfileRoute
   HelpRoute: typeof HelpRoute
   InboxRoute: typeof InboxRoute
@@ -362,13 +349,6 @@ declare module '@tanstack/react-router' {
       path: '/employee-profile'
       fullPath: '/employee-profile'
       preLoaderRoute: typeof EmployeeProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/employee-performance': {
-      id: '/employee-performance'
-      path: '/employee-performance'
-      fullPath: '/employee-performance'
-      preLoaderRoute: typeof EmployeePerformanceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/deals': {
@@ -496,7 +476,6 @@ const rootRouteChildren: RootRouteChildren = {
   CreatorOutreachRoute: CreatorOutreachRoute,
   CreatorSourcingRoute: CreatorSourcingRoute,
   DealsRoute: DealsRoute,
-  EmployeePerformanceRoute: EmployeePerformanceRoute,
   EmployeeProfileRoute: EmployeeProfileRoute,
   HelpRoute: HelpRoute,
   InboxRoute: InboxRoute,

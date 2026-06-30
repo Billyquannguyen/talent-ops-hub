@@ -27,13 +27,10 @@ import {
   listCreatorDatabaseFromGoogleSheets,
   listEmployeeProfilesFromGoogleSheets,
   listOutreachTemplatesFromGoogleSheets,
-  listPerformanceBenchmarksFromGoogleSheets,
-  listPerformanceWeeklyInputsFromGoogleSheets,
   loadActiveCampaignsBundleFromGoogleSheets,
   loadCreatorOutreachBundleFromGoogleSheets,
   loadCreatorSourcingDatabaseFromGoogleSheets,
   loadDatabaseFromGoogleSheets,
-  loadPerformanceBundleFromGoogleSheets,
   loadPromptVaultBundleFromGoogleSheets,
   migrateAgencyDatabaseContactsInGoogleSheets,
   migrateDatabaseToGoogleSheets,
@@ -43,8 +40,6 @@ import {
   saveAppSettingToGoogleSheets,
   saveCampaignPromptVaultToGoogleSheets,
   saveCreatorDatabaseToGoogleSheets,
-  savePerformanceBenchmarkToGoogleSheets,
-  savePerformanceWeeklyInputToGoogleSheets,
   saveEmployeeProfileToGoogleSheets,
   saveSourcingTemplateToGoogleSheets,
   updateActiveCampaignCreatorInGoogleSheets,
@@ -58,7 +53,6 @@ import {
   type GoogleSheetsDatabaseResult,
   type MigrationReport,
   type OutreachTemplateCleanupReport,
-  type PerformanceBundleResult,
   type PromptVaultBundleResult,
   type SourcingTemplateCleanupReport,
 } from "./googleSheetsAdapter";
@@ -75,8 +69,6 @@ import {
   type CreatorDatabaseRecord,
   type EmployeeProfileRecord,
   type OutreachTemplateRecord,
-  type PerformanceBenchmarkRecord,
-  type PerformanceWeeklyInputRecord,
   type SourcingTemplateRecord,
   type StorageStatus,
 } from "./schema";
@@ -147,22 +139,6 @@ export async function loadActiveCampaignsBundleFromGoogleSheetsOnly(): Promise<A
   }
   rememberCampaignProfiles(result.campaignProfiles);
   rememberActiveCampaignCreators(result.activeCampaignCreators);
-  return result;
-}
-
-export async function loadPerformanceBundleFromGoogleSheetsOnly(): Promise<PerformanceBundleResult> {
-  console.info("[AppRepositoryGoogleSheets]", "load-performance-bundle-start", {
-    at: new Date().toISOString(),
-  });
-  const result = await loadPerformanceBundleFromGoogleSheets();
-  if (!result.ok) {
-    throw new Error(getStorageFailureMessage(result.status));
-  }
-  rememberCampaignProfiles(result.campaignProfiles);
-  rememberPerformanceBenchmarks(result.performanceBenchmarks);
-  rememberPerformanceWeeklyInputs(result.performanceWeeklyInputs);
-  rememberActiveCampaignCreators(result.activeCampaignCreators);
-  rememberAppSettings(result.appSettings);
   return result;
 }
 
@@ -654,69 +630,6 @@ export async function deleteActiveCampaignCreatorFromGoogleSheetsOnly(
   return result.records;
 }
 
-export async function listPerformanceBenchmarksFromGoogleSheetsOnly(): Promise<
-  PerformanceBenchmarkRecord[]
-> {
-  console.info("[AppRepositoryGoogleSheets]", "list-performance-benchmarks-start", {
-    at: new Date().toISOString(),
-  });
-  const result = await listPerformanceBenchmarksFromGoogleSheets();
-  if (!result.ok) {
-    throw new Error(getStorageFailureMessage(result.status));
-  }
-  rememberPerformanceBenchmarks(result.records);
-  return result.records;
-}
-
-export async function savePerformanceBenchmarkToGoogleSheetsOnly(
-  record: PerformanceBenchmarkRecord,
-): Promise<PerformanceBenchmarkRecord[]> {
-  console.info("[AppRepositoryGoogleSheets]", "save-performance-benchmark-start", {
-    benchmarkId: record.benchmarkId,
-    campaignId: record.campaignId,
-    at: new Date().toISOString(),
-  });
-  const result = await savePerformanceBenchmarkToGoogleSheets(record);
-  if (!result.ok) {
-    throw new Error(getStorageFailureMessage(result.status));
-  }
-  clearPrimaryDatabaseCache();
-  rememberPerformanceBenchmarks(result.records);
-  return result.records;
-}
-
-export async function listPerformanceWeeklyInputsFromGoogleSheetsOnly(): Promise<
-  PerformanceWeeklyInputRecord[]
-> {
-  console.info("[AppRepositoryGoogleSheets]", "list-performance-weekly-inputs-start", {
-    at: new Date().toISOString(),
-  });
-  const result = await listPerformanceWeeklyInputsFromGoogleSheets();
-  if (!result.ok) {
-    throw new Error(getStorageFailureMessage(result.status));
-  }
-  rememberPerformanceWeeklyInputs(result.records);
-  return result.records;
-}
-
-export async function savePerformanceWeeklyInputToGoogleSheetsOnly(
-  record: PerformanceWeeklyInputRecord,
-): Promise<PerformanceWeeklyInputRecord[]> {
-  console.info("[AppRepositoryGoogleSheets]", "save-performance-weekly-input-start", {
-    inputId: record.inputId,
-    campaignId: record.campaignId,
-    weekStart: record.weekStart,
-    at: new Date().toISOString(),
-  });
-  const result = await savePerformanceWeeklyInputToGoogleSheets(record);
-  if (!result.ok) {
-    throw new Error(getStorageFailureMessage(result.status));
-  }
-  clearPrimaryDatabaseCache();
-  rememberPerformanceWeeklyInputs(result.records);
-  return result.records;
-}
-
 export async function saveAppSettingToGoogleSheetsOnly(
   settingKey: string,
   settingValue: string,
@@ -1033,18 +946,6 @@ function rememberActiveCampaignCreators(records: ActiveCampaignCreatorRecord[]) 
   saveCentralDatabaseToLocalStorage(database);
 }
 
-function rememberPerformanceBenchmarks(records: PerformanceBenchmarkRecord[]) {
-  const database = loadAppDatabase();
-  database.worksheets.PerformanceBenchmarks = records;
-  saveCentralDatabaseToLocalStorage(database);
-}
-
-function rememberPerformanceWeeklyInputs(records: PerformanceWeeklyInputRecord[]) {
-  const database = loadAppDatabase();
-  database.worksheets.PerformanceWeeklyInputs = records;
-  saveCentralDatabaseToLocalStorage(database);
-}
-
 function rememberAppSettings(records: AppSettingRecord[]) {
   const database = loadAppDatabase();
   database.worksheets.AppSettings = records;
@@ -1161,26 +1062,6 @@ export function readActiveCampaignCreators(): ActiveCampaignCreatorRecord[] {
 export function writeActiveCampaignCreators(records: ActiveCampaignCreatorRecord[]) {
   updateDatabase((database) => {
     database.worksheets.ActiveCampaignCreators = records;
-  });
-}
-
-export function readPerformanceBenchmarks(): PerformanceBenchmarkRecord[] {
-  return loadAppDatabase().worksheets.PerformanceBenchmarks;
-}
-
-export function writePerformanceBenchmarks(records: PerformanceBenchmarkRecord[]) {
-  updateDatabase((database) => {
-    database.worksheets.PerformanceBenchmarks = records;
-  });
-}
-
-export function readPerformanceWeeklyInputs(): PerformanceWeeklyInputRecord[] {
-  return loadAppDatabase().worksheets.PerformanceWeeklyInputs;
-}
-
-export function writePerformanceWeeklyInputs(records: PerformanceWeeklyInputRecord[]) {
-  updateDatabase((database) => {
-    database.worksheets.PerformanceWeeklyInputs = records;
   });
 }
 

@@ -13,8 +13,6 @@ import {
   type CreatorDatabaseRecord,
   type EmployeeProfileRecord,
   type OutreachTemplateRecord,
-  type PerformanceBenchmarkRecord,
-  type PerformanceWeeklyInputRecord,
   type SourcingTemplateRecord,
   type StorageDiagnostic,
   type StorageStatus,
@@ -44,13 +42,10 @@ import {
   listCreatorDatabaseRecords,
   listEmployeeProfileRecords,
   listOutreachTemplateRecords,
-  listPerformanceBenchmarkRecords,
-  listPerformanceWeeklyInputRecords,
   loadActiveCampaignsBundle,
   loadCreatorOutreachBundle,
   loadCreatorSourcingGoogleSheetsDatabase,
   loadGoogleSheetsDatabase,
-  loadPerformanceBundle,
   loadPromptVaultBundle,
   migrateAgencyDatabaseContactsRecord,
   migrateLocalDatabaseToGoogleSheets,
@@ -61,8 +56,6 @@ import {
   saveCreatorDatabaseRecord,
   saveEmployeeProfileRecord,
   saveGoogleSheetsDatabase,
-  savePerformanceBenchmarkRecord,
-  savePerformanceWeeklyInputRecord,
   saveSourcingTemplateRecord,
   updateActiveCampaignCreatorRecord,
   updateCampaignMemoryCardRecord,
@@ -156,18 +149,6 @@ export type ActiveCampaignCreatorsResult = {
   status: StorageStatus;
 };
 
-export type PerformanceBenchmarksResult = {
-  ok: boolean;
-  records: PerformanceBenchmarkRecord[];
-  status: StorageStatus;
-};
-
-export type PerformanceWeeklyInputsResult = {
-  ok: boolean;
-  records: PerformanceWeeklyInputRecord[];
-  status: StorageStatus;
-};
-
 export type AppSettingsResult = {
   ok: boolean;
   records: AppSettingRecord[];
@@ -204,16 +185,6 @@ export type ActiveCampaignsBundleResult = {
   ok: boolean;
   campaignProfiles: CampaignProfileRecord[];
   activeCampaignCreators: ActiveCampaignCreatorRecord[];
-  status: StorageStatus;
-};
-
-export type PerformanceBundleResult = {
-  ok: boolean;
-  campaignProfiles: CampaignProfileRecord[];
-  performanceBenchmarks: PerformanceBenchmarkRecord[];
-  performanceWeeklyInputs: PerformanceWeeklyInputRecord[];
-  activeCampaignCreators: ActiveCampaignCreatorRecord[];
-  appSettings: AppSettingRecord[];
   status: StorageStatus;
 };
 
@@ -262,10 +233,6 @@ export async function loadCreatorOutreachBundleFromGoogleSheets(): Promise<Creat
 
 export async function loadActiveCampaignsBundleFromGoogleSheets(): Promise<ActiveCampaignsBundleResult> {
   return loadActiveCampaignsBundle();
-}
-
-export async function loadPerformanceBundleFromGoogleSheets(): Promise<PerformanceBundleResult> {
-  return loadPerformanceBundle();
 }
 
 export async function loadPromptVaultBundleFromGoogleSheets(): Promise<PromptVaultBundleResult> {
@@ -427,26 +394,6 @@ export async function deleteActiveCampaignCreatorFromGoogleSheets(
   recordId: string,
 ): Promise<ActiveCampaignCreatorsResult> {
   return deleteActiveCampaignCreatorRecord({ data: { recordId } });
-}
-
-export async function listPerformanceBenchmarksFromGoogleSheets(): Promise<PerformanceBenchmarksResult> {
-  return listPerformanceBenchmarkRecords();
-}
-
-export async function savePerformanceBenchmarkToGoogleSheets(
-  record: PerformanceBenchmarkRecord,
-): Promise<PerformanceBenchmarksResult> {
-  return savePerformanceBenchmarkRecord({ data: { record } });
-}
-
-export async function listPerformanceWeeklyInputsFromGoogleSheets(): Promise<PerformanceWeeklyInputsResult> {
-  return listPerformanceWeeklyInputRecords();
-}
-
-export async function savePerformanceWeeklyInputToGoogleSheets(
-  record: PerformanceWeeklyInputRecord,
-): Promise<PerformanceWeeklyInputsResult> {
-  return savePerformanceWeeklyInputRecord({ data: { record } });
 }
 
 export async function saveAppSettingToGoogleSheets(

@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, FileText, Gauge, MessageSquareText, Search } from "lucide-react";
+import { BriefcaseBusiness, FileText, MessageSquareText, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type WorkflowCard = {
@@ -45,14 +45,5 @@ export const workflowCards: WorkflowCard[] = [
     status: "ready",
     route: "/prompt-vault",
     icon: FileText,
-  },
-  {
-    id: "employee-performance",
-    title: "Employee Performance Tracking",
-    description:
-      "Calculate outreach, submission, approval, and profit scores against measurable KPI targets.",
-    status: "ready",
-    route: "/employee-performance",
-    icon: Gauge,
   },
 ];

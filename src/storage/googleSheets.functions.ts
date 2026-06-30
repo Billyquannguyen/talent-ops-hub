@@ -7,11 +7,10 @@ import type {
   AppSettingRecord,
   CampaignMemoryCardRecord,
   CampaignPromptVaultRecord,
+  CampaignProfileRecord,
   CentralAppDatabase,
   EmployeeProfileRecord,
   OutreachTemplateRecord,
-  PerformanceBenchmarkRecord,
-  PerformanceWeeklyInputRecord,
   SourcingTemplateRecord,
 } from "./schema";
 
@@ -172,51 +171,6 @@ export const loadActiveCampaignsBundle = createServerFn({ method: "POST" }).hand
       ok: false,
       campaignProfiles: [] as CampaignProfileRecord[],
       activeCampaignCreators: [] as ActiveCampaignCreatorRecord[],
-      status: {
-        source: "googleSheets" as const,
-        shared: true,
-        configured: true,
-        diagnostics: diagnosticsFromError(error),
-      },
-    };
-  }
-});
-
-export const loadPerformanceBundle = createServerFn({ method: "POST" }).handler(async () => {
-  const {
-    diagnosticsFromError,
-    getGoogleSheetsServerStatus,
-    readPerformanceBundleFromGoogleSheets,
-  } = await import("./googleSheets.server");
-
-  try {
-    const status = getGoogleSheetsServerStatus();
-    if (!status.configured) {
-      return {
-        ok: false,
-        campaignProfiles: [] as CampaignProfileRecord[],
-        performanceBenchmarks: [] as PerformanceBenchmarkRecord[],
-        performanceWeeklyInputs: [] as PerformanceWeeklyInputRecord[],
-        activeCampaignCreators: [] as ActiveCampaignCreatorRecord[],
-        appSettings: [] as AppSettingRecord[],
-        status,
-      };
-    }
-
-    const bundle = await readPerformanceBundleFromGoogleSheets();
-    return {
-      ok: true,
-      ...bundle,
-      status,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      campaignProfiles: [] as CampaignProfileRecord[],
-      performanceBenchmarks: [] as PerformanceBenchmarkRecord[],
-      performanceWeeklyInputs: [] as PerformanceWeeklyInputRecord[],
-      activeCampaignCreators: [] as ActiveCampaignCreatorRecord[],
-      appSettings: [] as AppSettingRecord[],
       status: {
         source: "googleSheets" as const,
         shared: true,
@@ -1364,166 +1318,6 @@ export const deleteActiveCampaignCreatorRecord = createServerFn({ method: "POST"
         ok: false,
         records: [],
         report: null,
-        status: {
-          source: "googleSheets" as const,
-          shared: true,
-          configured: true,
-          diagnostics: diagnosticsFromError(error),
-        },
-      };
-    }
-  });
-
-export const listPerformanceBenchmarkRecords = createServerFn({ method: "POST" }).handler(
-  async () => {
-    const {
-      diagnosticsFromError,
-      getGoogleSheetsServerStatus,
-      listPerformanceBenchmarksInGoogleSheets,
-    } = await import("./googleSheets.server");
-
-    try {
-      const status = getGoogleSheetsServerStatus();
-      if (!status.configured) {
-        return {
-          ok: false,
-          records: [],
-          status,
-        };
-      }
-
-      const result = await listPerformanceBenchmarksInGoogleSheets();
-      return {
-        ok: true,
-        records: result.records,
-        status,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        records: [],
-        status: {
-          source: "googleSheets" as const,
-          shared: true,
-          configured: true,
-          diagnostics: diagnosticsFromError(error),
-        },
-      };
-    }
-  },
-);
-
-export const savePerformanceBenchmarkRecord = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ record: z.any() }))
-  .handler(async ({ data }) => {
-    const {
-      diagnosticsFromError,
-      getGoogleSheetsServerStatus,
-      upsertPerformanceBenchmarkInGoogleSheets,
-    } = await import("./googleSheets.server");
-
-    try {
-      const status = getGoogleSheetsServerStatus();
-      if (!status.configured) {
-        return {
-          ok: false,
-          records: [],
-          status,
-        };
-      }
-
-      const result = await upsertPerformanceBenchmarkInGoogleSheets(
-        data.record as PerformanceBenchmarkRecord,
-      );
-      return {
-        ok: true,
-        records: result.records,
-        status,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        records: [],
-        status: {
-          source: "googleSheets" as const,
-          shared: true,
-          configured: true,
-          diagnostics: diagnosticsFromError(error),
-        },
-      };
-    }
-  });
-
-export const listPerformanceWeeklyInputRecords = createServerFn({ method: "POST" }).handler(
-  async () => {
-    const {
-      diagnosticsFromError,
-      getGoogleSheetsServerStatus,
-      listPerformanceWeeklyInputsInGoogleSheets,
-    } = await import("./googleSheets.server");
-
-    try {
-      const status = getGoogleSheetsServerStatus();
-      if (!status.configured) {
-        return {
-          ok: false,
-          records: [],
-          status,
-        };
-      }
-
-      const result = await listPerformanceWeeklyInputsInGoogleSheets();
-      return {
-        ok: true,
-        records: result.records,
-        status,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        records: [],
-        status: {
-          source: "googleSheets" as const,
-          shared: true,
-          configured: true,
-          diagnostics: diagnosticsFromError(error),
-        },
-      };
-    }
-  },
-);
-
-export const savePerformanceWeeklyInputRecord = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ record: z.any() }))
-  .handler(async ({ data }) => {
-    const {
-      diagnosticsFromError,
-      getGoogleSheetsServerStatus,
-      upsertPerformanceWeeklyInputInGoogleSheets,
-    } = await import("./googleSheets.server");
-
-    try {
-      const status = getGoogleSheetsServerStatus();
-      if (!status.configured) {
-        return {
-          ok: false,
-          records: [],
-          status,
-        };
-      }
-
-      const result = await upsertPerformanceWeeklyInputInGoogleSheets(
-        data.record as PerformanceWeeklyInputRecord,
-      );
-      return {
-        ok: true,
-        records: result.records,
-        status,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        records: [],
         status: {
           source: "googleSheets" as const,
           shared: true,
