@@ -278,13 +278,14 @@ export async function readPromptVaultBundleFromGoogleSheets() {
   const spreadsheetId = await resolveSpreadsheetId(config);
   const database = await readWorksheetSubsetFromGoogleSheets(
     spreadsheetId,
-    ["CampaignProfiles", "CampaignPromptVault"],
+    ["CampaignProfiles", "CampaignPromptVault", "AppSettings"],
     "prompt-vault:bundle",
   );
 
   return {
     campaignProfiles: database.worksheets.CampaignProfiles,
     campaignPromptVault: database.worksheets.CampaignPromptVault,
+    appSettings: database.worksheets.AppSettings,
   };
 }
 
@@ -2447,7 +2448,7 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
           title: stringValue(row.title),
           content: stringValue(row.content),
           input: stringValue(row.input),
-          notes: stringValue(row.notes),
+          files: stringValue(row.files) || stringValue(row.notes),
           createdAt: stringValue(row.createdAt),
           updatedAt: stringValue(row.updatedAt),
         })),

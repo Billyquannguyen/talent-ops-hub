@@ -152,6 +152,7 @@ export async function loadPromptVaultBundleFromGoogleSheetsOnly(): Promise<Promp
   }
   rememberCampaignProfiles(result.campaignProfiles);
   rememberCampaignPromptVault(result.campaignPromptVault);
+  rememberAppSettings(result.appSettings);
   return result;
 }
 

@@ -195,6 +195,7 @@ export const loadPromptVaultBundle = createServerFn({ method: "POST" }).handler(
         ok: false,
         campaignProfiles: [] as CampaignProfileRecord[],
         campaignPromptVault: [] as CampaignPromptVaultRecord[],
+        appSettings: [] as AppSettingRecord[],
         status,
       };
     }
@@ -210,6 +211,7 @@ export const loadPromptVaultBundle = createServerFn({ method: "POST" }).handler(
       ok: false,
       campaignProfiles: [] as CampaignProfileRecord[],
       campaignPromptVault: [] as CampaignPromptVaultRecord[],
+      appSettings: [] as AppSettingRecord[],
       status: {
         source: "googleSheets" as const,
         shared: true,

@@ -339,7 +339,7 @@ function normalizeCampaignPromptVaultRecord(value: unknown): CampaignPromptVault
     title: stringValue(row.title) || "Untitled Prompt",
     content: stringValue(row.content),
     input: stringValue(row.input),
-    notes: stringValue(row.notes),
+    files: stringValue(row.files) || stringValue(row.notes),
     createdAt,
     updatedAt: stringValue(row.updatedAt) || createdAt,
   };

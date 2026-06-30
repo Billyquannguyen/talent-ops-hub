@@ -192,6 +192,7 @@ export type PromptVaultBundleResult = {
   ok: boolean;
   campaignProfiles: CampaignProfileRecord[];
   campaignPromptVault: CampaignPromptVaultRecord[];
+  appSettings: AppSettingRecord[];
   status: StorageStatus;
 };
 

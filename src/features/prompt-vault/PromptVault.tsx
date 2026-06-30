@@ -7,17 +7,43 @@ import {
   deleteCampaignPromptVaultFromGoogleSheetsOnly,
   loadPromptVaultBundleFromGoogleSheetsOnly,
   saveCampaignPromptVaultToGoogleSheetsOnly,
+  saveAppSettingToGoogleSheetsOnly,
 } from "@/storage/appRepository";
 import type { CampaignProfileRecord, CampaignPromptVaultRecord } from "@/storage/schema";
 
-const suggestedCategories = [
+const promptVaultCategoriesSettingKey = "promptVault.universalCategories";
+const promptVaultCategoriesLocalKey = "katlas-prompt-vault-categories-v1";
+
+const defaultPromptCategories = [
   "Rate Negotiation",
   "Submission Generation",
   "Contract Review",
   "Script Review",
   "Creator Follow-up",
   "Brief Analysis",
-  "Custom",
+];
+
+const previewCampaigns: CampaignProfileRecord[] = [
+  {
+    campaignId: "preview-dola-thailand",
+    campaignName: "Dola Thailand",
+    campaignCode: "DOLA-TH",
+    country: "Thailand",
+    preferredLanguages: "Thai, English",
+    status: "active",
+    createdAt: "",
+    updatedAt: "",
+  },
+  {
+    campaignId: "preview-dola-uk",
+    campaignName: "Dola UK",
+    campaignCode: "DOLA-UK",
+    country: "United Kingdom",
+    preferredLanguages: "English",
+    status: "active",
+    createdAt: "",
+    updatedAt: "",
+  },
 ];
 
 export function PromptVault() {
@@ -31,7 +57,12 @@ export function PromptVault() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<CampaignPromptVaultRecord | null>(null);
-  const [editorMode, setEditorMode] = useState<"single" | "universal">("single");
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isCategorySaving, setIsCategorySaving] = useState(false);
+  const [categoryDraft, setCategoryDraft] = useState("");
+  const [universalCategories, setUniversalCategories] = useState<string[]>(() =>
+    readStoredUniversalCategories(),
+  );
   const [viewingPrompt, setViewingPrompt] = useState<CampaignPromptVaultRecord | null>(null);
 
   const activeCampaigns = useMemo(() => campaigns.filter(isActiveCampaign), [campaigns]);
@@ -40,11 +71,12 @@ export function PromptVault() {
     () =>
       Array.from(
         new Set([
-          ...suggestedCategories,
-          ...prompts.map((prompt) => prompt.category).filter(Boolean),
+          ...defaultPromptCategories,
+          ...universalCategories,
+          ...prompts.map((prompt) => prompt.category.trim()).filter(Boolean),
         ]),
-      ),
-    [prompts],
+      ).filter((category) => category.toLowerCase() !== "custom"),
+    [prompts, universalCategories],
   );
 
   const filteredPrompts = useMemo(
@@ -59,7 +91,7 @@ export function PromptVault() {
             prompt.title,
             prompt.content,
             prompt.input,
-            prompt.notes,
+            prompt.files,
             prompt.campaignName,
             prompt.category,
           ]
@@ -79,11 +111,29 @@ export function PromptVault() {
     void loadPromptVaultBundleFromGoogleSheetsOnly()
       .then((bundle) => {
         if (cancelled) return;
+
         setCampaigns(bundle.campaignProfiles);
         setPrompts(bundle.campaignPromptVault);
+
+        const storedValue =
+          bundle.appSettings.find(
+            (setting) => setting.settingKey === promptVaultCategoriesSettingKey,
+          )?.settingValue ?? "";
+        const storedCategories = parseStoredCategories(storedValue);
+        setUniversalCategories(storedCategories);
+        writeLocalUniversalCategories(storedCategories);
       })
       .catch((loadError) => {
         if (cancelled) return;
+        if (isLocalPreviewHost()) {
+          setCampaigns(previewCampaigns);
+          setPrompts([]);
+          setStatus(
+            "Local preview mode: showing sample projects because Google Sheets is not configured.",
+          );
+          setError("");
+          return;
+        }
         setError(
           loadError instanceof Error
             ? loadError.message
@@ -99,16 +149,52 @@ export function PromptVault() {
     };
   }, []);
 
-  function openNewUniversalCategory() {
+  function openNewPrompt() {
     const campaign = campaignOptions[0];
     if (!campaign) return;
-    setEditorMode("universal");
-    setDraft(createPromptDraft(campaign));
+    setDraft(createPromptDraft(campaign, categoryFilter || categories[0] || ""));
   }
 
   function openEditPrompt(prompt: CampaignPromptVaultRecord) {
-    setEditorMode("single");
     setDraft({ ...prompt });
+  }
+
+  async function persistUniversalCategories(nextCategories: string[], successMessage: string) {
+    setUniversalCategories(nextCategories);
+    writeLocalUniversalCategories(nextCategories);
+    setStatus(successMessage);
+    setIsCategorySaving(true);
+
+    try {
+      await saveAppSettingToGoogleSheetsOnly(
+        promptVaultCategoriesSettingKey,
+        JSON.stringify(nextCategories),
+      );
+    } catch (saveError) {
+      setStatus(
+        saveError instanceof Error
+          ? `Category change saved locally. ${saveError.message}`
+          : "Category change saved locally. Google Sheets did not save it.",
+      );
+    } finally {
+      setIsCategorySaving(false);
+    }
+  }
+
+  async function saveUniversalCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const category = categoryDraft.trim();
+    if (!category) return;
+
+    const nextCategories = normalizeCategories([...universalCategories, category]);
+    await persistUniversalCategories(nextCategories, "Universal category added.");
+    setCategoryDraft("");
+  }
+
+  async function removeUniversalCategory(category: string) {
+    const nextCategories = universalCategories.filter((item) => item !== category);
+    if (categoryFilter === category) setCategoryFilter("");
+    await persistUniversalCategories(nextCategories, "Universal category removed.");
   }
 
   async function savePrompt(event: FormEvent<HTMLFormElement>) {
@@ -124,7 +210,7 @@ export function PromptVault() {
       category,
       content: draft.content.trim(),
       input: draft.input.trim(),
-      notes: draft.notes.trim(),
+      files: draft.files.trim(),
       createdAt: draft.createdAt || now,
       updatedAt: now,
     };
@@ -132,40 +218,16 @@ export function PromptVault() {
     setIsSaving(true);
     setError("");
     try {
-      let nextRecords: CampaignPromptVaultRecord[] = [];
-      if (editorMode === "universal" && !draft.createdAt) {
-        for (const campaignOption of campaignOptions) {
-          const existingPrompt = prompts.find(
-            (prompt) =>
-              prompt.campaignId === campaignOption.campaignId &&
-              prompt.category.trim().toLowerCase() === category.toLowerCase(),
-          );
-          nextRecords = await saveCampaignPromptVaultToGoogleSheetsOnly({
-            ...baseRecord,
-            promptId: existingPrompt?.promptId || createId("prompt"),
-            campaignId: campaignOption.campaignId,
-            campaignName: campaignOption.campaignName,
-            title: createPromptTitle(campaignOption.campaignName, category),
-            createdAt: existingPrompt?.createdAt || now,
-            updatedAt: now,
-          });
-        }
-      } else {
-        const campaignName = campaign?.campaignName ?? draft.campaignName;
-        const record: CampaignPromptVaultRecord = {
-          ...baseRecord,
-          campaignName,
-          title: createPromptTitle(campaignName, category),
-        };
-        nextRecords = await saveCampaignPromptVaultToGoogleSheetsOnly(record);
-      }
+      const campaignName = campaign?.campaignName ?? draft.campaignName;
+      const record: CampaignPromptVaultRecord = {
+        ...baseRecord,
+        campaignName,
+        title: createPromptTitle(campaignName, category),
+      };
+      const nextRecords = await saveCampaignPromptVaultToGoogleSheetsOnly(record);
       setPrompts(nextRecords);
       setDraft(null);
-      setStatus(
-        editorMode === "universal" && !draft.createdAt
-          ? "Universal category saved to all active campaigns."
-          : "Prompt saved.",
-      );
+      setStatus("Prompt saved.");
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -226,12 +288,12 @@ export function PromptVault() {
             </div>
             <button
               type="button"
-              onClick={openNewUniversalCategory}
+              onClick={openNewPrompt}
               disabled={!campaignOptions.length || isLoading}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="size-4" />
-              Add Universal Category
+              Add Prompt
             </button>
           </div>
         </section>
@@ -266,11 +328,21 @@ export function PromptVault() {
               </select>
             </FieldLabel>
 
-            <FieldLabel label="Category">
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Category</span>
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryModalOpen(true)}
+                  className="text-xs font-medium text-cyan-100 transition hover:text-foreground"
+                >
+                  Manage Categories
+                </button>
+              </div>
               <select
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
               >
                 <option value="">All categories</option>
                 {categories.map((category) => (
@@ -279,7 +351,7 @@ export function PromptVault() {
                   </option>
                 ))}
               </select>
-            </FieldLabel>
+            </div>
           </div>
         </section>
 
@@ -314,7 +386,7 @@ export function PromptVault() {
           ) : (
             <EmptyPromptState
               hasCampaigns={Boolean(campaignOptions.length)}
-              onAdd={openNewUniversalCategory}
+              onAdd={openNewPrompt}
             />
           )}
         </section>
@@ -323,8 +395,8 @@ export function PromptVault() {
       {draft ? (
         <PromptEditorModal
           draft={draft}
-          mode={editorMode}
           campaigns={campaignOptions}
+          categories={categories}
           isSaving={isSaving}
           onChange={setDraft}
           onSubmit={savePrompt}
@@ -341,6 +413,23 @@ export function PromptVault() {
             setViewingPrompt(null);
           }}
           onClose={() => setViewingPrompt(null)}
+        />
+      ) : null}
+
+      {isCategoryModalOpen ? (
+        <CategoryManagerModal
+          universalCategories={universalCategories}
+          categoryDraft={categoryDraft}
+          isSaving={isCategorySaving}
+          onCategoryDraftChange={setCategoryDraft}
+          onAddCategory={saveUniversalCategory}
+          onRemoveCategory={(category) => {
+            void removeUniversalCategory(category);
+          }}
+          onClose={() => {
+            setCategoryDraft("");
+            setIsCategoryModalOpen(false);
+          }}
         />
       ) : null}
     </div>
@@ -402,30 +491,27 @@ function PromptCard({
 
 function PromptEditorModal({
   draft,
-  mode,
   campaigns,
+  categories,
   isSaving,
   onChange,
   onSubmit,
   onClose,
 }: {
   draft: CampaignPromptVaultRecord;
-  mode: "single" | "universal";
   campaigns: CampaignProfileRecord[];
+  categories: string[];
   isSaving: boolean;
   onChange: (draft: CampaignPromptVaultRecord) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClose: () => void;
 }) {
-  const selectedCategory = suggestedCategories.includes(draft.category) ? draft.category : "Custom";
+  const selectedCategory = categories.includes(draft.category) ? draft.category : "Custom";
   const category = getPromptCategory(draft);
   const selectedCampaignName =
     campaigns.find((campaign) => campaign.campaignId === draft.campaignId)?.campaignName ||
     draft.campaignName;
-  const generatedTitle =
-    mode === "universal"
-      ? `Each campaign name + ${category || "category"}`
-      : createPromptTitle(selectedCampaignName, category || "Category");
+  const generatedTitle = createPromptTitle(selectedCampaignName, category || "Category");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
@@ -437,17 +523,8 @@ function PromptEditorModal({
           <div>
             <p className="text-xs font-semibold uppercase text-muted-foreground">Prompt Vault</p>
             <h2 className="mt-1 text-xl font-semibold">
-              {draft.createdAt
-                ? "Edit Prompt Category"
-                : mode === "universal"
-                  ? "Add Universal Category"
-                  : "Add Prompt Category"}
+              {draft.createdAt ? "Edit Prompt" : "Add Prompt"}
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {mode === "universal" && !draft.createdAt
-                ? "This creates one prompt row for every active campaign."
-                : "The title is generated from campaign name and category."}
-            </p>
           </div>
           <button
             type="button"
@@ -461,36 +538,26 @@ function PromptEditorModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="grid gap-3 md:grid-cols-2">
-            {mode === "universal" && !draft.createdAt ? (
-              <FieldLabel label="Campaigns">
-                <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-muted-foreground">
-                  All active campaigns
-                </div>
-              </FieldLabel>
-            ) : (
-              <FieldLabel label="Campaign">
-                <select
-                  value={draft.campaignId}
-                  onChange={(event) => {
-                    const campaign = campaigns.find(
-                      (item) => item.campaignId === event.target.value,
-                    );
-                    onChange({
-                      ...draft,
-                      campaignId: campaign?.campaignId ?? event.target.value,
-                      campaignName: campaign?.campaignName ?? draft.campaignName,
-                    });
-                  }}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                >
-                  {campaigns.map((campaign) => (
-                    <option key={campaign.campaignId} value={campaign.campaignId}>
-                      {campaign.campaignName}
-                    </option>
-                  ))}
-                </select>
-              </FieldLabel>
-            )}
+            <FieldLabel label="Project">
+              <select
+                value={draft.campaignId}
+                onChange={(event) => {
+                  const campaign = campaigns.find((item) => item.campaignId === event.target.value);
+                  onChange({
+                    ...draft,
+                    campaignId: campaign?.campaignId ?? event.target.value,
+                    campaignName: campaign?.campaignName ?? draft.campaignName,
+                  });
+                }}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+              >
+                {campaigns.map((campaign) => (
+                  <option key={campaign.campaignId} value={campaign.campaignId}>
+                    {campaign.campaignName}
+                  </option>
+                ))}
+              </select>
+            </FieldLabel>
 
             <FieldLabel label="Category">
               <select
@@ -503,11 +570,12 @@ function PromptEditorModal({
                 }
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
               >
-                {suggestedCategories.map((category) => (
+                {categories.map((category) => (
                   <option key={category} value={category}>
                     {category}
                   </option>
                 ))}
+                <option value="Custom">Custom</option>
               </select>
             </FieldLabel>
           </div>
@@ -523,7 +591,7 @@ function PromptEditorModal({
           ) : null}
 
           <div className="mt-3">
-            <FieldLabel label="Generated Title">
+            <FieldLabel label="Title">
               <div className="flex min-h-10 items-center rounded-md border border-border bg-background/70 px-3 py-2 text-sm text-muted-foreground">
                 {generatedTitle}
               </div>
@@ -531,7 +599,7 @@ function PromptEditorModal({
           </div>
 
           <div className="mt-3">
-            <FieldLabel label="Content">
+            <FieldLabel label="Prompt">
               <textarea
                 value={draft.content}
                 onChange={(event) => onChange({ ...draft, content: event.target.value })}
@@ -555,12 +623,12 @@ function PromptEditorModal({
           </div>
 
           <div className="mt-3">
-            <FieldLabel label="Notes">
+            <FieldLabel label="Files">
               <textarea
-                value={draft.notes}
-                onChange={(event) => onChange({ ...draft, notes: event.target.value })}
+                value={draft.files}
+                onChange={(event) => onChange({ ...draft, files: event.target.value })}
                 rows={4}
-                placeholder="Optional context, use cases, or reminders."
+                placeholder="Paste attachment links, screenshot references, files used, or short file notes."
                 className="w-full resize-y rounded-md border border-input bg-background px-3 py-3 text-sm leading-6 outline-none ring-ring focus:ring-2"
               />
             </FieldLabel>
@@ -580,7 +648,7 @@ function PromptEditorModal({
             disabled={isSaving || !draft.campaignId || !category || !draft.content.trim()}
             className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {mode === "universal" && !draft.createdAt ? "Save To All Campaigns" : "Save Prompt"}
+            Save Prompt
           </button>
         </div>
       </form>
@@ -637,11 +705,11 @@ function PromptViewModal({
               </p>
             </div>
           ) : null}
-          {prompt.notes ? (
+          {prompt.files ? (
             <div className="mt-3 rounded-lg border border-border bg-background/70 p-4">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">Notes</p>
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Files</p>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-                {prompt.notes}
+                {prompt.files}
               </p>
             </div>
           ) : null}
@@ -681,7 +749,7 @@ function EmptyPromptState({ hasCampaigns, onAdd }: { hasCampaigns: boolean; onAd
       </h2>
       <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
         {hasCampaigns
-          ? "Add a universal category to create one campaign-specific prompt for every active campaign."
+          ? "Add a prompt, choose its project and category, then save the prompt details for later reuse."
           : "Prompt Vault uses Campaign Profiles as the source of truth."}
       </p>
       {hasCampaigns ? (
@@ -691,9 +759,120 @@ function EmptyPromptState({ hasCampaigns, onAdd }: { hasCampaigns: boolean; onAd
           className="mt-4 inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
         >
           <Plus className="size-4" />
-          Add Universal Category
+          Add Prompt
         </button>
       ) : null}
+    </div>
+  );
+}
+
+function CategoryManagerModal({
+  universalCategories,
+  categoryDraft,
+  isSaving,
+  onCategoryDraftChange,
+  onAddCategory,
+  onRemoveCategory,
+  onClose,
+}: {
+  universalCategories: string[];
+  categoryDraft: string;
+  isSaving: boolean;
+  onCategoryDraftChange: (value: string) => void;
+  onAddCategory: (event: FormEvent<HTMLFormElement>) => void;
+  onRemoveCategory: (category: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-xl border border-border bg-card shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Prompt Vault</p>
+            <h2 className="mt-1 text-xl font-semibold">Manage Categories</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex size-9 items-center justify-center rounded-md border border-border bg-background transition hover:bg-accent"
+            aria-label="Close category editor"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-4">
+          <form onSubmit={onAddCategory} className="flex gap-2">
+            <div className="min-w-0 flex-1">
+              <TextInput
+                label="Add Universal Category"
+                value={categoryDraft}
+                onChange={onCategoryDraftChange}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!categoryDraft.trim() || isSaving}
+              className="mt-6 inline-flex h-10 shrink-0 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Add
+            </button>
+          </form>
+
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Universal Categories</p>
+            {universalCategories.length ? (
+              <div className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border">
+                {universalCategories.map((category) => (
+                  <div
+                    key={category}
+                    className="flex items-center justify-between gap-3 bg-background/60 px-3 py-2"
+                  >
+                    <span className="min-w-0 truncate text-sm">{category}</span>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveCategory(category)}
+                      disabled={isSaving}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-red-100 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Trash2 className="size-3.5" />
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-2 rounded-lg border border-dashed border-border bg-background/50 px-3 py-4 text-sm text-muted-foreground">
+                No universal categories added yet.
+              </div>
+            )}
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Default Categories</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {defaultPromptCategories.map((category) => (
+                <span
+                  key={category}
+                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground"
+                >
+                  {category}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 items-center rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:bg-accent"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -748,20 +927,57 @@ function SmallActionButton({
   );
 }
 
-function createPromptDraft(campaign: CampaignProfileRecord): CampaignPromptVaultRecord {
+function createPromptDraft(
+  campaign: CampaignProfileRecord,
+  category = defaultPromptCategories[0],
+): CampaignPromptVaultRecord {
   const now = new Date().toISOString();
   return {
     promptId: createId("prompt"),
     campaignId: campaign.campaignId,
     campaignName: campaign.campaignName,
-    category: "Custom",
+    category,
     title: "",
     content: "",
     input: "",
-    notes: "",
+    files: "",
     createdAt: "",
     updatedAt: now,
   };
+}
+
+function readStoredUniversalCategories() {
+  if (typeof window === "undefined") return [];
+  return parseStoredCategories(window.localStorage.getItem(promptVaultCategoriesLocalKey) ?? "[]");
+}
+
+function writeLocalUniversalCategories(categories: string[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(promptVaultCategoriesLocalKey, JSON.stringify(categories));
+}
+
+function parseStoredCategories(value: string) {
+  if (!value.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return normalizeCategories(parsed);
+  } catch {
+    // Fall through to delimiter parsing for older manual values.
+  }
+
+  return normalizeCategories(value.split(/[\n,]/));
+}
+
+function normalizeCategories(values: unknown[]) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+        .filter((value) => value.toLowerCase() !== "custom"),
+    ),
+  ).sort((first, second) => first.localeCompare(second));
 }
 
 function isActiveCampaign(campaign: CampaignProfileRecord) {
@@ -803,4 +1019,9 @@ function getTimestamp(value: string) {
 function createId(prefix: string) {
   if (globalThis.crypto?.randomUUID) return `${prefix}-${globalThis.crypto.randomUUID()}`;
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function isLocalPreviewHost() {
+  if (typeof window === "undefined") return false;
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 }

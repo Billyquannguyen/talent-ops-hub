@@ -192,75 +192,6 @@ export function CampaignProfiles() {
           </div>
         </section>
 
-        <Panel title="My Monthly ROI" icon={TrendingUp}>
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-            <div>
-              <p className="text-sm font-medium">Monthly ROI</p>
-              <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
-                Based on completed Active Campaign creator records for the selected month.
-              </p>
-              <p className="mt-2 text-xs text-muted-foreground">{roiStatus}</p>
-            </div>
-            <label className="block w-full max-w-xs">
-              <span className="text-xs font-medium text-muted-foreground">Month</span>
-              <div className="mt-1 flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3">
-                <CalendarDays className="size-4 text-muted-foreground" />
-                <input
-                  type="month"
-                  value={roiMonth}
-                  onChange={(event) => setRoiMonth(event.target.value)}
-                  className="w-full bg-transparent text-sm outline-none"
-                />
-              </div>
-            </label>
-          </div>
-
-          <div className="mt-5 rounded-xl border border-border bg-background p-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase text-muted-foreground">ROI</p>
-                {monthlyRoi.hasSalary ? (
-                  <p className="mt-2 text-4xl font-semibold tracking-tight">
-                    {formatPercent(monthlyRoi.roi)}
-                  </p>
-                ) : (
-                  <p className="mt-2 text-xl font-semibold">Salary not configured.</p>
-                )}
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[560px]">
-                <RoiMetric
-                  label="Monthly Revenue"
-                  value={formatCurrency(monthlyRoi.monthlyRevenue, profile.currency)}
-                />
-                <RoiMetric
-                  label="Monthly Profit"
-                  value={formatCurrency(monthlyRoi.monthlyProfit, profile.currency)}
-                />
-                <RoiMetric
-                  label="Monthly Salary"
-                  value={
-                    monthlyRoi.hasSalary
-                      ? formatCurrency(profile.monthlySalary, profile.currency)
-                      : "Not set"
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-all"
-                  style={{ width: `${monthlyRoi.progressWidth}%` }}
-                />
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {monthlyRoi.completedCreators.toLocaleString()} completed creator records included.
-              </p>
-            </div>
-          </div>
-        </Panel>
-
         <Panel title="Campaign List" icon={Pencil}>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <div>
@@ -350,6 +281,75 @@ export function CampaignProfiles() {
                 )}
               </tbody>
             </table>
+          </div>
+        </Panel>
+
+        <Panel title="My Monthly ROI" icon={TrendingUp}>
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+            <div>
+              <p className="text-sm font-medium">Monthly ROI</p>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
+                Based on positive-profit Active Campaign creator records for the selected month.
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">{roiStatus}</p>
+            </div>
+            <label className="block w-full max-w-xs">
+              <span className="text-xs font-medium text-muted-foreground">Month</span>
+              <div className="mt-1 flex h-10 items-center gap-2 rounded-md border border-input bg-background px-3">
+                <CalendarDays className="size-4 text-muted-foreground" />
+                <input
+                  type="month"
+                  value={roiMonth}
+                  onChange={(event) => setRoiMonth(event.target.value)}
+                  className="w-full bg-transparent text-sm outline-none"
+                />
+              </div>
+            </label>
+          </div>
+
+          <div className="mt-5 rounded-xl border border-border bg-background p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">ROI</p>
+                {monthlyRoi.hasSalary ? (
+                  <p className="mt-2 text-4xl font-semibold tracking-tight">
+                    {formatPercent(monthlyRoi.roi)}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xl font-semibold">Salary not configured.</p>
+                )}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[560px]">
+                <RoiMetric
+                  label="Monthly Revenue"
+                  value={formatCurrency(monthlyRoi.monthlyRevenue, profile.currency)}
+                />
+                <RoiMetric
+                  label="Monthly Profit"
+                  value={formatCurrency(monthlyRoi.monthlyProfit, profile.currency)}
+                />
+                <RoiMetric
+                  label="Monthly Salary"
+                  value={
+                    monthlyRoi.hasSalary
+                      ? formatCurrency(profile.monthlySalary, profile.currency)
+                      : "Not set"
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${monthlyRoi.progressWidth}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {monthlyRoi.includedCreators.toLocaleString()} creator records included.
+              </p>
+            </div>
           </div>
         </Panel>
       </main>
@@ -639,12 +639,16 @@ function calculateMonthlyRoi(
   month: string,
   profile: EmployeeProfile,
 ) {
-  const completedCreators = registry.creatorRecords.filter((record) => {
+  const includedCreators = registry.creatorRecords.filter((record) => {
     const financials = calculateCreatorFinancials(record);
-    return record.month === month && record.status === "Completed" && financials.profit > 0;
+    return (
+      record.month === month &&
+      !["Dropped", "Cancelled", "Canceled"].includes(record.status) &&
+      financials.profit > 0
+    );
   });
-  const monthlyRevenue = completedCreators.reduce((sum, record) => sum + record.externalQuote, 0);
-  const monthlyProfit = completedCreators.reduce(
+  const monthlyRevenue = includedCreators.reduce((sum, record) => sum + record.externalQuote, 0);
+  const monthlyProfit = includedCreators.reduce(
     (sum, record) => sum + calculateCreatorFinancials(record).profit,
     0,
   );
@@ -654,7 +658,7 @@ function calculateMonthlyRoi(
   return {
     monthlyRevenue,
     monthlyProfit,
-    completedCreators: completedCreators.length,
+    includedCreators: includedCreators.length,
     hasSalary,
     roi,
     progressWidth: hasSalary ? Math.max(0, Math.min(100, roi)) : 0,

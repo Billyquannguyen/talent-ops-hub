@@ -138,7 +138,7 @@ export type CampaignPromptVaultRecord = {
   title: string;
   content: string;
   input: string;
-  notes: string;
+  files: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -288,7 +288,7 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "title",
     "content",
     "input",
-    "notes",
+    "files",
     "createdAt",
     "updatedAt",
   ],
@@ -323,6 +323,7 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   profileId: ["profile id", "profile_id", "id"],
   promptId: ["prompt id", "prompt_id", "id"],
   input: ["input", "prompt input", "source input", "attachment input", "context input"],
+  files: ["files", "file links", "attachments", "attachment", "notes"],
   displayName: ["display name", "name", "display_name"],
   avatarUrl: ["avatar url", "avatar", "avatar_url"],
   monthlySalary: ["monthly salary", "salary", "monthly_salary"],

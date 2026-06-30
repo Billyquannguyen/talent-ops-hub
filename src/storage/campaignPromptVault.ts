@@ -84,7 +84,7 @@ function normalizeCampaignPromptVaultRecord(
     title: stringValue(record.title) || "Untitled Prompt",
     content: stringValue(record.content),
     input: stringValue(record.input),
-    notes: stringValue(record.notes),
+    files: stringValue(record.files),
     createdAt,
     updatedAt: stringValue(record.updatedAt) || createdAt,
   };
