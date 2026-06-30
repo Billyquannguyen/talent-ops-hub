@@ -17,14 +17,11 @@ import type {
 } from "@/storage/schema";
 
 export const selectedCreatorStatuses = [
-  "Contract Signed",
-  "Draft Pending",
-  "Draft Submitted",
-  "Draft Approved",
-  "Content Live",
-  "Payment Processed",
-  "Completed",
-  "Dropped",
+  "Contract signed",
+  "Script",
+  "Draft",
+  "Posted",
+  "Fully paid",
 ] as const;
 
 export type SelectedCreatorStatus = (typeof selectedCreatorStatuses)[number];
@@ -82,14 +79,11 @@ export type GlobalCampaignRegistry = {
 export type CampaignSummary = {
   totalCreators: number;
   contractSigned: number;
-  draftPending: number;
-  draftSubmitted: number;
-  draftApproved: number;
-  contentLive: number;
+  script: number;
+  draft: number;
+  posted: number;
   paymentPending: number;
-  paymentProcessed: number;
-  completed: number;
-  dropped: number;
+  fullyPaid: number;
   totalSpend: number;
   totalExternalQuote: number;
   totalProfit: number;
@@ -361,7 +355,7 @@ export function createSelectedCreatorRecord(campaignRegistryId: string): Selecte
     avgViews: 0,
     internalQuote: 0,
     externalQuote: 0,
-    status: "Contract Signed",
+    status: "Contract signed",
     draftLink: "",
     liveLink: "",
     notes: "",
@@ -396,40 +390,31 @@ export function calculateCampaignSummary(records: SelectedCreatorRecord[]): Camp
   const averageMargin = totalExternalQuote > 0 ? totalProfit / totalExternalQuote : 0;
   const count = (status: SelectedCreatorStatus) =>
     records.filter((record) => record.status === status).length;
-  const contractSigned = count("Contract Signed");
-  const draftPending = count("Draft Pending");
-  const draftSubmitted = count("Draft Submitted");
-  const draftApproved = count("Draft Approved");
-  const contentLive = count("Content Live");
-  const paymentProcessed = count("Payment Processed");
-  const completed = count("Completed");
-  const dropped = count("Dropped");
-  const paymentPending = records.filter((record) => record.status === "Content Live").length;
+  const contractSigned = count("Contract signed");
+  const script = count("Script");
+  const draft = count("Draft");
+  const posted = count("Posted");
+  const fullyPaid = count("Fully paid");
+  const paymentPending = posted;
 
   return {
     totalCreators: records.length,
     contractSigned,
-    draftPending,
-    draftSubmitted,
-    draftApproved,
-    contentLive,
+    script,
+    draft,
+    posted,
     paymentPending,
-    paymentProcessed,
-    completed,
-    dropped,
+    fullyPaid,
     totalSpend,
     totalExternalQuote,
     totalProfit,
     averageMargin,
     statusSummary: buildStatusSummary({
       contractSigned,
-      draftPending,
-      draftSubmitted,
-      draftApproved,
-      contentLive,
-      paymentProcessed,
-      completed,
-      dropped,
+      script,
+      draft,
+      posted,
+      fullyPaid,
     }),
   };
 }
@@ -578,14 +563,11 @@ function normalizeCreatorRecord(value: unknown): SelectedCreatorRecord {
 
 function buildStatusSummary(counts: Record<string, number>): string {
   const visible = [
-    ["Live", counts.contentLive],
-    ["Draft Pending", counts.draftPending],
-    ["Draft Approved", counts.draftApproved],
-    ["Completed", counts.completed],
-    ["Signed", counts.contractSigned],
-    ["Submitted", counts.draftSubmitted],
-    ["Payment Processed", counts.paymentProcessed],
-    ["Dropped", counts.dropped],
+    ["Fully paid", counts.fullyPaid],
+    ["Posted", counts.posted],
+    ["Draft", counts.draft],
+    ["Script", counts.script],
+    ["Contract signed", counts.contractSigned],
   ].filter(([, count]) => Number(count) > 0);
 
   if (!visible.length) return "No selected creators";
@@ -596,9 +578,18 @@ function buildStatusSummary(counts: Record<string, number>): string {
 }
 
 function normalizeStatus(value: unknown): SelectedCreatorStatus {
-  return selectedCreatorStatuses.includes(value as SelectedCreatorStatus)
-    ? (value as SelectedCreatorStatus)
-    : "Contract Signed";
+  if (selectedCreatorStatuses.includes(value as SelectedCreatorStatus)) {
+    return value as SelectedCreatorStatus;
+  }
+
+  const status = stringValue(value).toLowerCase();
+  if (status.includes("paid") || status.includes("payment")) return "Fully paid";
+  if (status.includes("posted") || status.includes("live") || status.includes("completed")) {
+    return "Posted";
+  }
+  if (status.includes("draft")) return "Draft";
+  if (status.includes("script")) return "Script";
+  return "Contract signed";
 }
 
 function createCampaignCode(name: string): string {

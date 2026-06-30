@@ -1,4 +1,4 @@
-import { ExternalLink, Pencil, Plus, Trash2, UsersRound } from "lucide-react";
+import { CreditCard, ExternalLink, Pencil, Plus, Trash2, UsersRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
@@ -32,6 +32,10 @@ export function ActiveCampaignManagement({
     initialCampaignId || allCampaignsSelectionId,
   );
   const [editingRecord, setEditingRecord] = useState<SelectedCreatorRecord | null>(null);
+  const [postedStatusRequest, setPostedStatusRequest] = useState<{
+    record: SelectedCreatorRecord;
+    liveLink: string;
+  } | null>(null);
   const [storageMessage, setStorageMessage] = useState("");
 
   useEffect(() => {
@@ -146,6 +150,7 @@ export function ActiveCampaignManagement({
         ...current,
         creatorRecords: filterCreatorRecordsByCampaigns(nextCreatorRecords, current.campaigns),
       }));
+      setEditingRecord((current) => (current?.id === recordId ? null : current));
       setStorageMessage("Creator record deleted.");
     } catch (error) {
       setStorageMessage(
@@ -154,6 +159,47 @@ export function ActiveCampaignManagement({
           : "Google Sheets delete failed. Creator record was not deleted.",
       );
     }
+  }
+
+  async function updateCreatorRecordStatus(
+    record: SelectedCreatorRecord,
+    status: SelectedCreatorStatus,
+    liveLink = record.liveLink,
+  ) {
+    const updatedRecord = {
+      ...record,
+      status,
+      liveLink,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      const nextCreatorRecords = await updateSelectedCreatorRecordInGoogleSheets(updatedRecord);
+      setRegistry((current) => ({
+        ...current,
+        creatorRecords: filterCreatorRecordsByCampaigns(nextCreatorRecords, current.campaigns),
+      }));
+      setStorageMessage(`Status updated to ${status}.`);
+    } catch (error) {
+      setStorageMessage(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets save failed. Status was not updated.",
+      );
+    }
+  }
+
+  function requestStatusChange(record: SelectedCreatorRecord, status: SelectedCreatorStatus) {
+    if (record.status === status) return;
+    if (status === "Posted") {
+      setPostedStatusRequest({ record, liveLink: record.liveLink });
+      return;
+    }
+    void updateCreatorRecordStatus(record, status);
+  }
+
+  function openPaymentFormPlaceholder(record: SelectedCreatorRecord) {
+    setStorageMessage(`Payment form for ${record.creatorName || "this creator"} is coming later.`);
   }
 
   return (
@@ -247,9 +293,8 @@ export function ActiveCampaignManagement({
                 campaignById={campaignById}
                 showCampaignColumn={isAllCampaignsView}
                 onEdit={setEditingRecord}
-                onDelete={(recordId) => {
-                  void deleteCreatorRecord(recordId);
-                }}
+                onStatusChange={requestStatusChange}
+                onPaymentForm={openPaymentFormPlaceholder}
               />
               {storageMessage ? (
                 <p className="mt-3 text-xs text-muted-foreground">{storageMessage}</p>
@@ -271,6 +316,22 @@ export function ActiveCampaignManagement({
           onChange={setEditingRecord}
           onCancel={() => setEditingRecord(null)}
           onSubmit={saveCreatorRecord}
+          canDelete={registry.creatorRecords.some((record) => record.id === editingRecord.id)}
+          onDelete={(recordId) => {
+            void deleteCreatorRecord(recordId);
+          }}
+        />
+      ) : null}
+      {postedStatusRequest ? (
+        <PostedLiveLinkModal
+          creatorName={postedStatusRequest.record.creatorName}
+          liveLink={postedStatusRequest.liveLink}
+          onCancel={() => setPostedStatusRequest(null)}
+          onSubmit={(liveLink) => {
+            const record = postedStatusRequest.record;
+            setPostedStatusRequest(null);
+            void updateCreatorRecordStatus(record, "Posted", liveLink);
+          }}
         />
       ) : null}
     </div>
@@ -290,13 +351,15 @@ function CreatorRecordsTable({
   campaignById,
   showCampaignColumn,
   onEdit,
-  onDelete,
+  onStatusChange,
+  onPaymentForm,
 }: {
   records: SelectedCreatorRecord[];
   campaignById: Map<string, GlobalCampaign>;
   showCampaignColumn: boolean;
   onEdit: (record: SelectedCreatorRecord) => void;
-  onDelete: (recordId: string) => void;
+  onStatusChange: (record: SelectedCreatorRecord, status: SelectedCreatorStatus) => void;
+  onPaymentForm: (record: SelectedCreatorRecord) => void;
 }) {
   return (
     <div className="katlas-table-shell mt-4">
@@ -348,7 +411,10 @@ function CreatorRecordsTable({
                   <TableCell>{formatPercent(financials.profitMargin)}</TableCell>
                   <TableCell>{record.month || "No month"}</TableCell>
                   <TableCell>
-                    <StatusBadge status={record.status} />
+                    <StatusSelect
+                      status={record.status}
+                      onChange={(status) => onStatusChange(record, status)}
+                    />
                   </TableCell>
                   <TableCell>
                     <InlineLink href={record.liveLink} label="Live Link" />
@@ -368,11 +434,11 @@ function CreatorRecordsTable({
                         Edit
                       </button>
                       <button
-                        onClick={() => onDelete(record.id)}
+                        onClick={() => onPaymentForm(record)}
                         className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition hover:bg-accent"
                       >
-                        <Trash2 className="size-3.5" />
-                        Delete
+                        <CreditCard className="size-3.5" />
+                        Payment form
                       </button>
                     </div>
                   </TableCell>
@@ -402,6 +468,8 @@ function CreatorRecordModal({
   onChange,
   onCancel,
   onSubmit,
+  canDelete,
+  onDelete,
 }: {
   record: SelectedCreatorRecord;
   campaignName: string;
@@ -409,6 +477,8 @@ function CreatorRecordModal({
   onChange: (record: SelectedCreatorRecord) => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  canDelete: boolean;
+  onDelete: (recordId: string) => void;
 }) {
   const financials = calculateCreatorFinancials(record);
 
@@ -510,6 +580,71 @@ function CreatorRecordModal({
           </FieldLabel>
         </div>
 
+        <div className="mt-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          {canDelete ? (
+            <button
+              type="button"
+              onClick={() => onDelete(record.id)}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 text-sm font-medium text-destructive transition hover:bg-destructive/15"
+            >
+              <Trash2 className="size-4" />
+              Delete creator
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="inline-flex h-10 items-center rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:bg-accent"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PostedLiveLinkModal({
+  creatorName,
+  liveLink,
+  onCancel,
+  onSubmit,
+}: {
+  creatorName: string;
+  liveLink: string;
+  onCancel: () => void;
+  onSubmit: (liveLink: string) => void;
+}) {
+  const [value, setValue] = useState(liveLink);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit(value.trim());
+        }}
+        className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl"
+      >
+        <p className="text-xs font-semibold uppercase text-muted-foreground">Posted content</p>
+        <h2 className="mt-2 text-xl font-semibold">Add live link</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {creatorName || "This creator"} is marked as Posted. Add the live link so the campaign
+          record stays useful.
+        </p>
+        <div className="mt-4">
+          <TextInput label="Live Link" value={value} onChange={setValue} required />
+        </div>
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
@@ -522,7 +657,7 @@ function CreatorRecordModal({
             type="submit"
             className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
           >
-            Save
+            Save Posted
           </button>
         </div>
       </form>
@@ -645,11 +780,25 @@ function TableCell({ children }: { children: ReactNode }) {
   return <td className="px-4 py-3 align-top">{children}</td>;
 }
 
-function StatusBadge({ status }: { status: SelectedCreatorStatus }) {
+function StatusSelect({
+  status,
+  onChange,
+}: {
+  status: SelectedCreatorStatus;
+  onChange: (status: SelectedCreatorStatus) => void;
+}) {
   return (
-    <span className="inline-flex rounded-full border border-border bg-background px-2 py-1 text-xs">
-      {status}
-    </span>
+    <select
+      value={status}
+      onChange={(event) => onChange(event.target.value as SelectedCreatorStatus)}
+      className="h-8 min-w-32 rounded-full border border-border bg-background px-2 text-xs outline-none ring-ring focus:ring-2"
+    >
+      {selectedCreatorStatuses.map((option) => (
+        <option key={option} value={option}>
+          {option}
+        </option>
+      ))}
+    </select>
   );
 }
 
