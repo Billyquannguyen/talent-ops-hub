@@ -30,14 +30,6 @@ export const workflowCards: WorkflowCard[] = [
     icon: MessageSquareText,
   },
   {
-    id: "active-campaigns",
-    title: "Active Campaign Management",
-    description: "Track selected creators, quotes, status, profit, payments, and live links.",
-    status: "ready",
-    route: "/active-campaigns",
-    icon: BriefcaseBusiness,
-  },
-  {
     id: "prompt-vault",
     title: "Prompt Vault",
     description:
@@ -45,5 +37,13 @@ export const workflowCards: WorkflowCard[] = [
     status: "ready",
     route: "/prompt-vault",
     icon: FileText,
+  },
+  {
+    id: "active-campaigns",
+    title: "Active Campaign Management",
+    description: "Track selected creators, quotes, status, profit, payments, and live links.",
+    status: "ready",
+    route: "/active-campaigns",
+    icon: BriefcaseBusiness,
   },
 ];
