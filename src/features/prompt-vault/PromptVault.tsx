@@ -14,7 +14,7 @@ import type { CampaignProfileRecord, CampaignPromptVaultRecord } from "@/storage
 const promptVaultCategoriesSettingKey = "promptVault.universalCategories";
 const promptVaultCategoriesLocalKey = "katlas-prompt-vault-categories-v1";
 
-const defaultPromptCategories = [
+const starterUniversalCategories = [
   "Rate Negotiation",
   "Submission Generation",
   "Contract Review",
@@ -71,7 +71,6 @@ export function PromptVault() {
     () =>
       Array.from(
         new Set([
-          ...defaultPromptCategories,
           ...universalCategories,
           ...prompts.map((prompt) => prompt.category.trim()).filter(Boolean),
         ]),
@@ -115,13 +114,23 @@ export function PromptVault() {
         setCampaigns(bundle.campaignProfiles);
         setPrompts(bundle.campaignPromptVault);
 
-        const storedValue =
-          bundle.appSettings.find(
-            (setting) => setting.settingKey === promptVaultCategoriesSettingKey,
-          )?.settingValue ?? "";
-        const storedCategories = parseStoredCategories(storedValue);
+        const categoriesSetting = bundle.appSettings.find(
+          (setting) => setting.settingKey === promptVaultCategoriesSettingKey,
+        );
+        const storedCategories = categoriesSetting
+          ? parseStoredCategories(categoriesSetting.settingValue)
+          : starterUniversalCategories;
         setUniversalCategories(storedCategories);
         writeLocalUniversalCategories(storedCategories);
+
+        if (!categoriesSetting && storedCategories.length) {
+          void saveAppSettingToGoogleSheetsOnly(
+            promptVaultCategoriesSettingKey,
+            JSON.stringify(storedCategories),
+          ).catch(() => {
+            // The page can still work with local preview categories if shared settings are unavailable.
+          });
+        }
       })
       .catch((loadError) => {
         if (cancelled) return;
@@ -150,7 +159,8 @@ export function PromptVault() {
   }, []);
 
   function openNewPrompt() {
-    const campaign = campaignOptions[0];
+    const campaign =
+      campaignOptions.find((item) => item.campaignId === campaignFilter) ?? campaignOptions[0];
     if (!campaign) return;
     setDraft(createPromptDraft(campaign, categoryFilter || categories[0] || ""));
   }
@@ -847,20 +857,6 @@ function CategoryManagerModal({
               </div>
             )}
           </div>
-
-          <div>
-            <p className="text-xs font-medium text-muted-foreground">Default Categories</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {defaultPromptCategories.map((category) => (
-                <span
-                  key={category}
-                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground"
-                >
-                  {category}
-                </span>
-              ))}
-            </div>
-          </div>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
@@ -929,7 +925,7 @@ function SmallActionButton({
 
 function createPromptDraft(
   campaign: CampaignProfileRecord,
-  category = defaultPromptCategories[0],
+  category = "",
 ): CampaignPromptVaultRecord {
   const now = new Date().toISOString();
   return {

@@ -447,6 +447,9 @@ function AccountLaunchpad({
                 {categoryAccounts.map((account) => {
                   const Icon = accountIconMap[account.serviceId] ?? MdOutlineMail;
                   const hasUrl = Boolean(account.url);
+                  const tileTone = hasUrl
+                    ? "border-cyan-300/35 bg-cyan-300/[0.06] text-cyan-100 shadow-[0_0_22px_rgba(34,211,238,0.16)] hover:border-cyan-200/60 hover:bg-cyan-300/[0.10] hover:text-white hover:shadow-[0_0_32px_rgba(34,211,238,0.30)]"
+                    : "border-cyan-300/20 bg-cyan-300/[0.04] text-cyan-300/75 shadow-[0_0_16px_rgba(34,211,238,0.10)] hover:border-cyan-300/50 hover:bg-cyan-300/[0.08] hover:text-cyan-100 hover:shadow-[0_0_26px_rgba(34,211,238,0.24)]";
 
                   return (
                     <button
@@ -460,11 +463,12 @@ function AccountLaunchpad({
                         }
                         onMissingUrl(account);
                       }}
-                      className={`grid size-16 place-items-center rounded-xl border border-border bg-background text-2xl transition hover:border-cyan-300/40 hover:text-cyan-100 hover:shadow-[0_0_16px_rgba(34,211,238,0.18)] ${
-                        hasUrl ? "text-foreground" : "text-muted-foreground opacity-45"
-                      }`}
+                      className={`group grid size-16 place-items-center rounded-xl border text-3xl transition duration-200 hover:-translate-y-0.5 hover:scale-[1.03] ${tileTone}`}
                     >
-                      <Icon aria-hidden="true" />
+                      <Icon
+                        className="drop-shadow-[0_0_10px_rgba(34,211,238,0.42)] transition duration-200 group-hover:scale-110"
+                        aria-hidden="true"
+                      />
                       <span className="sr-only">{account.label}</span>
                     </button>
                   );

@@ -19,7 +19,7 @@ import type { GlobalCampaign, SelectedCreatorRecord } from "@/lib/campaignRegist
 type PaymentStatus = "Pending Payment" | "Paid";
 type UrgencyLevel = "Normal" | "Urgent" | "Extremely Urgent";
 type PaymentType = "Deposit" | "Final Payment" | "Full Payment" | "Other / Additional Payment";
-type PaymentDescription =
+type RecordTitleDescription =
   | "Up-front payment"
   | "Balance payment"
   | "Final payment"
@@ -98,8 +98,9 @@ export function FeishuPaymentFormGenerator({
   const [urgencyLevel, setUrgencyLevel] = useState<UrgencyLevel>("Normal");
   const [creatorPublishedLink, setCreatorPublishedLink] = useState(record.liveLink);
   const [paymentType, setPaymentType] = useState<PaymentType>("Full Payment");
-  const [paymentDescription, setPaymentDescription] = useState<PaymentDescription>("Full payment");
-  const [customPaymentDescription, setCustomPaymentDescription] = useState("");
+  const [recordTitleDescription, setRecordTitleDescription] =
+    useState<RecordTitleDescription>("Full payment");
+  const [customRecordTitleDescription, setCustomRecordTitleDescription] = useState("");
   const [paymentPercentage, setPaymentPercentage] = useState("");
   const [platform, setPlatform] = useState<PlatformCode>(detectedPlatform);
   const [clientQuote, setClientQuote] = useState(formatNumberForInput(record.externalQuote));
@@ -114,14 +115,14 @@ export function FeishuPaymentFormGenerator({
   );
   const normalizedProjectCode = projectCode.trim() || campaign.campaignCode.trim();
   const normalizedCurrency = quoteCurrency.trim().toUpperCase() || "USD";
-  const finalPaymentDescription =
-    paymentDescription === "Other"
-      ? customPaymentDescription.trim() || "Other payment"
-      : paymentDescription;
+  const finalRecordTitleDescription =
+    recordTitleDescription === "Other"
+      ? customRecordTitleDescription.trim() || "Other payment"
+      : recordTitleDescription;
   const paymentLabel = buildPaymentLabel(paymentType, paymentPercentage);
   const formTitle = `${normalizedProjectCode || "PROJECT-CODE"}-${campaign.campaignName} b1 ${platform} Influencer ${
     record.creatorName || "Creator"
-  }\n${finalPaymentDescription}, ${paymentLabel} ${formatUsdAmount(amountForOutput)} USD`;
+  }\n${finalRecordTitleDescription}, ${paymentLabel} ${formatUsdAmount(amountForOutput)} USD`;
 
   const rows: OutputRow[] = [
     {
@@ -146,8 +147,8 @@ export function FeishuPaymentFormGenerator({
       icon: Text,
       chineseTitle: "付款信息",
       englishMeaning: "Payment Information",
-      value: `${finalPaymentDescription}, ${paymentLabel} ${formatUsdAmount(amountForOutput)} USD`,
-      copyValue: `${finalPaymentDescription}, ${paymentLabel} ${formatUsdAmount(amountForOutput)} USD`,
+      value: `${finalRecordTitleDescription}, ${paymentLabel} ${formatUsdAmount(amountForOutput)} USD`,
+      copyValue: `${finalRecordTitleDescription}, ${paymentLabel} ${formatUsdAmount(amountForOutput)} USD`,
     },
     {
       key: "payment-status",
@@ -317,9 +318,9 @@ export function FeishuPaymentFormGenerator({
                 options={["Deposit", "Final Payment", "Full Payment", "Other / Additional Payment"]}
               />
               <SelectField
-                label="Payment Description"
-                value={paymentDescription}
-                onChange={(value) => setPaymentDescription(value as PaymentDescription)}
+                label="Record Title Description"
+                value={recordTitleDescription}
+                onChange={(value) => setRecordTitleDescription(value as RecordTitleDescription)}
                 options={[
                   "Up-front payment",
                   "Balance payment",
@@ -328,11 +329,11 @@ export function FeishuPaymentFormGenerator({
                   "Other",
                 ]}
               />
-              {paymentDescription === "Other" ? (
+              {recordTitleDescription === "Other" ? (
                 <TextField
-                  label="Custom Payment Description"
-                  value={customPaymentDescription}
-                  onChange={setCustomPaymentDescription}
+                  label="Custom Record Title Description"
+                  value={customRecordTitleDescription}
+                  onChange={setCustomRecordTitleDescription}
                   required
                 />
               ) : null}
