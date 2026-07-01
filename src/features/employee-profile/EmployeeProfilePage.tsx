@@ -1,6 +1,19 @@
-import { BadgeDollarSign, ImageUp, Pencil, StickyNote, User } from "lucide-react";
+import { BadgeDollarSign, CalendarDays, ImageUp, Pencil, StickyNote, User } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import type { IconType } from "react-icons";
+import { FaDiscord, FaFacebook, FaInstagram, FaTelegramPlane, FaWhatsapp } from "react-icons/fa";
+import { MdOutlineMail } from "react-icons/md";
+import {
+  SiCalendly,
+  SiGoogledrive,
+  SiLine,
+  SiNotion,
+  SiSlack,
+  SiThreads,
+  SiTiktok,
+  SiViber,
+} from "react-icons/si";
 
 import { TopBar } from "@/components/TopBar";
 import {
@@ -11,10 +24,30 @@ import {
   employeeProfileFromRecord,
   employeeProfileRecordId,
   employeeProfileToRecord,
+  employeeAccountServices,
   loadEmployeeProfile,
   saveEmployeeProfile,
 } from "./storage";
-import type { EmployeeProfile } from "./types";
+import type { EmployeeAccountCategory, EmployeeAccountLink, EmployeeProfile } from "./types";
+
+const accountIconMap: Record<string, IconType> = {
+  slack: SiSlack,
+  whatsapp: FaWhatsapp,
+  line: SiLine,
+  telegram: FaTelegramPlane,
+  viber: SiViber,
+  discord: FaDiscord,
+  instagram: FaInstagram,
+  tiktok: SiTiktok,
+  facebook: FaFacebook,
+  threads: SiThreads,
+  outlook: MdOutlineMail,
+  "google-drive": SiGoogledrive,
+  notion: SiNotion,
+  calendly: SiCalendly,
+};
+
+const accountCategories: EmployeeAccountCategory[] = ["Communication", "Social", "Workspace"];
 
 export function EmployeeProfilePage() {
   const [profile, setProfile] = useState<EmployeeProfile>(() => loadEmployeeProfile());
@@ -22,6 +55,7 @@ export function EmployeeProfilePage() {
   const [storageMessage, setStorageMessage] = useState("Loading shared profile...");
   const [storageError, setStorageError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [accountUrlDraft, setAccountUrlDraft] = useState<EmployeeAccountLink | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,12 +109,9 @@ export function EmployeeProfilePage() {
     };
   }, []);
 
-  async function saveProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!profileDraft) return;
-
-    const profileToSave = {
-      ...profileDraft,
+  async function persistProfile(profileToSave: EmployeeProfile) {
+    const nextProfileToSave = {
+      ...profileToSave,
       updatedAt: new Date().toISOString(),
     };
 
@@ -88,16 +119,16 @@ export function EmployeeProfilePage() {
     setStorageError("");
     try {
       const savedRecords = await saveEmployeeProfileToGoogleSheetsOnly(
-        employeeProfileToRecord(profileToSave),
+        employeeProfileToRecord(nextProfileToSave),
       );
       const savedRecord =
         savedRecords.find((record) => record.profileId === employeeProfileRecordId) ??
         savedRecords[0];
-      const savedProfile = savedRecord ? employeeProfileFromRecord(savedRecord) : profileToSave;
+      const savedProfile = savedRecord ? employeeProfileFromRecord(savedRecord) : nextProfileToSave;
       setProfile(savedProfile);
       saveEmployeeProfile(savedProfile);
       setStorageMessage("Profile saved in Katlas Buddy Database");
-      setProfileDraft(null);
+      return true;
     } catch (error) {
       const message =
         error instanceof Error
@@ -105,9 +136,30 @@ export function EmployeeProfilePage() {
           : "Google Sheets save failed. Employee profile was not saved.";
       setStorageError(message);
       setStorageMessage("Save failed");
+      return false;
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!profileDraft) return;
+
+    const didSave = await persistProfile(profileDraft);
+    if (didSave) setProfileDraft(null);
+  }
+
+  async function saveAccountUrl(account: EmployeeAccountLink, url: string) {
+    const nextProfile = {
+      ...profile,
+      accounts: profile.accounts.map((item) =>
+        item.serviceId === account.serviceId ? { ...item, url } : item,
+      ),
+    };
+
+    const didSave = await persistProfile(nextProfile);
+    if (didSave) setAccountUrlDraft(null);
   }
 
   const initials = getInitials(profile.displayName);
@@ -159,8 +211,13 @@ export function EmployeeProfilePage() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-4 md:grid-cols-4">
           <InfoCard icon={User} label="Name" value={profile.displayName || "Not set"} />
+          <InfoCard
+            icon={CalendarDays}
+            label="Joining Date"
+            value={formatDisplayDate(profile.joiningDate)}
+          />
           <InfoCard
             icon={BadgeDollarSign}
             label="Monthly Salary"
@@ -172,6 +229,8 @@ export function EmployeeProfilePage() {
           />
           <InfoCard icon={StickyNote} label="Currency" value={profile.currency || "USD"} />
         </section>
+
+        <AccountLaunchpad accounts={profile.accounts} onMissingUrl={setAccountUrlDraft} />
 
         <section className="katlas-panel">
           <div className="mb-3 flex items-center gap-2">
@@ -196,6 +255,16 @@ export function EmployeeProfilePage() {
           onSubmit={saveProfile}
           isSaving={isSaving}
           storageError={storageError}
+        />
+      ) : null}
+
+      {accountUrlDraft ? (
+        <AccountUrlModal
+          account={accountUrlDraft}
+          isSaving={isSaving}
+          storageError={storageError}
+          onCancel={() => setAccountUrlDraft(null)}
+          onSave={(url) => saveAccountUrl(accountUrlDraft, url)}
         />
       ) : null}
     </div>
@@ -281,6 +350,12 @@ function ProfileModal({
             required
           />
           <TextInput
+            label="Joining Date"
+            type="date"
+            value={draft.joiningDate}
+            onChange={(joiningDate) => onChange({ joiningDate })}
+          />
+          <TextInput
             label="Currency"
             value={draft.currency}
             onChange={(currency) => onChange({ currency: currency.toUpperCase() })}
@@ -297,6 +372,11 @@ function ProfileModal({
             placeholder="2500"
           />
         </div>
+
+        <AccountLinksEditor
+          accounts={draft.accounts}
+          onChange={(accounts) => onChange({ accounts })}
+        />
 
         <div className="mt-3">
           <TextAreaInput
@@ -327,6 +407,184 @@ function ProfileModal({
             className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSaving ? "Saving..." : "Save Profile"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function AccountLaunchpad({
+  accounts,
+  onMissingUrl,
+}: {
+  accounts: EmployeeAccountLink[];
+  onMissingUrl: (account: EmployeeAccountLink) => void;
+}) {
+  const normalizedAccounts = normalizeAccountsForUi(accounts);
+
+  return (
+    <section className="katlas-panel">
+      <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold">Account Launchpad</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Click an icon to open. Missing links ask for a URL.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        {accountCategories.map((category) => {
+          const categoryAccounts = normalizedAccounts.filter(
+            (account) => account.category === category,
+          );
+
+          return (
+            <div key={category}>
+              <h3 className="mb-3 text-sm font-semibold">{category}</h3>
+              <div className="flex flex-wrap gap-3">
+                {categoryAccounts.map((account) => {
+                  const Icon = accountIconMap[account.serviceId] ?? MdOutlineMail;
+                  const hasUrl = Boolean(account.url);
+
+                  return (
+                    <button
+                      key={account.serviceId}
+                      type="button"
+                      title={hasUrl ? account.label : `Add ${account.label} URL`}
+                      onClick={() => {
+                        if (hasUrl) {
+                          window.open(account.url, "_blank", "noopener,noreferrer");
+                          return;
+                        }
+                        onMissingUrl(account);
+                      }}
+                      className={`grid size-16 place-items-center rounded-xl border border-border bg-background text-2xl transition hover:border-cyan-300/40 hover:text-cyan-100 hover:shadow-[0_0_16px_rgba(34,211,238,0.18)] ${
+                        hasUrl ? "text-foreground" : "text-muted-foreground opacity-45"
+                      }`}
+                    >
+                      <Icon aria-hidden="true" />
+                      <span className="sr-only">{account.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function AccountLinksEditor({
+  accounts,
+  onChange,
+}: {
+  accounts: EmployeeAccountLink[];
+  onChange: (accounts: EmployeeAccountLink[]) => void;
+}) {
+  const normalizedAccounts = normalizeAccountsForUi(accounts);
+
+  return (
+    <div className="mt-5 rounded-lg border border-border bg-background p-4">
+      <p className="text-sm font-medium">Account Links</p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        These power the launchpad icons on your profile page. Leave any service blank if you do not
+        use it.
+      </p>
+
+      <div className="mt-4 space-y-5">
+        {accountCategories.map((category) => {
+          const categoryAccounts = normalizedAccounts.filter(
+            (account) => account.category === category,
+          );
+
+          return (
+            <div key={category}>
+              <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+                {category}
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {categoryAccounts.map((account) => (
+                  <TextInput
+                    key={account.serviceId}
+                    label={account.label}
+                    value={account.url}
+                    onChange={(url) => onChange(updateAccountUrl(normalizedAccounts, account, url))}
+                    placeholder={`https://${account.label.toLowerCase().replace(/\s+/g, "")}.com`}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AccountUrlModal({
+  account,
+  isSaving,
+  storageError,
+  onCancel,
+  onSave,
+}: {
+  account: EmployeeAccountLink;
+  isSaving: boolean;
+  storageError: string;
+  onCancel: () => void;
+  onSave: (url: string) => void;
+}) {
+  const [urlDraft, setUrlDraft] = useState(account.url);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSave(urlDraft.trim());
+        }}
+        className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl"
+      >
+        <ModalHeader
+          title={`Add ${account.label} Link`}
+          subtitle="Paste the account URL for this shortcut"
+          onCancel={onCancel}
+        />
+
+        <div className="mt-5">
+          <TextInput
+            label="URL"
+            value={urlDraft}
+            onChange={setUrlDraft}
+            placeholder="https://..."
+            required
+          />
+        </div>
+
+        {storageError ? (
+          <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs leading-5 text-destructive">
+            {storageError}
+          </p>
+        ) : null}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex h-10 items-center rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:bg-accent"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSaving ? "Saving..." : "Save Link"}
           </button>
         </div>
       </form>
@@ -485,6 +743,37 @@ function getInitials(name: string) {
     .join("");
 
   return initials || "KM";
+}
+
+function normalizeAccountsForUi(accounts: EmployeeAccountLink[]) {
+  const savedById = new Map(accounts.map((account) => [account.serviceId, account]));
+  return employeeAccountServices.map((service) => ({
+    ...service,
+    url: savedById.get(service.serviceId)?.url ?? "",
+  }));
+}
+
+function updateAccountUrl(
+  accounts: EmployeeAccountLink[],
+  targetAccount: EmployeeAccountLink,
+  url: string,
+) {
+  return normalizeAccountsForUi(accounts).map((account) =>
+    account.serviceId === targetAccount.serviceId ? { ...account, url } : account,
+  );
+}
+
+function formatDisplayDate(value: string) {
+  if (!value) return "Not set";
+
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
 }
 
 function formatCurrency(value: number, currency: string) {

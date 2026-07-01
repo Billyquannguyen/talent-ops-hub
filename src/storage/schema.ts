@@ -123,9 +123,11 @@ export type EmployeeProfileRecord = {
   profileId: string;
   displayName: string;
   avatarUrl: string;
+  joiningDate: string;
   monthlySalary: number;
   currency: string;
   notes: string;
+  accountsJson: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -274,9 +276,11 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "profileId",
     "displayName",
     "avatarUrl",
+    "joiningDate",
     "monthlySalary",
     "currency",
     "notes",
+    "accountsJson",
     "createdAt",
     "updatedAt",
   ],

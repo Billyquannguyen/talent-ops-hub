@@ -20,6 +20,8 @@ import {
   type SelectedCreatorStatus,
 } from "@/lib/campaignRegistry";
 
+import { FeishuPaymentFormGenerator } from "./FeishuPaymentFormGenerator";
+
 const allCampaignsSelectionId = "all-campaigns";
 
 export function ActiveCampaignManagement({
@@ -35,6 +37,10 @@ export function ActiveCampaignManagement({
   const [postedStatusRequest, setPostedStatusRequest] = useState<{
     record: SelectedCreatorRecord;
     liveLink: string;
+  } | null>(null);
+  const [paymentFormContext, setPaymentFormContext] = useState<{
+    record: SelectedCreatorRecord;
+    campaign: GlobalCampaign;
   } | null>(null);
   const [storageMessage, setStorageMessage] = useState("");
 
@@ -198,8 +204,13 @@ export function ActiveCampaignManagement({
     void updateCreatorRecordStatus(record, status);
   }
 
-  function openPaymentFormPlaceholder(record: SelectedCreatorRecord) {
-    setStorageMessage(`Payment form for ${record.creatorName || "this creator"} is coming later.`);
+  function openPaymentForm(record: SelectedCreatorRecord) {
+    const campaign = campaignById.get(record.campaignRegistryId);
+    if (!campaign) {
+      setStorageMessage("Campaign profile is missing. Payment form could not open.");
+      return;
+    }
+    setPaymentFormContext({ record, campaign });
   }
 
   return (
@@ -294,7 +305,7 @@ export function ActiveCampaignManagement({
                 showCampaignColumn={isAllCampaignsView}
                 onEdit={setEditingRecord}
                 onStatusChange={requestStatusChange}
-                onPaymentForm={openPaymentFormPlaceholder}
+                onPaymentForm={openPaymentForm}
               />
               {storageMessage ? (
                 <p className="mt-3 text-xs text-muted-foreground">{storageMessage}</p>
@@ -332,6 +343,13 @@ export function ActiveCampaignManagement({
             setPostedStatusRequest(null);
             void updateCreatorRecordStatus(record, "Posted", liveLink);
           }}
+        />
+      ) : null}
+      {paymentFormContext ? (
+        <FeishuPaymentFormGenerator
+          record={paymentFormContext.record}
+          campaign={paymentFormContext.campaign}
+          onClose={() => setPaymentFormContext(null)}
         />
       ) : null}
     </div>

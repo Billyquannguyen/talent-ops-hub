@@ -433,9 +433,11 @@ function normalizeEmployeeProfileRecord(value: unknown): EmployeeProfileRecord {
     profileId: stringValue(row.profileId) || stringValue(row.id) || "employee-profile-default",
     displayName: stringValue(row.displayName),
     avatarUrl: stringValue(row.avatarUrl),
+    joiningDate: stringValue(row.joiningDate),
     monthlySalary: numberValue(row.monthlySalary),
     currency: stringValue(row.currency) || "USD",
     notes: stringValue(row.notes),
+    accountsJson: stringValue(row.accountsJson),
     createdAt,
     updatedAt: stringValue(row.updatedAt) || createdAt,
   };
