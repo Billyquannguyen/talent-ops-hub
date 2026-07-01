@@ -23,6 +23,18 @@ const starterUniversalCategories = [
   "Brief Analysis",
 ];
 
+const generalPromptCampaignId = "general-prompts";
+const generalPromptCampaign: CampaignProfileRecord = {
+  campaignId: generalPromptCampaignId,
+  campaignName: "General prompts",
+  campaignCode: "GENERAL",
+  country: "",
+  preferredLanguages: "",
+  status: "active",
+  createdAt: "",
+  updatedAt: "",
+};
+
 const previewCampaigns: CampaignProfileRecord[] = [
   {
     campaignId: "preview-dola-thailand",
@@ -66,7 +78,13 @@ export function PromptVault() {
   const [viewingPrompt, setViewingPrompt] = useState<CampaignPromptVaultRecord | null>(null);
 
   const activeCampaigns = useMemo(() => campaigns.filter(isActiveCampaign), [campaigns]);
-  const campaignOptions = activeCampaigns.length ? activeCampaigns : campaigns;
+  const campaignOptions = useMemo(() => {
+    const sourceCampaigns = activeCampaigns.length ? activeCampaigns : campaigns;
+    return [
+      generalPromptCampaign,
+      ...sourceCampaigns.filter((campaign) => campaign.campaignId !== generalPromptCampaignId),
+    ];
+  }, [activeCampaigns, campaigns]);
   const categories = useMemo(
     () =>
       Array.from(
@@ -213,7 +231,7 @@ export function PromptVault() {
     const category = getPromptCategory(draft);
     if (!category || !draft.content.trim()) return;
 
-    const campaign = campaigns.find((item) => item.campaignId === draft.campaignId);
+    const campaign = campaignOptions.find((item) => item.campaignId === draft.campaignId);
     const now = new Date().toISOString();
     const baseRecord = {
       ...draft,
@@ -330,7 +348,7 @@ export function PromptVault() {
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
               >
                 <option value="">All campaigns</option>
-                {campaigns.map((campaign) => (
+                {campaignOptions.map((campaign) => (
                   <option key={campaign.campaignId} value={campaign.campaignId}>
                     {campaign.campaignName}
                   </option>
@@ -483,11 +501,10 @@ function PromptCard({
       <p className="mt-4 line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
         {createSnippet(prompt.content)}
       </p>
-      {prompt.input ? (
-        <p className="mt-3 line-clamp-2 rounded-lg border border-border bg-card/70 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          Input: {createSnippet(prompt.input, 120)}
-        </p>
-      ) : null}
+      <div className="mt-3 space-y-2">
+        {prompt.input ? <PromptCardDetail label="Input" value={prompt.input} /> : null}
+        {prompt.files ? <PromptCardDetail label="Files" value={prompt.files} /> : null}
+      </div>
 
       <div className="mt-auto flex flex-wrap gap-2 border-t border-border pt-3">
         <SmallActionButton label="Copy" icon={Copy} onClick={onCopy} />
@@ -496,6 +513,17 @@ function PromptCard({
         <SmallActionButton label="Delete" icon={Trash2} onClick={onDelete} />
       </div>
     </article>
+  );
+}
+
+function PromptCardDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-cyan-300/15 bg-cyan-300/[0.035] px-3 py-2.5">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-100">{label}</p>
+      <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+        {createSnippet(value, 180)}
+      </p>
+    </div>
   );
 }
 
