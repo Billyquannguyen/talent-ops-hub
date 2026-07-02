@@ -52,6 +52,9 @@ const columnHints: Record<EasyKolField, string[]> = {
   "Posts (7d)": ["posts (7d)", "posts 7d", "7d posts", "posts last 7 days"],
   "Posts (30d)": ["posts (30d)", "posts 30d", "30d posts", "posts last 30 days"],
   URL: ["url", "profile url", "link", "profile link"],
+  Following: ["following", "following count"],
+  "Sample Video URL": ["sample video url", "video url", "sample video link", "video link"],
+  "Source Hashtag": ["source hashtag", "hashtag"],
 };
 
 export function inferColumnMap(headers: string[]): ColumnMap {

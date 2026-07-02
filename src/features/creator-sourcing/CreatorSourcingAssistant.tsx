@@ -12,6 +12,7 @@ import {
   Download,
   FileSpreadsheet,
   Filter,
+  Hash,
   Loader2,
   Pencil,
   Plus,
@@ -128,6 +129,31 @@ type RangeOption = {
 type PendingLeaveAction =
   | { type: "selectProject"; projectId: string }
   | { type: "selectTemplate"; templateId: string };
+type HashtagScrapeReport = {
+  hashtag: string;
+  sourceUrl: string;
+  creatorsFound: number;
+  videosFound: number;
+  duplicatesRemoved: number;
+  warnings: string[];
+};
+type HashtagScrapeResponse =
+  | {
+      ok: true;
+      platform: "tiktok";
+      hashtag: string;
+      headers: string[];
+      rows: Array<Record<string, string | number | boolean | null | undefined>>;
+      videosFound: number;
+      creatorsFound: number;
+      duplicatesRemoved: number;
+      warnings: string[];
+      sourceUrl: string;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
 
 export function CreatorSourcingAssistant() {
   const [projects, setProjects] = useState<SourcingProject[]>([]);
@@ -139,6 +165,8 @@ export function CreatorSourcingAssistant() {
   const [creators, setCreators] = useState<UploadedCreator[]>([]);
   const [sourceFileName, setSourceFileName] = useState("");
   const [sheetName, setSheetName] = useState("");
+  const [hashtagInput, setHashtagInput] = useState("");
+  const [hashtagScrapeReport, setHashtagScrapeReport] = useState<HashtagScrapeReport | null>(null);
   const [filters, setFilters] = useState<FilterSettings>(() => ({ ...emptyFilters }));
   const [draftTemplate, setDraftTemplate] = useState<TemplateColumn[]>([]);
   const [draftTemplateName, setDraftTemplateName] = useState("");
@@ -160,6 +188,7 @@ export function CreatorSourcingAssistant() {
   );
   const [enrichmentReport, setEnrichmentReport] = useState<ContactEnrichmentReport | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isScrapingHashtag, setIsScrapingHashtag] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isEnrichingContacts, setIsEnrichingContacts] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -554,6 +583,7 @@ export function CreatorSourcingAssistant() {
     setIsPreviewModalOpen(false);
     setContactInfoByCreatorId({});
     setEnrichmentReport(null);
+    setHashtagScrapeReport(null);
     setOpenFilterSections(filterSectionDefaults);
     setCustomRanges({
       followersMin: "",
@@ -562,6 +592,7 @@ export function CreatorSourcingAssistant() {
       averageViewsMax: "",
     });
     setIsUploading(false);
+    setIsScrapingHashtag(false);
     setIsProcessing(false);
     setIsEnrichingContacts(false);
     if (resetFilters) setFilters({ ...emptyFilters });
@@ -636,6 +667,7 @@ export function CreatorSourcingAssistant() {
       setPreviewReady(false);
       setContactInfoByCreatorId({});
       setEnrichmentReport(null);
+      setHashtagScrapeReport(null);
       setStatusMessage(
         `Loaded ${uploadedCreators.length.toLocaleString()} creators from ${parsed.sheetName}.`,
       );
@@ -647,13 +679,83 @@ export function CreatorSourcingAssistant() {
     }
   }
 
+  async function scrapeHashtag() {
+    if (!activeProject) {
+      setErrorMessage("Select a campaign first.");
+      return;
+    }
+
+    const hashtag = normalizeHashtagInput(hashtagInput);
+    if (!hashtag) {
+      setErrorMessage("Enter a hashtag first.");
+      return;
+    }
+
+    setIsScrapingHashtag(true);
+    setErrorMessage("");
+    setCopyMessage("");
+    setHashtagScrapeReport(null);
+    setStatusMessage(`Scraping #${hashtag}...`);
+
+    try {
+      const response = await fetch("/api/sourcing/hashtag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: "tiktok",
+          hashtag,
+          maxResults: 500,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({
+        ok: false,
+        error: "Hashtag scraper returned an invalid response.",
+      }))) as HashtagScrapeResponse;
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.ok ? "Hashtag scrape failed." : payload.error);
+      }
+
+      const uploadedCreators = payload.rows.map((row, index) => ({
+        id: `hashtag-${payload.hashtag}-${Date.now()}-${index}`,
+        data: row,
+      }));
+
+      setHeaders(payload.headers);
+      setCreators(uploadedCreators);
+      setSourceFileName(`#${payload.hashtag}`);
+      setSheetName("TikTok Hashtag");
+      setSelectedRowIds([]);
+      setPreviewReady(false);
+      setContactInfoByCreatorId({});
+      setEnrichmentReport(null);
+      setHashtagScrapeReport({
+        hashtag: payload.hashtag,
+        sourceUrl: payload.sourceUrl,
+        creatorsFound: payload.creatorsFound,
+        videosFound: payload.videosFound,
+        duplicatesRemoved: payload.duplicatesRemoved,
+        warnings: payload.warnings,
+      });
+      setStatusMessage(
+        `Loaded ${uploadedCreators.length.toLocaleString()} creators from #${payload.hashtag}.`,
+      );
+      setCopyMessage(payload.warnings[0] ?? "");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Hashtag scrape failed.");
+      setStatusMessage("");
+    } finally {
+      setIsScrapingHashtag(false);
+    }
+  }
+
   async function enrichContacts() {
     if (!activeProject) {
       setErrorMessage("Select a campaign first.");
       return;
     }
     if (creators.length === 0) {
-      setErrorMessage("Upload an EasyKOL export first.");
+      setErrorMessage("Load creators first.");
       return;
     }
 
@@ -719,7 +821,7 @@ export function CreatorSourcingAssistant() {
       return;
     }
     if (creators.length === 0) {
-      setErrorMessage("Upload an EasyKOL export first.");
+      setErrorMessage("Load creators first.");
       return;
     }
     if (template.length === 0) {
@@ -729,7 +831,7 @@ export function CreatorSourcingAssistant() {
     const missingTemplateFields = getMissingTemplateSourceFields(template, columnMap);
     if (missingTemplateFields.length > 0) {
       setErrorMessage(
-        `The selected template uses source fields that were not found in this EasyKOL file: ${missingTemplateFields.join(
+        `The selected template uses source fields that were not found in this creator source: ${missingTemplateFields.join(
           ", ",
         )}. Check the uploaded headers or edit the template mapping.`,
       );
@@ -1205,7 +1307,7 @@ export function CreatorSourcingAssistant() {
                 />
               </label>
 
-              {sourceFileName && (
+              {sourceFileName && !hashtagScrapeReport && (
                 <div className="mt-3 space-y-2 rounded-md border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
                   <div>
                     <p className="font-medium uppercase text-muted-foreground">Current File</p>
@@ -1227,6 +1329,21 @@ export function CreatorSourcingAssistant() {
                   </div>
                 </div>
               )}
+            </Panel>
+
+            <Panel title="Hashtag Scraper" icon={Hash}>
+              <HashtagScraperForm
+                value={hashtagInput}
+                isScraping={isScrapingHashtag}
+                canScrape={Boolean(activeProject)}
+                onChange={setHashtagInput}
+                onScrape={() => {
+                  void scrapeHashtag();
+                }}
+              />
+              {hashtagScrapeReport ? (
+                <HashtagScrapeReportPanel report={hashtagScrapeReport} />
+              ) : null}
             </Panel>
 
             <Panel title="Filters" icon={Filter}>
@@ -1407,6 +1524,94 @@ export function CreatorSourcingAssistant() {
           }}
           onLeave={pendingLeaveAction ? confirmPendingLeave : confirmRouteLeave}
         />
+      ) : null}
+    </div>
+  );
+}
+
+function HashtagScraperForm({
+  value,
+  isScraping,
+  canScrape,
+  onChange,
+  onScrape,
+}: {
+  value: string;
+  isScraping: boolean;
+  canScrape: boolean;
+  onChange: (value: string) => void;
+  onScrape: () => void;
+}) {
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onScrape();
+      }}
+    >
+      <label className="block">
+        <span className="text-xs font-medium text-muted-foreground">TikTok Hashtag</span>
+        <div className="mt-1 flex rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
+          <span className="flex h-10 items-center border-r border-border px-3 text-sm text-muted-foreground">
+            #
+          </span>
+          <input
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="skincare"
+            className="h-10 min-w-0 flex-1 bg-transparent px-3 text-sm outline-none"
+          />
+        </div>
+      </label>
+      <button
+        type="submit"
+        disabled={!canScrape || isScraping || !normalizeHashtagInput(value)}
+        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {isScraping ? <Loader2 className="size-4 animate-spin" /> : <Hash className="size-4" />}
+        {isScraping ? "Scraping..." : "Scrape Hashtag"}
+      </button>
+    </form>
+  );
+}
+
+function HashtagScrapeReportPanel({ report }: { report: HashtagScrapeReport }) {
+  return (
+    <div className="mt-3 space-y-3 rounded-md border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
+      <div>
+        <p className="font-medium uppercase text-muted-foreground">Current Hashtag</p>
+        <a
+          href={report.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1 block truncate font-medium text-primary underline-offset-2 hover:underline"
+        >
+          #{report.hashtag}
+        </a>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+        <div>
+          <p className="font-medium uppercase text-muted-foreground">Creators</p>
+          <p className="mt-1 font-medium text-foreground">
+            {report.creatorsFound.toLocaleString()}
+          </p>
+        </div>
+        <div>
+          <p className="font-medium uppercase text-muted-foreground">Videos Read</p>
+          <p className="mt-1 font-medium text-foreground">{report.videosFound.toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="font-medium uppercase text-muted-foreground">Duplicates Removed</p>
+          <p className="mt-1 font-medium text-foreground">
+            {report.duplicatesRemoved.toLocaleString()}
+          </p>
+        </div>
+      </div>
+      {report.warnings.length ? (
+        <div className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-amber-100">
+          {report.warnings[0]}
+        </div>
       ) : null}
     </div>
   );
@@ -3366,6 +3571,10 @@ function formatSavedAt(value?: string): string {
 function stringValue(value: unknown): string {
   if (value == null) return "";
   return String(value);
+}
+
+function normalizeHashtagInput(value: string): string {
+  return value.trim().replace(/^#+/, "").replace(/\s+/g, "");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -28,6 +28,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ActiveCampaignsIndexRouteImport } from './routes/active-campaigns.index'
 import { Route as ApiTranslateRouteImport } from './routes/api/translate'
 import { Route as ActiveCampaignsCampaignIdRouteImport } from './routes/active-campaigns.$campaignId'
+import { Route as ApiSourcingHashtagRouteImport } from './routes/api/sourcing/hashtag'
 import { Route as ApiAiOutreachRouteImport } from './routes/api/ai/outreach'
 import { Route as ApiAiEnrichContactsRouteImport } from './routes/api/ai/enrich-contacts'
 
@@ -127,6 +128,11 @@ const ActiveCampaignsCampaignIdRoute =
     path: '/$campaignId',
     getParentRoute: () => ActiveCampaignsRoute,
   } as any)
+const ApiSourcingHashtagRoute = ApiSourcingHashtagRouteImport.update({
+  id: '/api/sourcing/hashtag',
+  path: '/api/sourcing/hashtag',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAiOutreachRoute = ApiAiOutreachRouteImport.update({
   id: '/api/ai/outreach',
   path: '/api/ai/outreach',
@@ -160,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/active-campaigns/': typeof ActiveCampaignsIndexRoute
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
+  '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -182,6 +189,7 @@ export interface FileRoutesByTo {
   '/active-campaigns': typeof ActiveCampaignsIndexRoute
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
+  '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -206,6 +214,7 @@ export interface FileRoutesById {
   '/active-campaigns/': typeof ActiveCampaignsIndexRoute
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
+  '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -231,6 +240,7 @@ export interface FileRouteTypes {
     | '/active-campaigns/'
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
+    | '/api/sourcing/hashtag'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/active-campaigns'
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
+    | '/api/sourcing/hashtag'
   id:
     | '__root__'
     | '/'
@@ -276,6 +287,7 @@ export interface FileRouteTypes {
     | '/active-campaigns/'
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
+    | '/api/sourcing/hashtag'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -298,6 +310,7 @@ export interface RootRouteChildren {
   ApiTranslateRoute: typeof ApiTranslateRoute
   ApiAiEnrichContactsRoute: typeof ApiAiEnrichContactsRoute
   ApiAiOutreachRoute: typeof ApiAiOutreachRoute
+  ApiSourcingHashtagRoute: typeof ApiSourcingHashtagRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -435,6 +448,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ActiveCampaignsCampaignIdRouteImport
       parentRoute: typeof ActiveCampaignsRoute
     }
+    '/api/sourcing/hashtag': {
+      id: '/api/sourcing/hashtag'
+      path: '/api/sourcing/hashtag'
+      fullPath: '/api/sourcing/hashtag'
+      preLoaderRoute: typeof ApiSourcingHashtagRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ai/outreach': {
       id: '/api/ai/outreach'
       path: '/api/ai/outreach'
@@ -486,6 +506,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiTranslateRoute: ApiTranslateRoute,
   ApiAiEnrichContactsRoute: ApiAiEnrichContactsRoute,
   ApiAiOutreachRoute: ApiAiOutreachRoute,
+  ApiSourcingHashtagRoute: ApiSourcingHashtagRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

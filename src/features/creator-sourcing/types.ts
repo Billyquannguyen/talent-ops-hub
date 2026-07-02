@@ -15,6 +15,9 @@ export const easyKolFields = [
   "Posts (7d)",
   "Posts (30d)",
   "URL",
+  "Following",
+  "Sample Video URL",
+  "Source Hashtag",
 ] as const;
 
 export type EasyKolField = (typeof easyKolFields)[number];
