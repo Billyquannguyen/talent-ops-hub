@@ -26,6 +26,14 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { TopBar } from "@/components/TopBar";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { formatCountryLabel, matchesCountryQuery } from "@/lib/countries";
 import {
   deleteSourcingTemplateFromGoogleSheetsOnly,
@@ -129,6 +137,7 @@ type RangeOption = {
 type PendingLeaveAction =
   | { type: "selectProject"; projectId: string }
   | { type: "selectTemplate"; templateId: string };
+type SourcingAssistantPage = "easykol" | "billy";
 type HashtagScrapeReport = {
   hashtag: string;
   sourceUrl: string;
@@ -156,6 +165,7 @@ type HashtagScrapeResponse =
     };
 
 export function CreatorSourcingAssistant() {
+  const [assistantPage, setAssistantPage] = useState<SourcingAssistantPage>("easykol");
   const [projects, setProjects] = useState<SourcingProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState("");
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -165,8 +175,6 @@ export function CreatorSourcingAssistant() {
   const [creators, setCreators] = useState<UploadedCreator[]>([]);
   const [sourceFileName, setSourceFileName] = useState("");
   const [sheetName, setSheetName] = useState("");
-  const [hashtagInput, setHashtagInput] = useState("");
-  const [hashtagScrapeReport, setHashtagScrapeReport] = useState<HashtagScrapeReport | null>(null);
   const [filters, setFilters] = useState<FilterSettings>(() => ({ ...emptyFilters }));
   const [draftTemplate, setDraftTemplate] = useState<TemplateColumn[]>([]);
   const [draftTemplateName, setDraftTemplateName] = useState("");
@@ -188,7 +196,6 @@ export function CreatorSourcingAssistant() {
   );
   const [enrichmentReport, setEnrichmentReport] = useState<ContactEnrichmentReport | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [isScrapingHashtag, setIsScrapingHashtag] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isEnrichingContacts, setIsEnrichingContacts] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -583,7 +590,6 @@ export function CreatorSourcingAssistant() {
     setIsPreviewModalOpen(false);
     setContactInfoByCreatorId({});
     setEnrichmentReport(null);
-    setHashtagScrapeReport(null);
     setOpenFilterSections(filterSectionDefaults);
     setCustomRanges({
       followersMin: "",
@@ -592,7 +598,6 @@ export function CreatorSourcingAssistant() {
       averageViewsMax: "",
     });
     setIsUploading(false);
-    setIsScrapingHashtag(false);
     setIsProcessing(false);
     setIsEnrichingContacts(false);
     if (resetFilters) setFilters({ ...emptyFilters });
@@ -667,7 +672,6 @@ export function CreatorSourcingAssistant() {
       setPreviewReady(false);
       setContactInfoByCreatorId({});
       setEnrichmentReport(null);
-      setHashtagScrapeReport(null);
       setStatusMessage(
         `Loaded ${uploadedCreators.length.toLocaleString()} creators from ${parsed.sheetName}.`,
       );
@@ -679,83 +683,13 @@ export function CreatorSourcingAssistant() {
     }
   }
 
-  async function scrapeHashtag() {
-    if (!activeProject) {
-      setErrorMessage("Select a campaign first.");
-      return;
-    }
-
-    const hashtag = normalizeHashtagInput(hashtagInput);
-    if (!hashtag) {
-      setErrorMessage("Enter a hashtag first.");
-      return;
-    }
-
-    setIsScrapingHashtag(true);
-    setErrorMessage("");
-    setCopyMessage("");
-    setHashtagScrapeReport(null);
-    setStatusMessage(`Scraping #${hashtag}...`);
-
-    try {
-      const response = await fetch("/api/sourcing/hashtag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          platform: "tiktok",
-          hashtag,
-          maxResults: 500,
-        }),
-      });
-      const payload = (await response.json().catch(() => ({
-        ok: false,
-        error: "Hashtag scraper returned an invalid response.",
-      }))) as HashtagScrapeResponse;
-
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.ok ? "Hashtag scrape failed." : payload.error);
-      }
-
-      const uploadedCreators = payload.rows.map((row, index) => ({
-        id: `hashtag-${payload.hashtag}-${Date.now()}-${index}`,
-        data: row,
-      }));
-
-      setHeaders(payload.headers);
-      setCreators(uploadedCreators);
-      setSourceFileName(`#${payload.hashtag}`);
-      setSheetName("TikTok Hashtag");
-      setSelectedRowIds([]);
-      setPreviewReady(false);
-      setContactInfoByCreatorId({});
-      setEnrichmentReport(null);
-      setHashtagScrapeReport({
-        hashtag: payload.hashtag,
-        sourceUrl: payload.sourceUrl,
-        creatorsFound: payload.creatorsFound,
-        videosFound: payload.videosFound,
-        duplicatesRemoved: payload.duplicatesRemoved,
-        warnings: payload.warnings,
-      });
-      setStatusMessage(
-        `Loaded ${uploadedCreators.length.toLocaleString()} creators from #${payload.hashtag}.`,
-      );
-      setCopyMessage(payload.warnings[0] ?? "");
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Hashtag scrape failed.");
-      setStatusMessage("");
-    } finally {
-      setIsScrapingHashtag(false);
-    }
-  }
-
   async function enrichContacts() {
     if (!activeProject) {
       setErrorMessage("Select a campaign first.");
       return;
     }
     if (creators.length === 0) {
-      setErrorMessage("Load creators first.");
+      setErrorMessage("Upload an EasyKOL export first.");
       return;
     }
 
@@ -821,7 +755,7 @@ export function CreatorSourcingAssistant() {
       return;
     }
     if (creators.length === 0) {
-      setErrorMessage("Load creators first.");
+      setErrorMessage("Upload an EasyKOL export first.");
       return;
     }
     if (template.length === 0) {
@@ -831,7 +765,7 @@ export function CreatorSourcingAssistant() {
     const missingTemplateFields = getMissingTemplateSourceFields(template, columnMap);
     if (missingTemplateFields.length > 0) {
       setErrorMessage(
-        `The selected template uses source fields that were not found in this creator source: ${missingTemplateFields.join(
+        `The selected template uses source fields that were not found in this EasyKOL file: ${missingTemplateFields.join(
           ", ",
         )}. Check the uploaded headers or edit the template mapping.`,
       );
@@ -1156,313 +1090,321 @@ export function CreatorSourcingAssistant() {
                 Creator Sourcing Assistant
               </p>
               <h1 className="mt-3 max-w-3xl text-3xl font-medium leading-tight tracking-tight md:text-4xl">
-                EasyKOL Scraping Processor
+                {assistantPage === "easykol"
+                  ? "EasyKOL Scraping Processor"
+                  : "Billy's Scraper System"}
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Upload the EasyKOL export, filter the creators, generate contacts, then preview the
-                exact columns you want to paste into a sourcing sheet.
+                {assistantPage === "easykol"
+                  ? "Upload the EasyKOL export, filter the creators, generate contacts, then preview the exact columns you want to paste into a sourcing sheet."
+                  : "Scrape a TikTok hashtag on its own page, dedupe creators, filter the list, then export rows without touching the EasyKOL upload flow."}
               </p>
             </div>
           </div>
         </section>
 
-        {statusMessage || copyMessage || errorMessage ? (
-          <section className="space-y-2">
-            {statusMessage ? (
-              <div className="katlas-status-line flex items-center gap-2">
-                <Check className="size-4 text-emerald-400" />
-                {statusMessage}
-              </div>
-            ) : null}
-            {copyMessage ? <div className="katlas-status-line">{copyMessage}</div> : null}
-            {errorMessage ? (
-              <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {errorMessage}
-              </div>
-            ) : null}
-          </section>
-        ) : null}
+        <SourcingAssistantPagination page={assistantPage} onPageChange={setAssistantPage} />
 
-        <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
-          <aside className="flex min-w-0 flex-col gap-5">
-            <Panel title="Campaign" icon={ClipboardList}>
-              {projects.length > 0 ? (
-                <>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Campaign From Campaign Profiles
-                    </label>
-                    <select
-                      value={activeProjectId}
-                      onChange={(event) => requestProjectChange(event.target.value)}
-                      className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                    >
-                      {projects.map((project) => (
-                        <option key={project.campaignId} value={project.campaignId}>
-                          {project.name}
-                        </option>
-                      ))}
-                    </select>
+        {assistantPage === "easykol" ? (
+          <>
+            {statusMessage || copyMessage || errorMessage ? (
+              <section className="space-y-2">
+                {statusMessage ? (
+                  <div className="katlas-status-line flex items-center gap-2">
+                    <Check className="size-4 text-emerald-400" />
+                    {statusMessage}
                   </div>
-                  <div className="mt-3">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Saved Sourcing Template
-                    </label>
-                    <select
-                      value={activeProject?.activeTemplateId ?? ""}
-                      onChange={(event) => requestTemplateChange(event.target.value)}
-                      className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                    >
-                      {activeProject?.templates.map((templateItem) => (
-                        <option key={templateItem.id} value={templateItem.id}>
-                          {templateItem.templateName}
-                        </option>
-                      ))}
-                    </select>
+                ) : null}
+                {copyMessage ? <div className="katlas-status-line">{copyMessage}</div> : null}
+                {errorMessage ? (
+                  <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {errorMessage}
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      onClick={createNewTemplate}
-                      disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Plus className="size-4" />
-                      New
-                    </button>
-                    <button
-                      onClick={() => setIsTemplateModalOpen(true)}
-                      disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Columns3 className="size-4" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setIsTemplateManagerOpen(true)}
-                      disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Pencil className="size-4" />
-                      Manage
-                    </button>
-                    <button
-                      onClick={resetTemplate}
-                      disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <RotateCcw className="size-4" />
-                      Reset
-                    </button>
-                  </div>
-                  <TemplateStatus
-                    columnCount={activeProject?.template.length ?? 0}
-                    templateName={activeProject?.templateName ?? ""}
-                    savedAt={activeProject?.templateSavedAt}
-                    hasUnsavedChanges={templateHasUnsavedChanges}
-                    message={
-                      isLoadingTemplates
-                        ? "Loading templates from Google Sheets..."
-                        : isSavingTemplates
-                          ? "Saving to Google Sheets..."
-                          : templateMessage
+                ) : null}
+              </section>
+            ) : null}
+
+            <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
+              <aside className="flex min-w-0 flex-col gap-5">
+                <Panel title="Campaign" icon={ClipboardList}>
+                  {projects.length > 0 ? (
+                    <>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Campaign From Campaign Profiles
+                        </label>
+                        <select
+                          value={activeProjectId}
+                          onChange={(event) => requestProjectChange(event.target.value)}
+                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                        >
+                          {projects.map((project) => (
+                            <option key={project.campaignId} value={project.campaignId}>
+                              {project.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="mt-3">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Saved Sourcing Template
+                        </label>
+                        <select
+                          value={activeProject?.activeTemplateId ?? ""}
+                          onChange={(event) => requestTemplateChange(event.target.value)}
+                          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                        >
+                          {activeProject?.templates.map((templateItem) => (
+                            <option key={templateItem.id} value={templateItem.id}>
+                              {templateItem.templateName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          onClick={createNewTemplate}
+                          disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Plus className="size-4" />
+                          New
+                        </button>
+                        <button
+                          onClick={() => setIsTemplateModalOpen(true)}
+                          disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Columns3 className="size-4" />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => setIsTemplateManagerOpen(true)}
+                          disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Pencil className="size-4" />
+                          Manage
+                        </button>
+                        <button
+                          onClick={resetTemplate}
+                          disabled={!activeProject || isLoadingTemplates || isSavingTemplates}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <RotateCcw className="size-4" />
+                          Reset
+                        </button>
+                      </div>
+                      <TemplateStatus
+                        columnCount={activeProject?.template.length ?? 0}
+                        templateName={activeProject?.templateName ?? ""}
+                        savedAt={activeProject?.templateSavedAt}
+                        hasUnsavedChanges={templateHasUnsavedChanges}
+                        message={
+                          isLoadingTemplates
+                            ? "Loading templates from Google Sheets..."
+                            : isSavingTemplates
+                              ? "Saving to Google Sheets..."
+                              : templateMessage
+                        }
+                      />
+                    </>
+                  ) : (
+                    <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                      Create campaigns in Campaign Profiles first. Sourcing templates attach to
+                      those campaign records.
+                    </p>
+                  )}
+                </Panel>
+
+                <Panel title="Upload" icon={Upload}>
+                  <label
+                    className={`flex flex-col items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center transition ${
+                      activeProject
+                        ? "cursor-pointer border-border bg-background hover:border-ring"
+                        : "cursor-not-allowed border-border bg-muted/60 opacity-75"
+                    }`}
+                  >
+                    <FileSpreadsheet className="size-7 text-muted-foreground" />
+                    <span className="mt-3 text-sm font-medium">
+                      {isUploading
+                        ? "Reading file..."
+                        : activeProject
+                          ? "Upload EasyKOL Excel or CSV"
+                          : "Select a campaign before uploading"}
+                    </span>
+                    <span className="mt-1 text-xs text-muted-foreground">
+                      The app automatically reads the second worksheet.
+                    </span>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      className="hidden"
+                      disabled={!activeProject || isUploading}
+                      onChange={(event) => {
+                        void handleUpload(event.target.files?.[0]);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+
+                  {sourceFileName && (
+                    <div className="mt-3 space-y-2 rounded-md border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
+                      <div>
+                        <p className="font-medium uppercase text-muted-foreground">Current File</p>
+                        <p className="mt-1 truncate font-medium text-foreground">
+                          {sourceFileName}
+                        </p>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                        <div>
+                          <p className="font-medium uppercase text-muted-foreground">
+                            Creators Loaded
+                          </p>
+                          <p className="mt-1 font-medium text-foreground">
+                            {creators.length.toLocaleString()}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="font-medium uppercase text-muted-foreground">Worksheet</p>
+                          <p className="mt-1 truncate font-medium text-foreground">
+                            {sheetName || "Second worksheet"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </Panel>
+
+                <Panel title="Filters" icon={Filter}>
+                  <EasyKolFilters
+                    filters={filters}
+                    openSections={openFilterSections}
+                    regionCounts={regionCounts}
+                    languageCounts={languageCounts}
+                    platformCounts={platformCounts}
+                    followersRanges={followersRanges}
+                    averageViewRanges={averageViewRanges}
+                    emailAvailabilityCounts={emailAvailabilityCounts}
+                    customRanges={customRanges}
+                    onToggleSection={toggleFilterSection}
+                    onToggleRegion={(value) => toggleArrayFilter("regions", "region", value)}
+                    onToggleLanguage={(value) => toggleArrayFilter("languages", "language", value)}
+                    onTogglePlatform={(value) => toggleArrayFilter("platforms", "platform", value)}
+                    onPresetRange={togglePresetRange}
+                    onCustomRangeChange={(patch) =>
+                      setCustomRanges((current) => ({ ...current, ...patch }))
                     }
+                    onApplyCustomRange={applyCustomRange}
+                    onEmailAvailability={toggleEmailAvailability}
                   />
-                </>
-              ) : (
-                <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                  Create campaigns in Campaign Profiles first. Sourcing templates attach to those
-                  campaign records.
-                </p>
-              )}
-            </Panel>
+                </Panel>
+              </aside>
 
-            <Panel title="Upload" icon={Upload}>
-              <label
-                className={`flex flex-col items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center transition ${
-                  activeProject
-                    ? "cursor-pointer border-border bg-background hover:border-ring"
-                    : "cursor-not-allowed border-border bg-muted/60 opacity-75"
-                }`}
-              >
-                <FileSpreadsheet className="size-7 text-muted-foreground" />
-                <span className="mt-3 text-sm font-medium">
-                  {isUploading
-                    ? "Reading file..."
-                    : activeProject
-                      ? "Upload EasyKOL Excel or CSV"
-                      : "Select a campaign before uploading"}
-                </span>
-                <span className="mt-1 text-xs text-muted-foreground">
-                  The app automatically reads the second worksheet.
-                </span>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  className="hidden"
-                  disabled={!activeProject || isUploading}
-                  onChange={(event) => {
-                    void handleUpload(event.target.files?.[0]);
-                    event.currentTarget.value = "";
-                  }}
-                />
-              </label>
-
-              {sourceFileName && !hashtagScrapeReport && (
-                <div className="mt-3 space-y-2 rounded-md border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
-                  <div>
-                    <p className="font-medium uppercase text-muted-foreground">Current File</p>
-                    <p className="mt-1 truncate font-medium text-foreground">{sourceFileName}</p>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="flex min-w-0 flex-col gap-5">
+                <Panel
+                  key={`${activeProjectId}:${activeTemplateId}:preview`}
+                  title="Preview"
+                  icon={Sparkles}
+                >
+                  {activeFilterChips.length > 0 ? (
+                    <ActiveFilterChips chips={activeFilterChips} onClear={clearFilterChip} />
+                  ) : null}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="font-medium uppercase text-muted-foreground">Creators Loaded</p>
-                      <p className="mt-1 font-medium text-foreground">
-                        {creators.length.toLocaleString()}
+                      <p className="text-sm font-medium">
+                        {filteredCreators.length.toLocaleString()} of{" "}
+                        {creators.length.toLocaleString()} creators match the current filters
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Preview shows only the columns from the selected sourcing template.
                       </p>
                     </div>
-                    <div>
-                      <p className="font-medium uppercase text-muted-foreground">Worksheet</p>
-                      <p className="mt-1 truncate font-medium text-foreground">
-                        {sheetName || "Second worksheet"}
-                      </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={enrichContacts}
+                        disabled={
+                          isEnrichingContacts ||
+                          isProcessing ||
+                          !activeProject ||
+                          creators.length === 0
+                        }
+                        className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isEnrichingContacts ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="size-4" />
+                        )}
+                        Enrich Contacts
+                      </button>
+                      <button
+                        onClick={preparePreview}
+                        disabled={
+                          isProcessing ||
+                          isEnrichingContacts ||
+                          !activeProject ||
+                          creators.length === 0
+                        }
+                        className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isProcessing ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="size-4" />
+                        )}
+                        Prepare Preview
+                      </button>
+                      <button
+                        onClick={() => setIsPreviewModalOpen(true)}
+                        disabled={!previewReady || previewRows.length === 0}
+                        className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <FileSpreadsheet className="size-4" />
+                        Open Preview
+                      </button>
+                      <button
+                        onClick={() => copyRows(previewRows, "All rows")}
+                        disabled={!previewReady || previewRows.length === 0}
+                        className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Copy className="size-4" />
+                        Copy All Rows
+                      </button>
+                      <button
+                        onClick={downloadPreview}
+                        disabled={!previewReady || previewRows.length === 0}
+                        className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Download className="size-4" />
+                        Download Modified Sheet
+                      </button>
                     </div>
                   </div>
-                </div>
-              )}
-            </Panel>
 
-            <Panel title="Hashtag Scraper" icon={Hash}>
-              <HashtagScraperForm
-                value={hashtagInput}
-                isScraping={isScrapingHashtag}
-                canScrape={Boolean(activeProject)}
-                onChange={setHashtagInput}
-                onScrape={() => {
-                  void scrapeHashtag();
-                }}
-              />
-              {hashtagScrapeReport ? (
-                <HashtagScrapeReportPanel report={hashtagScrapeReport} />
-              ) : null}
-            </Panel>
+                  <PreviewMetrics
+                    imported={creators.length}
+                    filtered={filteredCreators.length}
+                    withContact={creatorsWithContact}
+                    withoutContact={creatorsWithoutContact}
+                  />
 
-            <Panel title="Filters" icon={Filter}>
-              <EasyKolFilters
-                filters={filters}
-                openSections={openFilterSections}
-                regionCounts={regionCounts}
-                languageCounts={languageCounts}
-                platformCounts={platformCounts}
-                followersRanges={followersRanges}
-                averageViewRanges={averageViewRanges}
-                emailAvailabilityCounts={emailAvailabilityCounts}
-                customRanges={customRanges}
-                onToggleSection={toggleFilterSection}
-                onToggleRegion={(value) => toggleArrayFilter("regions", "region", value)}
-                onToggleLanguage={(value) => toggleArrayFilter("languages", "language", value)}
-                onTogglePlatform={(value) => toggleArrayFilter("platforms", "platform", value)}
-                onPresetRange={togglePresetRange}
-                onCustomRangeChange={(patch) =>
-                  setCustomRanges((current) => ({ ...current, ...patch }))
-                }
-                onApplyCustomRange={applyCustomRange}
-                onEmailAvailability={toggleEmailAvailability}
-              />
-            </Panel>
-          </aside>
+                  {enrichmentReport ? (
+                    <ContactEnrichmentReportPanel report={enrichmentReport} />
+                  ) : null}
 
-          <div className="flex min-w-0 flex-col gap-5">
-            <Panel
-              key={`${activeProjectId}:${activeTemplateId}:preview`}
-              title="Preview"
-              icon={Sparkles}
-            >
-              {activeFilterChips.length > 0 ? (
-                <ActiveFilterChips chips={activeFilterChips} onClear={clearFilterChip} />
-              ) : null}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">
-                    {filteredCreators.length.toLocaleString()} of {creators.length.toLocaleString()}{" "}
-                    creators match the current filters
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Preview shows only the columns from the selected sourcing template.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={enrichContacts}
-                    disabled={
-                      isEnrichingContacts || isProcessing || !activeProject || creators.length === 0
-                    }
-                    className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isEnrichingContacts ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="size-4" />
-                    )}
-                    Enrich Contacts
-                  </button>
-                  <button
-                    onClick={preparePreview}
-                    disabled={
-                      isProcessing || isEnrichingContacts || !activeProject || creators.length === 0
-                    }
-                    className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isProcessing ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="size-4" />
-                    )}
-                    Prepare Preview
-                  </button>
-                  <button
-                    onClick={() => setIsPreviewModalOpen(true)}
-                    disabled={!previewReady || previewRows.length === 0}
-                    className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <FileSpreadsheet className="size-4" />
-                    Open Preview
-                  </button>
-                  <button
-                    onClick={() => copyRows(previewRows, "All rows")}
-                    disabled={!previewReady || previewRows.length === 0}
-                    className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Copy className="size-4" />
-                    Copy All Rows
-                  </button>
-                  <button
-                    onClick={downloadPreview}
-                    disabled={!previewReady || previewRows.length === 0}
-                    className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Download className="size-4" />
-                    Download Modified Sheet
-                  </button>
-                </div>
+                  {!previewReady ? (
+                    <div className="mt-4 rounded-md border border-dashed border-border bg-background px-4 py-4 text-sm text-muted-foreground">
+                      Prepare Preview to open the Excel-style output table.
+                    </div>
+                  ) : null}
+                </Panel>
               </div>
-
-              <PreviewMetrics
-                imported={creators.length}
-                filtered={filteredCreators.length}
-                withContact={creatorsWithContact}
-                withoutContact={creatorsWithoutContact}
-              />
-
-              {enrichmentReport ? <ContactEnrichmentReportPanel report={enrichmentReport} /> : null}
-
-              {!previewReady ? (
-                <div className="mt-4 rounded-md border border-dashed border-border bg-background px-4 py-4 text-sm text-muted-foreground">
-                  Prepare Preview to open the Excel-style output table.
-                </div>
-              ) : null}
-            </Panel>
-          </div>
-        </section>
+            </section>
+          </>
+        ) : (
+          <BillyScraperSystem projects={projects} isLoadingTemplates={isLoadingTemplates} />
+        )}
       </main>
 
       {isTemplateModalOpen && activeProject ? (
@@ -1525,6 +1467,582 @@ export function CreatorSourcingAssistant() {
           onLeave={pendingLeaveAction ? confirmPendingLeave : confirmRouteLeave}
         />
       ) : null}
+    </div>
+  );
+}
+
+function SourcingAssistantPagination({
+  page,
+  onPageChange,
+}: {
+  page: SourcingAssistantPage;
+  onPageChange: (page: SourcingAssistantPage) => void;
+}) {
+  const pages: Array<{ id: SourcingAssistantPage; label: string; pageNumber: number }> = [
+    { id: "easykol", label: "EasyKOL", pageNumber: 1 },
+    { id: "billy", label: "Billy", pageNumber: 2 },
+  ];
+  const currentIndex = pages.findIndex((item) => item.id === page);
+  const previousPage = pages[Math.max(currentIndex - 1, 0)]?.id ?? page;
+  const nextPage = pages[Math.min(currentIndex + 1, pages.length - 1)]?.id ?? page;
+
+  function switchPage(nextPageId: SourcingAssistantPage) {
+    onPageChange(nextPageId);
+  }
+
+  return (
+    <Pagination className="justify-start">
+      <PaginationContent className="rounded-lg border border-border bg-card p-1">
+        <PaginationItem>
+          <PaginationPrevious
+            href="#"
+            aria-disabled={page === "easykol"}
+            className={page === "easykol" ? "pointer-events-none opacity-50" : ""}
+            onClick={(event) => {
+              event.preventDefault();
+              switchPage(previousPage);
+            }}
+          />
+        </PaginationItem>
+        {pages.map((item) => (
+          <PaginationItem key={item.id}>
+            <PaginationLink
+              href="#"
+              isActive={page === item.id}
+              aria-label={`Open ${item.label} page`}
+              onClick={(event) => {
+                event.preventDefault();
+                switchPage(item.id);
+              }}
+            >
+              {item.pageNumber}
+            </PaginationLink>
+          </PaginationItem>
+        ))}
+        <PaginationItem>
+          <PaginationNext
+            href="#"
+            aria-disabled={page === "billy"}
+            className={page === "billy" ? "pointer-events-none opacity-50" : ""}
+            onClick={(event) => {
+              event.preventDefault();
+              switchPage(nextPage);
+            }}
+          />
+        </PaginationItem>
+      </PaginationContent>
+    </Pagination>
+  );
+}
+
+function BillyScraperSystem({
+  projects,
+  isLoadingTemplates,
+}: {
+  projects: SourcingProject[];
+  isLoadingTemplates: boolean;
+}) {
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [hashtagInput, setHashtagInput] = useState("");
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [creators, setCreators] = useState<UploadedCreator[]>([]);
+  const [filters, setFilters] = useState({
+    followersMin: "",
+    followersMax: "",
+    followingMin: "",
+    followingMax: "",
+  });
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [previewReady, setPreviewReady] = useState(false);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [isScraping, setIsScraping] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [scrapeReport, setScrapeReport] = useState<HashtagScrapeReport | null>(null);
+
+  const activeProject =
+    projects.find((project) => project.campaignId === selectedCampaignId) ?? projects[0];
+  const activeTemplate =
+    activeProject?.templates.find((templateItem) => templateItem.id === selectedTemplateId) ??
+    activeProject?.templates.find(
+      (templateItem) => templateItem.id === activeProject.activeTemplateId,
+    ) ??
+    activeProject?.templates[0];
+  const template = useMemo(() => activeTemplate?.columns ?? [], [activeTemplate]);
+  const columnMap = useMemo(() => inferColumnMap(headers), [headers]);
+  const filteredCreators = useMemo(
+    () => filterBillyCreators(creators, filters),
+    [creators, filters],
+  );
+  const previewHeaders = useMemo(
+    () => [
+      ...template.map((column, index) => column.label.trim() || `Column ${index + 1}`),
+      "Following",
+      "Sample Video URL",
+      "Source Hashtag",
+    ],
+    [template],
+  );
+  const previewRows = useMemo(
+    () =>
+      filteredCreators.map((creator) => {
+        const baseRow = buildPreviewRow({
+          id: creator.id,
+          data: creator.data,
+          columnMap,
+          template,
+        });
+        return {
+          ...baseRow,
+          values: [
+            ...baseRow.values,
+            stringValue(creator.data.Following),
+            stringValue(creator.data["Sample Video URL"]),
+            stringValue(creator.data["Source Hashtag"]),
+          ],
+        };
+      }),
+    [filteredCreators, columnMap, template],
+  );
+  const selectedPreviewRows = useMemo(
+    () => previewRows.filter((row) => selectedRowIds.includes(row.id)),
+    [previewRows, selectedRowIds],
+  );
+
+  useEffect(() => {
+    if (!projects.length) {
+      setSelectedCampaignId("");
+      return;
+    }
+    if (
+      !selectedCampaignId ||
+      !projects.some((project) => project.campaignId === selectedCampaignId)
+    ) {
+      setSelectedCampaignId(projects[0]?.campaignId ?? "");
+    }
+  }, [projects, selectedCampaignId]);
+
+  useEffect(() => {
+    if (!activeProject) {
+      setSelectedTemplateId("");
+      return;
+    }
+    const templateExists = activeProject.templates.some(
+      (templateItem) => templateItem.id === selectedTemplateId,
+    );
+    if (!selectedTemplateId || !templateExists) {
+      setSelectedTemplateId(activeProject.activeTemplateId || activeProject.templates[0]?.id || "");
+    }
+  }, [activeProject, selectedTemplateId]);
+
+  useEffect(() => {
+    setPreviewReady(false);
+    setSelectedRowIds([]);
+  }, [creators, filters, selectedTemplateId]);
+
+  async function scrapeHashtag() {
+    if (!activeProject) {
+      setErrorMessage("Select a campaign first.");
+      return;
+    }
+
+    const hashtag = normalizeHashtagInput(hashtagInput);
+    if (!hashtag) {
+      setErrorMessage("Enter a hashtag first.");
+      return;
+    }
+
+    setIsScraping(true);
+    setStatusMessage(`Scraping #${hashtag}...`);
+    setErrorMessage("");
+    setCopyMessage("");
+    setScrapeReport(null);
+
+    try {
+      const response = await fetch("/api/sourcing/hashtag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: "tiktok",
+          hashtag,
+          maxResults: 1000,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({
+        ok: false,
+        error: "Hashtag scraper returned an invalid response.",
+      }))) as HashtagScrapeResponse;
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.ok ? "Hashtag scrape failed." : payload.error);
+      }
+
+      const scrapedCreators = payload.rows.map((row, index) => ({
+        id: `billy-${payload.hashtag}-${Date.now()}-${index}`,
+        data: row,
+      }));
+
+      setHeaders(payload.headers);
+      setCreators(scrapedCreators);
+      setSelectedRowIds([]);
+      setPreviewReady(false);
+      setScrapeReport({
+        hashtag: payload.hashtag,
+        sourceUrl: payload.sourceUrl,
+        creatorsFound: payload.creatorsFound,
+        videosFound: payload.videosFound,
+        duplicatesRemoved: payload.duplicatesRemoved,
+        warnings: payload.warnings,
+      });
+      setStatusMessage(
+        `Loaded ${scrapedCreators.length.toLocaleString()} creators from #${payload.hashtag}.`,
+      );
+      setCopyMessage(payload.warnings[0] ?? "");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Hashtag scrape failed.");
+      setStatusMessage("");
+    } finally {
+      setIsScraping(false);
+    }
+  }
+
+  async function preparePreview() {
+    if (!activeProject) {
+      setErrorMessage("Select a campaign first.");
+      return;
+    }
+    if (!creators.length) {
+      setErrorMessage("Scrape a hashtag first.");
+      return;
+    }
+    if (!template.length) {
+      setErrorMessage("Select a sourcing template first.");
+      return;
+    }
+
+    const missingTemplateFields = getMissingTemplateSourceFields(template, columnMap);
+    if (missingTemplateFields.length > 0) {
+      setErrorMessage(
+        `The selected template uses fields Billy's rows do not have: ${missingTemplateFields.join(
+          ", ",
+        )}. Pick a simpler template for this scraper.`,
+      );
+      return;
+    }
+
+    setIsProcessing(true);
+    setErrorMessage("");
+    setCopyMessage("");
+
+    for (const message of ["Applying Filters...", "Applying Template...", "Preparing Preview..."]) {
+      setStatusMessage(message);
+      await wait(220);
+    }
+
+    setPreviewReady(true);
+    setIsProcessing(false);
+    setStatusMessage(`Preview ready with ${previewRows.length.toLocaleString()} creators.`);
+  }
+
+  async function copyRows(rows: PreviewRow[], label: string) {
+    if (rows.length === 0) return;
+    const text = rows.map((row) => row.values.map(formatTsvCell).join("\t")).join("\n");
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyMessage(`${label} copied without headers.`);
+      setErrorMessage("");
+    } catch {
+      setErrorMessage("Copy failed. Your browser blocked clipboard access.");
+      setCopyMessage("");
+    }
+  }
+
+  async function downloadPreview() {
+    if (!previewRows.length) return;
+    const baseName =
+      activeProject?.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "billy-scraper";
+
+    try {
+      await exportPreviewSpreadsheet({
+        fileName: `${baseName}-billy-scraper-preview.xlsx`,
+        headers: previewHeaders,
+        rows: previewRows.map((row) => row.values),
+      });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Excel export failed.");
+    }
+  }
+
+  function toggleRow(rowId: string) {
+    setSelectedRowIds((current) =>
+      current.includes(rowId) ? current.filter((id) => id !== rowId) : [...current, rowId],
+    );
+  }
+
+  function toggleAllPreviewRows() {
+    if (selectedPreviewRows.length === previewRows.length) {
+      setSelectedRowIds([]);
+      return;
+    }
+    setSelectedRowIds(previewRows.map((row) => row.id));
+  }
+
+  if (isLoadingTemplates) {
+    return (
+      <Panel title="Billy's Scraper System" icon={Hash}>
+        <div className="katlas-status-line">Loading campaigns and sourcing templates...</div>
+      </Panel>
+    );
+  }
+
+  return (
+    <>
+      {statusMessage || copyMessage || errorMessage ? (
+        <section className="space-y-2">
+          {statusMessage ? (
+            <div className="katlas-status-line flex items-center gap-2">
+              <Check className="size-4 text-emerald-400" />
+              {statusMessage}
+            </div>
+          ) : null}
+          {copyMessage ? <div className="katlas-status-line">{copyMessage}</div> : null}
+          {errorMessage ? (
+            <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {errorMessage}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
+        <aside className="flex min-w-0 flex-col gap-5">
+          <Panel title="Campaign" icon={ClipboardList}>
+            {projects.length > 0 ? (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Campaign From Campaign Profiles
+                  </label>
+                  <select
+                    value={activeProject?.campaignId ?? ""}
+                    onChange={(event) => setSelectedCampaignId(event.target.value)}
+                    className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                  >
+                    {projects.map((project) => (
+                      <option key={project.campaignId} value={project.campaignId}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mt-3">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Saved Sourcing Template
+                  </label>
+                  <select
+                    value={activeTemplate?.id ?? ""}
+                    onChange={(event) => setSelectedTemplateId(event.target.value)}
+                    className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                  >
+                    {activeProject?.templates.map((templateItem) => (
+                      <option key={templateItem.id} value={templateItem.id}>
+                        {templateItem.templateName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                Create campaigns in Campaign Profiles first. Billy's scraper uses campaign sourcing
+                templates for the final preview.
+              </p>
+            )}
+          </Panel>
+
+          <Panel title="Scrape Hashtag" icon={Hash}>
+            <HashtagScraperForm
+              value={hashtagInput}
+              isScraping={isScraping}
+              canScrape={Boolean(activeProject)}
+              onChange={setHashtagInput}
+              onScrape={() => {
+                void scrapeHashtag();
+              }}
+            />
+            {scrapeReport ? <HashtagScrapeReportPanel report={scrapeReport} /> : null}
+          </Panel>
+
+          <Panel title="Billy Filters" icon={Filter}>
+            <BillyFilterControls filters={filters} onChange={setFilters} />
+          </Panel>
+        </aside>
+
+        <div className="flex min-w-0 flex-col gap-5">
+          <Panel title="Billy Preview" icon={Sparkles}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">
+                  {filteredCreators.length.toLocaleString()} of {creators.length.toLocaleString()}{" "}
+                  creators match Billy's filters
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Output uses the selected sourcing template, then appends Billy's following and
+                  source link columns.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={preparePreview}
+                  disabled={isProcessing || !activeProject || creators.length === 0}
+                  className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isProcessing ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-4" />
+                  )}
+                  Prepare Preview
+                </button>
+                <button
+                  onClick={() => setIsPreviewModalOpen(true)}
+                  disabled={!previewReady || previewRows.length === 0}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <FileSpreadsheet className="size-4" />
+                  Open Preview
+                </button>
+                <button
+                  onClick={() => copyRows(previewRows, "Billy rows")}
+                  disabled={!previewReady || previewRows.length === 0}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Copy className="size-4" />
+                  Copy All Rows
+                </button>
+                <button
+                  onClick={downloadPreview}
+                  disabled={!previewReady || previewRows.length === 0}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Download className="size-4" />
+                  Download Modified Sheet
+                </button>
+              </div>
+            </div>
+
+            <PreviewMetrics
+              imported={creators.length}
+              filtered={filteredCreators.length}
+              withContact={previewRows.filter((row) => hasContactInfo(row.contactInfo)).length}
+              withoutContact={previewRows.filter((row) => !hasContactInfo(row.contactInfo)).length}
+            />
+
+            {!previewReady ? (
+              <div className="mt-4 rounded-md border border-dashed border-border bg-background px-4 py-4 text-sm text-muted-foreground">
+                Scrape a hashtag, filter the creators, then prepare Billy's preview.
+              </div>
+            ) : null}
+          </Panel>
+        </div>
+      </section>
+
+      {isPreviewModalOpen ? (
+        <PreviewModal
+          headers={previewHeaders}
+          rows={previewRows}
+          selectedRowIds={selectedRowIds}
+          onToggleRow={toggleRow}
+          onToggleAll={toggleAllPreviewRows}
+          onCopyAll={() => copyRows(previewRows, "Billy rows")}
+          onCopySelected={() => copyRows(selectedPreviewRows, "Selected Billy rows")}
+          onDownload={downloadPreview}
+          onClose={() => setIsPreviewModalOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function BillyFilterControls({
+  filters,
+  onChange,
+}: {
+  filters: {
+    followersMin: string;
+    followersMax: string;
+    followingMin: string;
+    followingMax: string;
+  };
+  onChange: (filters: {
+    followersMin: string;
+    followersMax: string;
+    followingMin: string;
+    followingMax: string;
+  }) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <BillyRangeControl
+        title="Followers"
+        min={filters.followersMin}
+        max={filters.followersMax}
+        minPlaceholder="Min followers"
+        maxPlaceholder="Max followers"
+        onMin={(followersMin) => onChange({ ...filters, followersMin })}
+        onMax={(followersMax) => onChange({ ...filters, followersMax })}
+      />
+      <BillyRangeControl
+        title="Following"
+        min={filters.followingMin}
+        max={filters.followingMax}
+        minPlaceholder="Min following"
+        maxPlaceholder="Max following"
+        onMin={(followingMin) => onChange({ ...filters, followingMin })}
+        onMax={(followingMax) => onChange({ ...filters, followingMax })}
+      />
+    </div>
+  );
+}
+
+function BillyRangeControl({
+  title,
+  min,
+  max,
+  minPlaceholder,
+  maxPlaceholder,
+  onMin,
+  onMax,
+}: {
+  title: string;
+  min: string;
+  max: string;
+  minPlaceholder: string;
+  maxPlaceholder: string;
+  onMin: (value: string) => void;
+  onMax: (value: string) => void;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-background p-3">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          value={min}
+          onChange={(event) => onMin(event.target.value)}
+          placeholder={minPlaceholder}
+          className="h-9 min-w-0 rounded-md border border-input bg-card px-2 text-xs outline-none ring-ring focus:ring-2"
+        />
+        <input
+          value={max}
+          onChange={(event) => onMax(event.target.value)}
+          placeholder={maxPlaceholder}
+          className="h-9 min-w-0 rounded-md border border-input bg-card px-2 text-xs outline-none ring-ring focus:ring-2"
+        />
+      </div>
     </div>
   );
 }
@@ -2923,6 +3441,37 @@ function valueInRange(value: unknown, range: { min: string; max: string }): bool
   const max = parseMetric(range.max);
   if (min != null && metric < min) return false;
   if (max != null && metric > max) return false;
+  return true;
+}
+
+function filterBillyCreators(
+  creators: UploadedCreator[],
+  filters: {
+    followersMin: string;
+    followersMax: string;
+    followingMin: string;
+    followingMax: string;
+  },
+): UploadedCreator[] {
+  return creators.filter(({ data }) => {
+    if (!matchesBillyRange(data.Followers, filters.followersMin, filters.followersMax)) {
+      return false;
+    }
+    if (!matchesBillyRange(data.Following, filters.followingMin, filters.followingMax)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function matchesBillyRange(value: unknown, min: string, max: string): boolean {
+  const minValue = parseMetric(min);
+  const maxValue = parseMetric(max);
+  if (minValue == null && maxValue == null) return true;
+  const metric = parseMetric(value);
+  if (metric == null) return false;
+  if (minValue != null && metric < minValue) return false;
+  if (maxValue != null && metric > maxValue) return false;
   return true;
 }
 

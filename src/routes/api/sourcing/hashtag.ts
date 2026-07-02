@@ -63,7 +63,7 @@ export const Route = createFileRoute("/api/sourcing/hashtag")({
             );
           }
 
-          const maxResults = body.maxResults ?? 500;
+          const maxResults = body.maxResults ?? 1000;
           const html = await fetchTikTokHashtagPage(hashtag);
           const parsed = parseTikTokHashtagPage(html, hashtag, maxResults);
 
