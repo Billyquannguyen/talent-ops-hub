@@ -108,10 +108,11 @@ export function FeishuPaymentFormGenerator({
   const [quoteCurrency, setQuoteCurrency] = useState("USD");
   const [projectCode, setProjectCode] = useState(campaign.campaignCode);
   const [copiedKey, setCopiedKey] = useState("");
+  const usesPaymentPercentage = paymentType === "Deposit" || paymentType === "Final Payment";
 
   const amountForOutput = useMemo(
-    () => calculateAmountUsd({ clientQuote, amountUsd, paymentPercentage, paymentType }),
-    [amountUsd, clientQuote, paymentPercentage, paymentType],
+    () => calculateAmountUsd({ amountUsd, paymentPercentage, paymentType }),
+    [amountUsd, paymentPercentage, paymentType],
   );
   const normalizedProjectCode = projectCode.trim() || campaign.campaignCode.trim();
   const normalizedCurrency = quoteCurrency.trim().toUpperCase() || "USD";
@@ -337,7 +338,7 @@ export function FeishuPaymentFormGenerator({
                   required
                 />
               ) : null}
-              {paymentType !== "Full Payment" ? (
+              {usesPaymentPercentage ? (
                 <TextField
                   label="Payment Percentage"
                   value={paymentPercentage}
@@ -365,9 +366,10 @@ export function FeishuPaymentFormGenerator({
               />
               <TextField
                 label="Amount USD"
-                value={amountUsd}
+                value={usesPaymentPercentage ? formatUsdAmount(amountForOutput) : amountUsd}
                 onChange={setAmountUsd}
                 inputMode="decimal"
+                readOnly={usesPaymentPercentage}
               />
               <TextField
                 label="Quote Currency"
@@ -549,6 +551,7 @@ function TextField({
   required,
   placeholder,
   inputMode,
+  readOnly,
   onChange,
 }: {
   label: string;
@@ -556,6 +559,7 @@ function TextField({
   required?: boolean;
   placeholder?: string;
   inputMode?: "decimal" | "numeric" | "text";
+  readOnly?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -569,8 +573,9 @@ function TextField({
         required={required}
         placeholder={placeholder}
         inputMode={inputMode}
+        readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+        className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2 read-only:cursor-not-allowed read-only:bg-muted/35 read-only:text-muted-foreground"
       />
     </label>
   );
@@ -615,36 +620,34 @@ function detectPlatform(value: string): PlatformCode {
 
 function buildPaymentLabel(paymentType: PaymentType, paymentPercentage: string): string {
   if (paymentType === "Full Payment") return "Full payment";
+  if (paymentType === "Other / Additional Payment") return "additional payment";
   const percentage = paymentPercentage.trim();
   if (!percentage) {
     if (paymentType === "Deposit") return "deposit payment";
     if (paymentType === "Final Payment") return "balance payment";
-    return "additional payment";
   }
   if (paymentType === "Deposit") return `${percentage}% up-front payment`;
   if (paymentType === "Final Payment") {
     return `${percentage}% balance of cooperation payment`;
   }
-  return `${percentage}% additional payment`;
+  return "additional payment";
 }
 
 function calculateAmountUsd({
-  clientQuote,
   amountUsd,
   paymentPercentage,
   paymentType,
 }: {
-  clientQuote: string;
   amountUsd: string;
   paymentPercentage: string;
   paymentType: PaymentType;
 }) {
   const amount = parseNumber(amountUsd);
-  if (paymentType === "Full Payment") return amount;
+  const usesPaymentPercentage = paymentType === "Deposit" || paymentType === "Final Payment";
+  if (!usesPaymentPercentage) return amount;
 
-  const quote = parseNumber(clientQuote);
   const percentage = parseNumber(paymentPercentage);
-  if (quote > 0 && percentage > 0) return (quote * percentage) / 100;
+  if (amount > 0 && percentage > 0) return (amount * percentage) / 100;
   return amount;
 }
 

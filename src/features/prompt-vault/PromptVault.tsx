@@ -76,6 +76,11 @@ export function PromptVault() {
     readStoredUniversalCategories(),
   );
   const [viewingPrompt, setViewingPrompt] = useState<CampaignPromptVaultRecord | null>(null);
+  const [viewingDetail, setViewingDetail] = useState<{
+    title: string;
+    subtitle: string;
+    value: string;
+  } | null>(null);
 
   const activeCampaigns = useMemo(() => campaigns.filter(isActiveCampaign), [campaigns]);
   const campaignOptions = useMemo(() => {
@@ -290,13 +295,21 @@ export function PromptVault() {
     }
   }
 
-  async function copyPrompt(prompt: CampaignPromptVaultRecord) {
+  async function copyText(value: string, successMessage: string) {
     try {
-      await navigator.clipboard.writeText(prompt.content);
-      setStatus("Prompt copied.");
+      await navigator.clipboard.writeText(value);
+      setStatus(successMessage);
     } catch {
-      setStatus("Copy failed. Select the prompt text manually.");
+      setStatus("Copy failed. Select the text manually.");
     }
+  }
+
+  async function copyPrompt(prompt: CampaignPromptVaultRecord) {
+    await copyText(prompt.content, "Prompt copied.");
+  }
+
+  async function copyPromptFiles(prompt: CampaignPromptVaultRecord) {
+    await copyText(prompt.files, "Files copied.");
   }
 
   return (
@@ -404,6 +417,14 @@ export function PromptVault() {
                   prompt={prompt}
                   onCopy={() => copyPrompt(prompt)}
                   onView={() => setViewingPrompt(prompt)}
+                  onViewInput={() =>
+                    setViewingDetail({
+                      title: "Input",
+                      subtitle: prompt.title,
+                      value: prompt.input,
+                    })
+                  }
+                  onCopyFiles={() => copyPromptFiles(prompt)}
                   onEdit={() => openEditPrompt(prompt)}
                   onDelete={() => {
                     void deletePrompt(prompt.promptId);
@@ -444,6 +465,14 @@ export function PromptVault() {
         />
       ) : null}
 
+      {viewingDetail ? (
+        <PromptDetailModal
+          detail={viewingDetail}
+          onCopy={() => copyText(viewingDetail.value, `${viewingDetail.title} copied.`)}
+          onClose={() => setViewingDetail(null)}
+        />
+      ) : null}
+
       {isCategoryModalOpen ? (
         <CategoryManagerModal
           universalCategories={universalCategories}
@@ -468,25 +497,24 @@ function PromptCard({
   prompt,
   onCopy,
   onView,
+  onViewInput,
+  onCopyFiles,
   onEdit,
   onDelete,
 }: {
   prompt: CampaignPromptVaultRecord;
   onCopy: () => void;
   onView: () => void;
+  onViewInput: () => void;
+  onCopyFiles: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   return (
     <article className="flex min-h-[250px] flex-col rounded-xl border border-border bg-background/70 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">{prompt.campaignName}</p>
-          <h2 className="mt-2 line-clamp-2 text-base font-semibold">{prompt.title}</h2>
-        </div>
-        <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-card">
-          <FileText className="size-4 text-cyan-100" />
-        </div>
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-muted-foreground">{prompt.campaignName}</p>
+        <h2 className="mt-2 line-clamp-2 text-base font-semibold">{prompt.title}</h2>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -502,8 +530,12 @@ function PromptCard({
         {createSnippet(prompt.content)}
       </p>
       <div className="mt-3 space-y-2">
-        {prompt.input ? <PromptCardDetail label="Input" value={prompt.input} /> : null}
-        {prompt.files ? <PromptCardDetail label="Files" value={prompt.files} /> : null}
+        {prompt.input ? (
+          <PromptCardInputDetail label="Input" value={prompt.input} onClick={onViewInput} />
+        ) : null}
+        {prompt.files ? (
+          <PromptCardFilesDetail label="Files" value={prompt.files} onCopy={onCopyFiles} />
+        ) : null}
       </div>
 
       <div className="mt-auto flex flex-wrap gap-2 border-t border-border pt-3">
@@ -516,10 +548,51 @@ function PromptCard({
   );
 }
 
-function PromptCardDetail({ label, value }: { label: string; value: string }) {
+function PromptCardInputDetail({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="block w-full rounded-lg border border-cyan-300/15 bg-cyan-300/[0.035] px-3 py-2.5 text-left transition hover:border-cyan-200/35 hover:bg-cyan-300/[0.06]"
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-100">{label}</p>
+      <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+        {createSnippet(value, 180)}
+      </p>
+    </button>
+  );
+}
+
+function PromptCardFilesDetail({
+  label,
+  value,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  onCopy: () => void;
+}) {
   return (
     <div className="rounded-lg border border-cyan-300/15 bg-cyan-300/[0.035] px-3 py-2.5">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-100">{label}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-100">{label}</p>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-cyan-200/15 bg-background/60 px-2 text-[11px] font-medium text-cyan-100 transition hover:border-cyan-200/35 hover:bg-cyan-300/[0.08]"
+        >
+          <Copy className="size-3" />
+          Copy
+        </button>
+      </div>
       <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
         {createSnippet(value, 180)}
       </p>
@@ -769,6 +842,63 @@ function PromptViewModal({
           >
             <Copy className="size-4" />
             Copy Full Prompt
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PromptDetailModal({
+  detail,
+  onCopy,
+  onClose,
+}: {
+  detail: { title: string; subtitle: string; value: string };
+  onCopy: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
+      <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-card shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">
+              Prompt Vault / {detail.title}
+            </p>
+            <h2 className="mt-1 line-clamp-2 text-xl font-semibold">{detail.subtitle}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex size-9 items-center justify-center rounded-md border border-border bg-background transition hover:bg-accent"
+            aria-label="Close detail viewer"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <pre className="whitespace-pre-wrap break-words rounded-lg border border-border bg-background p-4 font-sans text-sm leading-6 text-foreground">
+            {detail.value}
+          </pre>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 items-center rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:bg-accent"
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={onCopy}
+            className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+          >
+            <Copy className="size-4" />
+            Copy
           </button>
         </div>
       </div>
