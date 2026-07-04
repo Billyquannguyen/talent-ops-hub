@@ -193,7 +193,7 @@ function parseTikTokProfilePage(
     followers,
     avgViews: "",
     avgLikes: "",
-    email: extractEmail(bio),
+    email: "",
     lastPost: "",
     profileUrl: `https://www.tiktok.com/@${username}`,
     sampleVideoUrl,
@@ -251,7 +251,7 @@ function createFallbackCreatorRow(
     followers: "",
     avgViews: "",
     avgLikes: "",
-    email: extractEmail(description),
+    email: "",
     lastPost: "",
     profileUrl: `https://www.tiktok.com/@${username}`,
     sampleVideoUrl: getSampleVideoUrl(creator),
@@ -382,10 +382,6 @@ function parseCompactNumber(value: string): number | "" {
   const multiplier =
     suffix === "K" ? 1_000 : suffix === "M" ? 1_000_000 : suffix === "B" ? 1_000_000_000 : 1;
   return Math.round(base * multiplier);
-}
-
-function extractEmail(value: string): string {
-  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? "";
 }
 
 function decodeHtmlEntities(value: string): string {

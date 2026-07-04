@@ -63,6 +63,12 @@ async function beginScrapingSession() {
 }
 
 async function sendToBilly() {
+  if (!sessionActive) {
+    renderPayload(undefined);
+    setStatus("Click Begin Scraping Session first. Billy will only collect after you start.");
+    return;
+  }
+
   const sourceTabId = sessionTabId || (await getActiveTikTokTabId());
   const payload = await finishActiveSession(sourceTabId);
 
@@ -79,11 +85,11 @@ async function sendToBilly() {
   try {
     const tab = await openBillyTabInBackground(appUrl);
     await sendPayloadToTab(tab.id, payload);
-    lastPayload = payload;
+    lastPayload = undefined;
     sessionActive = false;
     sessionTabId = undefined;
-    await chrome.storage.local.remove("billySessionTabId");
-    renderPayload(lastPayload);
+    await chrome.storage.local.remove(["billySessionTabId", "lastBillyPayload"]);
+    renderPayload(undefined);
     await notifyTikTokTab(
       sourceTabId,
       `Sent ${payload.creators.length} creators to Billy. You can keep scrolling.`,
@@ -98,7 +104,7 @@ async function sendToBilly() {
 async function syncActiveTikTokSession() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || !tab.url?.includes("tiktok.com")) {
-    renderPayload(lastPayload);
+    renderPayload(undefined);
     return;
   }
 
@@ -106,7 +112,16 @@ async function syncActiveTikTokSession() {
     const response = await chrome.tabs.sendMessage(tab.id, { type: "GET_BILLY_SESSION_STATE" });
     if (!response?.ok) return;
     sessionActive = Boolean(response.active);
-    if (sessionActive) sessionTabId = tab.id;
+    if (!sessionActive) {
+      sessionTabId = undefined;
+      lastPayload = undefined;
+      await chrome.storage.local.remove(["billySessionTabId", "lastBillyPayload"]);
+      renderPayload(undefined);
+      setStatus("No Billy session running. Click Begin when you want to start collecting.");
+      return;
+    }
+
+    sessionTabId = tab.id;
     if (response.payload) {
       lastPayload = response.payload;
       await chrome.storage.local.set({
@@ -115,17 +130,15 @@ async function syncActiveTikTokSession() {
       });
     }
     renderPayload(lastPayload);
-    if (sessionActive) {
-      setStatus("Session is running. Keep scrolling TikTok, then finish and send.");
-    }
+    setStatus("Session is running. Keep scrolling TikTok, then finish and send.");
   } catch {
-    renderPayload(lastPayload);
+    renderPayload(undefined);
   }
 }
 
 async function finishActiveSession(targetTabId) {
   targetTabId = targetTabId || sessionTabId || (await getActiveTikTokTabId());
-  if (!targetTabId) return lastPayload;
+  if (!targetTabId) return undefined;
 
   try {
     const response = await chrome.tabs.sendMessage(targetTabId, { type: "STOP_BILLY_SESSION" });
@@ -201,16 +214,15 @@ async function notifyTikTokTab(tabId, message) {
 }
 
 function renderPayload(payload) {
-  const creators = payload?.creators?.length || 0;
-  const videos = payload?.videosFound || 0;
+  const visiblePayload = sessionActive ? payload : undefined;
+  const creators = visiblePayload?.creators?.length || 0;
+  const videos = visiblePayload?.videosFound || 0;
   creatorCount.textContent = String(creators);
   videoCount.textContent = String(videos);
   collectButton.disabled = sessionActive;
   collectButton.textContent = sessionActive ? "Session Running" : "Begin Scraping Session";
-  sendButton.textContent = sessionActive
-    ? "Finish & Send To Billy"
-    : "Send Last Collection To Billy";
-  sendButton.disabled = !sessionActive && creators === 0;
+  sendButton.textContent = "Finish & Send To Billy";
+  sendButton.disabled = !sessionActive;
 }
 
 function normalizeAppUrl(value) {

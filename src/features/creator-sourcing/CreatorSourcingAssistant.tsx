@@ -1692,6 +1692,7 @@ function BillyScraperSystem({
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [previewReady, setPreviewReady] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [isTemplatePreviewModalOpen, setIsTemplatePreviewModalOpen] = useState(false);
   const [isScraping, setIsScraping] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -1722,33 +1723,19 @@ function BillyScraperSystem({
   );
   const activeFilterChips = useMemo(() => getActiveBillyFilterChips(filters), [filters]);
   const previewHeaders = useMemo(
-    () => [
-      ...template.map((column, index) => column.label.trim() || `Column ${index + 1}`),
-      "Bio",
-      "Sample Video URL",
-      "Source Link",
-    ],
+    () => template.map((column, index) => column.label.trim() || `Column ${index + 1}`),
     [template],
   );
   const previewRows = useMemo(
     () =>
-      filteredCreators.map((creator) => {
-        const baseRow = buildPreviewRow({
+      filteredCreators.map((creator) =>
+        buildBillyPreviewRow({
           id: creator.id,
           data: creator.data,
           columnMap,
           template,
-        });
-        return {
-          ...baseRow,
-          values: [
-            ...baseRow.values,
-            stringValue(creator.data.Description),
-            stringValue(creator.data["Sample Video URL"]),
-            stringValue(creator.data["Source Link"]),
-          ],
-        };
-      }),
+        }),
+      ),
     [filteredCreators, columnMap, template],
   );
   const selectedPreviewRows = useMemo(
@@ -1982,6 +1969,7 @@ function BillyScraperSystem({
     setSelectedRowIds([]);
     setPreviewReady(false);
     setIsPreviewModalOpen(false);
+    setIsTemplatePreviewModalOpen(false);
     setScrapeReport(null);
     setStatusMessage("");
     setCopyMessage("");
@@ -2098,6 +2086,15 @@ function BillyScraperSystem({
                       </option>
                     ))}
                   </select>
+                  <button
+                    type="button"
+                    onClick={() => setIsTemplatePreviewModalOpen(true)}
+                    disabled={!activeTemplate}
+                    className="mt-2 inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Columns3 className="size-3.5" />
+                    View Template
+                  </button>
                 </div>
               </>
             ) : (
@@ -2144,8 +2141,8 @@ function BillyScraperSystem({
                   creators match Billy's filters
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Output uses the selected sourcing template, then appends Billy's full bio and
-                  source link columns.
+                  Output follows the selected sourcing template exactly. Billy uses the full bio as
+                  the contact value.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -2216,6 +2213,13 @@ function BillyScraperSystem({
           onCopySelected={() => copyRows(selectedPreviewRows, "Selected Billy rows")}
           onDownload={downloadPreview}
           onClose={() => setIsPreviewModalOpen(false)}
+        />
+      ) : null}
+
+      {isTemplatePreviewModalOpen && activeTemplate ? (
+        <BillyTemplatePreviewModal
+          template={activeTemplate}
+          onClose={() => setIsTemplatePreviewModalOpen(false)}
         />
       ) : null}
     </>
@@ -2365,6 +2369,130 @@ function ActiveBillyFilterChips({
       ))}
     </div>
   );
+}
+
+function buildBillyPreviewRow({
+  id,
+  data,
+  columnMap,
+  template,
+}: {
+  id: string;
+  data: UploadedCreator["data"];
+  columnMap: ReturnType<typeof inferColumnMap>;
+  template: TemplateColumn[];
+}): PreviewRow {
+  const bio = stringValue(data.Description);
+  const contactInfo = createBillyBioContactInfo(bio, stringValue(data.URL));
+  const values = template.map((column) => {
+    if (column.blockType === "blank") return "";
+    if (column.blockType === "custom") return column.customValue ?? "";
+    if (column.blockType === "contacts") return bio;
+    if (!column.fieldKey) return "";
+    if (column.fieldKey === "Email") return bio;
+    return getCell(data, columnMap, column.fieldKey);
+  });
+
+  return { id, values, contactInfo };
+}
+
+function createBillyBioContactInfo(bio: string, sourceUrl: string): ContactInfo {
+  if (!bio.trim()) {
+    return {
+      confidence: 0,
+      discoveryMethod: "Billy Bio: no bio found",
+      discoveries: [],
+    };
+  }
+
+  return {
+    other: bio,
+    sourceUrl,
+    confidence: 100,
+    discoveryMethod: "Billy Bio",
+    discoveries: [
+      {
+        field: "other",
+        value: bio,
+        source: "Description",
+        discoveryMethod: "Regex",
+        provider: "Billy Bio",
+        confidence: 100,
+        sourceUrl,
+      },
+    ],
+  };
+}
+
+function BillyTemplatePreviewModal({
+  template,
+  onClose,
+}: {
+  template: SourcingTemplate;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4">
+      <section className="flex max-h-[86vh] w-full max-w-3xl flex-col rounded-lg border border-border bg-card shadow-2xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.28em] text-muted-foreground">
+              Billy Template
+            </p>
+            <h3 className="mt-1 text-xl font-semibold">{template.templateName}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="inline-flex size-10 items-center justify-center rounded-md border border-border bg-background transition hover:bg-accent"
+            aria-label="Close template preview"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="overflow-auto p-5">
+          <div className="rounded-md border border-border">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border bg-background text-left text-xs uppercase text-muted-foreground">
+                  <th className="w-16 px-3 py-2 font-semibold">#</th>
+                  <th className="px-3 py-2 font-semibold">Output Column</th>
+                  <th className="px-3 py-2 font-semibold">Billy Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {template.columns.map((column, index) => (
+                  <tr key={column.id} className="border-b border-border last:border-b-0">
+                    <td className="px-3 py-3 text-muted-foreground">{index + 1}</td>
+                    <td className="px-3 py-3 font-medium">
+                      {column.label.trim() || `Column ${index + 1}`}
+                    </td>
+                    <td className="px-3 py-3 text-muted-foreground">
+                      {getBillyTemplateValueDescription(column)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-muted-foreground">
+            Billy does not append extra columns. If a template maps Contacts or Email, Billy pastes
+            the full scraped TikTok bio into that column.
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function getBillyTemplateValueDescription(column: TemplateColumn): string {
+  if (column.blockType === "blank") return "Blank cell";
+  if (column.blockType === "custom") {
+    return column.customValue ? `Custom: ${column.customValue}` : "Custom value";
+  }
+  if (column.blockType === "contacts") return "Full TikTok bio";
+  if (column.fieldKey === "Email") return "Full TikTok bio";
+  if (column.blockType === "field" && column.fieldKey) return column.fieldKey;
+  return "Empty cell";
 }
 
 function BillyExtensionSessionPanel({
@@ -3973,7 +4101,7 @@ function createBillyRowsFromExtensionPayload(
       Followers: "",
       "Avg. Views": "",
       "Avg. Likes": "",
-      Email: extractEmailFromText(description),
+      Email: "",
       "Last Post": "",
       URL: creator.profileUrl || `https://www.tiktok.com/@${username}`,
       "Sample Video URL": creator.sampleVideoUrl || creator.videos?.[0] || "",
@@ -3987,10 +4115,6 @@ function cleanBillyUsername(value: string): string {
     .trim()
     .replace(/^@+/, "")
     .replace(/[/?#].*$/, "");
-}
-
-function extractEmailFromText(value: string): string {
-  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? "";
 }
 
 function getSelectionSummary(

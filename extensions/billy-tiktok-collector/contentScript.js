@@ -1,4 +1,5 @@
 const KATLAS_BILLY_EXTENSION_SOURCE = "katlas-billy-extension";
+const BILLY_SESSION_PREVIEW_ID = "katlas-billy-session-preview";
 
 let billySession;
 
@@ -97,6 +98,7 @@ function startBillySession() {
 
   scanTikTokCardsIntoSession();
   watchTikTokPage();
+  renderBillySessionPreview();
 }
 
 function stopBillySession() {
@@ -105,6 +107,7 @@ function stopBillySession() {
   if (billySession.intervalId) window.clearInterval(billySession.intervalId);
   if (billySession.scanTimer) window.clearTimeout(billySession.scanTimer);
   billySession.active = false;
+  removeBillySessionPreview();
 }
 
 function watchTikTokPage() {
@@ -136,6 +139,7 @@ function scanTikTokCardsIntoSession() {
   collectTikTokCardsInto(billySession.creatorsByUsername, billySession.videoLinks);
   billySession.updatedAt = new Date().toISOString();
   persistBillyPayload(getBillySessionPayload());
+  renderBillySessionPreview();
 }
 
 function collectTikTokCards() {
@@ -282,6 +286,120 @@ function showBillyNotice(message) {
   window.setTimeout(() => {
     notice.remove();
   }, 5200);
+}
+
+function renderBillySessionPreview() {
+  if (!billySession?.active) return;
+
+  const payload = getBillySessionPayload();
+  const existing = document.getElementById(BILLY_SESSION_PREVIEW_ID);
+  const panel = existing || document.createElement("div");
+  panel.id = BILLY_SESSION_PREVIEW_ID;
+  panel.setAttribute("role", "status");
+  panel.innerHTML = "";
+
+  const title = document.createElement("div");
+  title.textContent = "Billy session running";
+  title.style.color = "#f8fafc";
+  title.style.fontSize = "13px";
+  title.style.fontWeight = "750";
+
+  const source = document.createElement("div");
+  source.textContent = `Source: ${payload.sourceLabel}`;
+  source.style.marginTop = "3px";
+  source.style.color = "#aeb7c2";
+  source.style.fontSize = "11px";
+  source.style.lineHeight = "1.35";
+  source.style.overflow = "hidden";
+  source.style.textOverflow = "ellipsis";
+  source.style.whiteSpace = "nowrap";
+
+  const metrics = document.createElement("div");
+  metrics.style.display = "grid";
+  metrics.style.gridTemplateColumns = "1fr 1fr";
+  metrics.style.gap = "8px";
+  metrics.style.marginTop = "10px";
+
+  metrics.appendChild(createBillyMetric("Creators", payload.creators.length));
+  metrics.appendChild(createBillyMetric("Videos", payload.videosFound));
+
+  const sample = document.createElement("div");
+  const sampleCreators = payload.creators
+    .slice(-3)
+    .map((creator) => `@${creator.username}`)
+    .join(", ");
+  sample.textContent = sampleCreators ? `Latest: ${sampleCreators}` : "Latest: waiting for videos";
+  sample.style.marginTop = "9px";
+  sample.style.color = "#cbd5e1";
+  sample.style.fontSize = "11px";
+  sample.style.lineHeight = "1.4";
+  sample.style.overflow = "hidden";
+  sample.style.textOverflow = "ellipsis";
+  sample.style.whiteSpace = "nowrap";
+
+  const hint = document.createElement("div");
+  hint.textContent = "Scroll TikTok, then finish in the B popup.";
+  hint.style.marginTop = "8px";
+  hint.style.color = "#8ee6c2";
+  hint.style.fontSize = "11px";
+  hint.style.fontWeight = "650";
+
+  panel.appendChild(title);
+  panel.appendChild(source);
+  panel.appendChild(metrics);
+  panel.appendChild(sample);
+  panel.appendChild(hint);
+  applyBillySessionPreviewStyles(panel);
+
+  if (!existing) document.documentElement.appendChild(panel);
+}
+
+function createBillyMetric(label, value) {
+  const metric = document.createElement("div");
+  metric.style.border = "1px solid rgba(148, 163, 184, 0.22)";
+  metric.style.borderRadius = "8px";
+  metric.style.background = "rgba(15, 23, 42, 0.72)";
+  metric.style.padding = "8px";
+
+  const labelElement = document.createElement("div");
+  labelElement.textContent = label;
+  labelElement.style.color = "#94a3b8";
+  labelElement.style.fontSize = "10px";
+  labelElement.style.fontWeight = "700";
+  labelElement.style.textTransform = "uppercase";
+
+  const valueElement = document.createElement("div");
+  valueElement.textContent = Number(value || 0).toLocaleString();
+  valueElement.style.marginTop = "2px";
+  valueElement.style.color = "#f8fafc";
+  valueElement.style.fontSize = "18px";
+  valueElement.style.fontWeight = "800";
+
+  metric.appendChild(labelElement);
+  metric.appendChild(valueElement);
+  return metric;
+}
+
+function applyBillySessionPreviewStyles(panel) {
+  panel.style.position = "fixed";
+  panel.style.right = "18px";
+  panel.style.bottom = "82px";
+  panel.style.zIndex = "2147483646";
+  panel.style.boxSizing = "border-box";
+  panel.style.width = "286px";
+  panel.style.maxWidth = "calc(100vw - 36px)";
+  panel.style.padding = "12px";
+  panel.style.border = "1px solid rgba(16, 185, 129, 0.35)";
+  panel.style.borderRadius = "12px";
+  panel.style.background = "rgba(8, 13, 17, 0.96)";
+  panel.style.boxShadow = "0 18px 48px rgba(0, 0, 0, 0.45)";
+  panel.style.fontFamily =
+    "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+  panel.style.letterSpacing = "0";
+}
+
+function removeBillySessionPreview() {
+  document.getElementById(BILLY_SESSION_PREVIEW_ID)?.remove();
 }
 
 function cleanText(value) {
