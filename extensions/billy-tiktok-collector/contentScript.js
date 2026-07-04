@@ -71,6 +71,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "SHOW_BILLY_NOTICE") {
+    showBillyNotice(message.message);
+    sendResponse({ ok: true });
+    return false;
+  }
+
   return false;
 });
 
@@ -247,6 +253,35 @@ function persistBillyPayload(payload) {
   } catch {
     // Storage is helpful for popup recovery, but collection should still work without it.
   }
+}
+
+function showBillyNotice(message) {
+  const existing = document.getElementById("katlas-billy-transfer-notice");
+  if (existing) existing.remove();
+
+  const notice = document.createElement("div");
+  notice.id = "katlas-billy-transfer-notice";
+  notice.textContent = message || "Billy transfer complete.";
+  notice.setAttribute("role", "status");
+  notice.style.position = "fixed";
+  notice.style.right = "18px";
+  notice.style.bottom = "18px";
+  notice.style.zIndex = "2147483647";
+  notice.style.maxWidth = "340px";
+  notice.style.padding = "12px 14px";
+  notice.style.border = "1px solid rgba(16, 185, 129, 0.45)";
+  notice.style.borderRadius = "10px";
+  notice.style.background = "rgba(8, 13, 17, 0.96)";
+  notice.style.boxShadow = "0 18px 48px rgba(0, 0, 0, 0.45)";
+  notice.style.color = "#f8fafc";
+  notice.style.font =
+    "600 13px/1.45 Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+  notice.style.letterSpacing = "0";
+
+  document.documentElement.appendChild(notice);
+  window.setTimeout(() => {
+    notice.remove();
+  }, 5200);
 }
 
 function cleanText(value) {

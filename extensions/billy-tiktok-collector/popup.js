@@ -1,4 +1,5 @@
-const DEFAULT_APP_URL = "http://127.0.0.1:8080/creator-sourcing#billy";
+const DEFAULT_APP_URL = "https://katlas-buddy-app.vercel.app/creator-sourcing#billy";
+const OLD_LOCAL_APP_URL = "http://127.0.0.1:8080/creator-sourcing#billy";
 
 const appUrlInput = document.getElementById("appUrl");
 const collectButton = document.getElementById("collect");
@@ -19,7 +20,8 @@ async function init() {
     "lastBillyPayload",
     "billySessionTabId",
   ]);
-  appUrlInput.value = saved.billyAppUrl || DEFAULT_APP_URL;
+  appUrlInput.value = getInitialAppUrl(saved.billyAppUrl);
+  await chrome.storage.local.set({ billyAppUrl: appUrlInput.value });
   lastPayload = saved.lastBillyPayload;
   sessionTabId = saved.billySessionTabId;
   renderPayload(lastPayload);
@@ -61,7 +63,8 @@ async function beginScrapingSession() {
 }
 
 async function sendToBilly() {
-  const payload = await finishActiveSession();
+  const sourceTabId = sessionTabId || (await getActiveTikTokTabId());
+  const payload = await finishActiveSession(sourceTabId);
 
   if (!payload?.creators?.length) {
     setStatus("Begin a session on a TikTok hashtag or sound page first.");
@@ -71,18 +74,23 @@ async function sendToBilly() {
   const appUrl = normalizeAppUrl(appUrlInput.value);
   await chrome.storage.local.set({ billyAppUrl: appUrl });
   appUrlInput.value = appUrl;
-  setStatus("Opening Billy and sending the finished session...");
+  setStatus("Sending to Billy in the background...");
 
   try {
-    const tab = await openOrFocusBillyTab(appUrl);
+    const tab = await openBillyTabInBackground(appUrl);
     await sendPayloadToTab(tab.id, payload);
     lastPayload = payload;
     sessionActive = false;
     sessionTabId = undefined;
     await chrome.storage.local.remove("billySessionTabId");
     renderPayload(lastPayload);
-    setStatus(`Sent ${payload.creators.length} creators to Billy.`);
+    await notifyTikTokTab(
+      sourceTabId,
+      `Sent ${payload.creators.length} creators to Billy. You can keep scrolling.`,
+    );
+    setStatus(`Sent ${payload.creators.length} creators to Billy. TikTok stayed open.`);
   } catch (error) {
+    await notifyTikTokTab(sourceTabId, `Billy did not receive the import. ${getError(error)}`);
     setStatus(`Billy did not receive the import. ${getError(error)}`);
   }
 }
@@ -115,8 +123,8 @@ async function syncActiveTikTokSession() {
   }
 }
 
-async function finishActiveSession() {
-  const targetTabId = sessionTabId || (await getActiveTikTokTabId());
+async function finishActiveSession(targetTabId) {
+  targetTabId = targetTabId || sessionTabId || (await getActiveTikTokTabId());
   if (!targetTabId) return lastPayload;
 
   try {
@@ -142,24 +150,24 @@ async function getActiveTikTokTabId() {
   return tab?.id && tab.url?.includes("tiktok.com") ? tab.id : undefined;
 }
 
-async function openOrFocusBillyTab(appUrl) {
+async function openBillyTabInBackground(appUrl) {
   const target = new URL(appUrl);
   const tabs = await chrome.tabs.query({});
   const existing = tabs.find((tab) => {
     try {
       const url = new URL(tab.url || "");
-      return url.origin === target.origin;
+      return url.origin === target.origin && url.pathname === target.pathname;
     } catch {
       return false;
     }
   });
 
   if (existing?.id) {
-    await chrome.tabs.update(existing.id, { active: true, url: target.href });
+    await chrome.tabs.update(existing.id, { active: false, url: target.href });
     return existing;
   }
 
-  return await chrome.tabs.create({ active: true, url: target.href });
+  return await chrome.tabs.create({ active: false, url: target.href });
 }
 
 async function sendPayloadToTab(tabId, payload) {
@@ -178,6 +186,18 @@ async function sendPayloadToTab(tabId, payload) {
     }
   }
   throw new Error("Make sure your Katlas app is open and the extension has permission for it.");
+}
+
+async function notifyTikTokTab(tabId, message) {
+  if (!tabId) return;
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: "SHOW_BILLY_NOTICE",
+      message,
+    });
+  } catch {
+    // The TikTok tab may have been closed. The popup status still reports the result.
+  }
 }
 
 function renderPayload(payload) {
@@ -204,6 +224,12 @@ function normalizeAppUrl(value) {
   } catch {
     return DEFAULT_APP_URL;
   }
+}
+
+function getInitialAppUrl(savedUrl) {
+  const normalizedSavedUrl = normalizeAppUrl(savedUrl || DEFAULT_APP_URL);
+  if (normalizedSavedUrl === normalizeAppUrl(OLD_LOCAL_APP_URL)) return DEFAULT_APP_URL;
+  return normalizedSavedUrl;
 }
 
 function setStatus(value) {

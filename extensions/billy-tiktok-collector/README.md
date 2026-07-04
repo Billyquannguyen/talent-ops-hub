@@ -20,4 +20,6 @@ Private Chrome extension for Billy's Scraper System.
 5. Click the extension again.
 6. Click `Finish & Send To Billy`.
 
+The TikTok tab stays open. Billy sends the creator session to the app in the background and shows a short transfer notice on the TikTok page.
+
 Billy imports the creator links, enriches profile data where TikTok exposes it, then uses Billy's follower filters and preview/export flow.
