@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Billy TikTok Collector",
+  "description": "Collect loaded TikTok hashtag or sound page creators and send them to Billy's Scraper System.",
+  "version": "0.2.0",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Billy TikTok Collector"
+  },
+  "permissions": ["activeTab", "storage", "tabs"],
+  "host_permissions": [
+    "https://www.tiktok.com/*",
+    "http://127.0.0.1:8080/*",
+    "http://localhost:8080/*",
+    "http://127.0.0.1:5173/*",
+    "http://localhost:5173/*",
+    "https://*.vercel.app/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.tiktok.com/*"],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://127.0.0.1:8080/*",
+        "http://localhost:8080/*",
+        "http://127.0.0.1:5173/*",
+        "http://localhost:5173/*",
+        "https://*.vercel.app/*"
+      ],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

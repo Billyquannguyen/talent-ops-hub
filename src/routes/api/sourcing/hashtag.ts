@@ -1,11 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
-const hashtagRequestSchema = z.object({
-  platform: z.literal("tiktok").default("tiktok"),
-  hashtag: z.string().min(1).max(120),
-  maxResults: z.number().int().min(1).max(1000).optional(),
-});
+const hashtagRequestSchema = z
+  .object({
+    platform: z.literal("tiktok").default("tiktok"),
+    hashtag: z.string().min(1).max(500).optional(),
+    source: z.string().min(1).max(500).optional(),
+    maxResults: z.number().int().min(1).max(1000).optional(),
+  })
+  .refine((value) => Boolean(value.hashtag || value.source), {
+    message: "Enter a hashtag or TikTok sound link before scraping.",
+  });
 
 type CreatorRow = Record<string, string | number | boolean | null | undefined>;
 
@@ -15,14 +20,13 @@ type TikTokCreatorRow = {
   description: string;
   platform: "TikTok";
   followers: number | "";
-  following: number | "";
   avgViews: number | "";
   avgLikes: number | "";
   email: string;
   lastPost: string;
   profileUrl: string;
   sampleVideoUrl: string;
-  sourceHashtag: string;
+  sourceLink: string;
 };
 
 type TikTokUser = {
@@ -30,7 +34,6 @@ type TikTokUser = {
   nickname: string;
   description: string;
   followers: number | "";
-  following: number | "";
 };
 
 const outputHeaders = [
@@ -39,15 +42,20 @@ const outputHeaders = [
   "Description",
   "Platform",
   "Followers",
-  "Following",
   "Avg. Views",
   "Avg. Likes",
   "Email",
   "Last Post",
   "URL",
   "Sample Video URL",
-  "Source Hashtag",
+  "Source Link",
 ];
+
+type TikTokSource = {
+  type: "hashtag" | "sound";
+  label: string;
+  pageUrl: string;
+};
 
 export const Route = createFileRoute("/api/sourcing/hashtag")({
   server: {
@@ -55,29 +63,31 @@ export const Route = createFileRoute("/api/sourcing/hashtag")({
       POST: async ({ request }) => {
         try {
           const body = hashtagRequestSchema.parse(await request.json());
-          const hashtag = normalizeHashtag(body.hashtag);
-          if (!hashtag) {
+          const source = resolveTikTokSource(body.source ?? body.hashtag ?? "");
+          if (!source) {
             return Response.json(
-              { ok: false, error: "Enter a hashtag before scraping." },
+              { ok: false, error: "Enter a hashtag or TikTok sound link before scraping." },
               { status: 400 },
             );
           }
 
           const maxResults = body.maxResults ?? 1000;
-          const html = await fetchTikTokHashtagPage(hashtag);
-          const parsed = parseTikTokHashtagPage(html, hashtag, maxResults);
+          const html = await fetchTikTokSourcePage(source);
+          const parsed = parseTikTokSourcePage(html, source, maxResults);
 
           return Response.json({
             ok: true,
             platform: body.platform,
-            hashtag,
+            hashtag: source.label.replace(/^#/, ""),
+            sourceType: source.type,
+            sourceLabel: source.label,
             headers: outputHeaders,
             rows: parsed.rows.map(toCreatorRow),
             videosFound: parsed.videosFound,
             creatorsFound: parsed.rows.length,
             duplicatesRemoved: parsed.duplicatesRemoved,
             warnings: parsed.warnings,
-            sourceUrl: `https://www.tiktok.com/tag/${encodeURIComponent(hashtag)}`,
+            sourceUrl: source.pageUrl,
           });
         } catch (error) {
           if (error instanceof z.ZodError) {
@@ -91,7 +101,7 @@ export const Route = createFileRoute("/api/sourcing/hashtag")({
             );
           }
 
-          const message = error instanceof Error ? error.message : "Hashtag scrape failed.";
+          const message = error instanceof Error ? error.message : "Billy scrape failed.";
           return Response.json({ ok: false, error: message }, { status: 500 });
         }
       },
@@ -99,12 +109,12 @@ export const Route = createFileRoute("/api/sourcing/hashtag")({
   },
 });
 
-async function fetchTikTokHashtagPage(hashtag: string): Promise<string> {
+async function fetchTikTokSourcePage(source: TikTokSource): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
 
   try {
-    const response = await fetch(`https://www.tiktok.com/tag/${encodeURIComponent(hashtag)}`, {
+    const response = await fetch(source.pageUrl, {
       method: "GET",
       redirect: "follow",
       signal: controller.signal,
@@ -130,9 +140,9 @@ async function fetchTikTokHashtagPage(hashtag: string): Promise<string> {
   }
 }
 
-function parseTikTokHashtagPage(
+function parseTikTokSourcePage(
   html: string,
-  hashtag: string,
+  source: TikTokSource,
   maxResults: number,
 ): {
   rows: TikTokCreatorRow[];
@@ -153,13 +163,13 @@ function parseTikTokHashtagPage(
 
   roots.forEach((root) => {
     visitRecords(root, (record) => {
-      const row = parseTikTokVideo(record, users, hashtag);
+      const row = parseTikTokVideo(record, users, source);
       if (row) videoRows.push(row);
     });
   });
 
   if (videoRows.length === 0) {
-    videoRows.push(...parseTikTokLinksFromHtml(html, hashtag));
+    videoRows.push(...parseTikTokLinksFromHtml(html, source));
   }
 
   const deduped = dedupeCreatorRows(videoRows).slice(0, maxResults);
@@ -170,11 +180,11 @@ function parseTikTokHashtagPage(
   }
 
   if (videoRows.length === 0) {
-    warnings.push("No creators were found. TikTok may have blocked or limited the public page.");
+    warnings.push("No creators were found. TikTok did not expose video rows for this source.");
   }
 
   if (deduped.some((row) => row.followers === "")) {
-    warnings.push("Some creators do not include follower counts in the public hashtag response.");
+    warnings.push("Some creators do not include follower counts in the public TikTok response.");
   }
 
   return {
@@ -231,27 +241,23 @@ function parseTikTokUser(record: Record<string, unknown>): TikTokUser | undefine
   const followers =
     pickNumber(record, ["followerCount", "followers"]) ??
     pickNumber(stats, ["followerCount", "followers"]);
-  const following =
-    pickNumber(record, ["followingCount", "following"]) ??
-    pickNumber(stats, ["followingCount", "following"]);
   const nickname = pickString(record, ["nickname", "displayName", "name"]);
   const description = pickString(record, ["signature", "bio", "bioDescription", "description"]);
 
-  if (!nickname && !description && followers == null && following == null) return undefined;
+  if (!nickname && !description && followers == null) return undefined;
 
   return {
     username,
     nickname,
     description,
     followers: followers ?? "",
-    following: following ?? "",
   };
 }
 
 function parseTikTokVideo(
   record: Record<string, unknown>,
   users: Map<string, TikTokUser>,
-  hashtag: string,
+  source: TikTokSource,
 ): TikTokCreatorRow | undefined {
   const videoId = pickString(record, ["id", "itemId", "videoId", "aweme_id"]);
   if (!videoId || !/^\d{8,}$/.test(videoId)) return undefined;
@@ -277,11 +283,6 @@ function parseTikTokVideo(
     pickNumber(authorStats, ["followerCount", "followers"]) ||
     pickNumber(authorRecord, ["followerCount", "followers"]) ||
     "";
-  const following =
-    storedUser?.following ||
-    pickNumber(authorStats, ["followingCount", "following"]) ||
-    pickNumber(authorRecord, ["followingCount", "following"]) ||
-    "";
 
   return {
     nickname:
@@ -292,18 +293,17 @@ function parseTikTokVideo(
     description: description || videoDescription,
     platform: "TikTok",
     followers,
-    following,
     avgViews: pickNumber(videoStats, ["playCount", "viewCount", "views"]) ?? "",
     avgLikes: pickNumber(videoStats, ["diggCount", "likeCount", "likes"]) ?? "",
     email: extractEmail(`${description} ${videoDescription}`),
     lastPost: formatUnixDate(pickNumber(record, ["createTime", "create_time"])),
     profileUrl: `https://www.tiktok.com/@${username}`,
     sampleVideoUrl: `https://www.tiktok.com/@${username}/video/${videoId}`,
-    sourceHashtag: `#${hashtag}`,
+    sourceLink: source.pageUrl,
   };
 }
 
-function parseTikTokLinksFromHtml(html: string, hashtag: string): TikTokCreatorRow[] {
+function parseTikTokLinksFromHtml(html: string, source: TikTokSource): TikTokCreatorRow[] {
   const normalized = html.replace(/\\u002F/g, "/").replace(/\\\//g, "/");
   const regex = /https?:\/\/(?:www\.)?tiktok\.com\/@([^/?#"'<>\\\s]+)\/video\/(\d+)/gi;
   const rows: TikTokCreatorRow[] = [];
@@ -319,14 +319,13 @@ function parseTikTokLinksFromHtml(html: string, hashtag: string): TikTokCreatorR
       description: "",
       platform: "TikTok",
       followers: "",
-      following: "",
       avgViews: "",
       avgLikes: "",
       email: "",
       lastPost: "",
       profileUrl: `https://www.tiktok.com/@${username}`,
       sampleVideoUrl: `https://www.tiktok.com/@${username}/video/${videoId}`,
-      sourceHashtag: `#${hashtag}`,
+      sourceLink: source.pageUrl,
     });
   }
 
@@ -350,7 +349,6 @@ function dedupeCreatorRows(rows: TikTokCreatorRow[]): TikTokCreatorRow[] {
       nickname: existing.nickname || row.nickname,
       description: existing.description || row.description,
       followers: maxNumberOrExisting(existing.followers, row.followers),
-      following: maxNumberOrExisting(existing.following, row.following),
       avgViews: maxNumberOrExisting(existing.avgViews, row.avgViews),
       avgLikes: maxNumberOrExisting(existing.avgLikes, row.avgLikes),
       email: existing.email || row.email,
@@ -369,15 +367,64 @@ function toCreatorRow(row: TikTokCreatorRow): CreatorRow {
     Description: row.description,
     Platform: row.platform,
     Followers: row.followers,
-    Following: row.following,
     "Avg. Views": row.avgViews,
     "Avg. Likes": row.avgLikes,
     Email: row.email,
     "Last Post": row.lastPost,
     URL: row.profileUrl,
     "Sample Video URL": row.sampleVideoUrl,
-    "Source Hashtag": row.sourceHashtag,
+    "Source Link": row.sourceLink,
   };
+}
+
+function resolveTikTokSource(value: string): TikTokSource | undefined {
+  const raw = value.trim();
+  if (!raw) return undefined;
+
+  const maybeUrl = normalizeTikTokUrl(raw);
+  if (maybeUrl) {
+    const parts = maybeUrl.pathname.split("/").filter(Boolean);
+    const [pageType, sourceSlug] = parts;
+
+    if (pageType === "tag" && sourceSlug) {
+      const hashtag = normalizeHashtag(decodeURIComponent(sourceSlug));
+      if (!hashtag) return undefined;
+      return {
+        type: "hashtag",
+        label: `#${hashtag}`,
+        pageUrl: `https://www.tiktok.com/tag/${encodeURIComponent(hashtag)}`,
+      };
+    }
+
+    if (pageType === "music" && sourceSlug) {
+      return {
+        type: "sound",
+        label: decodeURIComponent(sourceSlug).replace(/-/g, " "),
+        pageUrl: `https://www.tiktok.com${maybeUrl.pathname}`,
+      };
+    }
+
+    return undefined;
+  }
+
+  const hashtag = normalizeHashtag(raw);
+  if (!hashtag) return undefined;
+  return {
+    type: "hashtag",
+    label: `#${hashtag}`,
+    pageUrl: `https://www.tiktok.com/tag/${encodeURIComponent(hashtag)}`,
+  };
+}
+
+function normalizeTikTokUrl(value: string): URL | undefined {
+  const raw = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  try {
+    const url = new URL(raw);
+    if (!url.hostname.toLowerCase().endsWith("tiktok.com")) return undefined;
+    return url;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeHashtag(value: string): string {

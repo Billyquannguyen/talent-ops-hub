@@ -28,6 +28,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ActiveCampaignsIndexRouteImport } from './routes/active-campaigns.index'
 import { Route as ApiTranslateRouteImport } from './routes/api/translate'
 import { Route as ActiveCampaignsCampaignIdRouteImport } from './routes/active-campaigns.$campaignId'
+import { Route as ApiSourcingTiktokProfilesRouteImport } from './routes/api/sourcing/tiktok-profiles'
 import { Route as ApiSourcingHashtagRouteImport } from './routes/api/sourcing/hashtag'
 import { Route as ApiAiOutreachRouteImport } from './routes/api/ai/outreach'
 import { Route as ApiAiEnrichContactsRouteImport } from './routes/api/ai/enrich-contacts'
@@ -128,6 +129,12 @@ const ActiveCampaignsCampaignIdRoute =
     path: '/$campaignId',
     getParentRoute: () => ActiveCampaignsRoute,
   } as any)
+const ApiSourcingTiktokProfilesRoute =
+  ApiSourcingTiktokProfilesRouteImport.update({
+    id: '/api/sourcing/tiktok-profiles',
+    path: '/api/sourcing/tiktok-profiles',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiSourcingHashtagRoute = ApiSourcingHashtagRouteImport.update({
   id: '/api/sourcing/hashtag',
   path: '/api/sourcing/hashtag',
@@ -167,6 +174,7 @@ export interface FileRoutesByFullPath {
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
   '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
+  '/api/sourcing/tiktok-profiles': typeof ApiSourcingTiktokProfilesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -190,6 +198,7 @@ export interface FileRoutesByTo {
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
   '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
+  '/api/sourcing/tiktok-profiles': typeof ApiSourcingTiktokProfilesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -215,6 +224,7 @@ export interface FileRoutesById {
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
   '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
+  '/api/sourcing/tiktok-profiles': typeof ApiSourcingTiktokProfilesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
     | '/api/sourcing/hashtag'
+    | '/api/sourcing/tiktok-profiles'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -264,6 +275,7 @@ export interface FileRouteTypes {
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
     | '/api/sourcing/hashtag'
+    | '/api/sourcing/tiktok-profiles'
   id:
     | '__root__'
     | '/'
@@ -288,6 +300,7 @@ export interface FileRouteTypes {
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
     | '/api/sourcing/hashtag'
+    | '/api/sourcing/tiktok-profiles'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -311,6 +324,7 @@ export interface RootRouteChildren {
   ApiAiEnrichContactsRoute: typeof ApiAiEnrichContactsRoute
   ApiAiOutreachRoute: typeof ApiAiOutreachRoute
   ApiSourcingHashtagRoute: typeof ApiSourcingHashtagRoute
+  ApiSourcingTiktokProfilesRoute: typeof ApiSourcingTiktokProfilesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -448,6 +462,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ActiveCampaignsCampaignIdRouteImport
       parentRoute: typeof ActiveCampaignsRoute
     }
+    '/api/sourcing/tiktok-profiles': {
+      id: '/api/sourcing/tiktok-profiles'
+      path: '/api/sourcing/tiktok-profiles'
+      fullPath: '/api/sourcing/tiktok-profiles'
+      preLoaderRoute: typeof ApiSourcingTiktokProfilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/sourcing/hashtag': {
       id: '/api/sourcing/hashtag'
       path: '/api/sourcing/hashtag'
@@ -507,6 +528,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAiEnrichContactsRoute: ApiAiEnrichContactsRoute,
   ApiAiOutreachRoute: ApiAiOutreachRoute,
   ApiSourcingHashtagRoute: ApiSourcingHashtagRoute,
+  ApiSourcingTiktokProfilesRoute: ApiSourcingTiktokProfilesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,5 +1,5 @@
 import { useBlocker } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -93,6 +93,11 @@ const averageViewRangeOptions = [
   { key: "views-10k-100k", label: "10k-100k", min: "10000", max: "100000" },
   { key: "views-100k-plus", label: "> 100k", min: "100000", max: "" },
 ] as const;
+const emptyBillyFilters = {
+  followersMin: "",
+  followersMax: "",
+  followerRanges: [],
+} satisfies BillyFilterSettings;
 const filterSectionDefaults = {
   regions: false,
   languages: false,
@@ -101,8 +106,46 @@ const filterSectionDefaults = {
   averageViews: false,
   emailAvailability: false,
 };
+const billyFilterSectionDefaults = {
+  followers: false,
+};
+const billyExtensionMessageSource = "katlas-billy-extension";
+const billyImportHeaders = [
+  "Nickname",
+  "@Username",
+  "Description",
+  "Platform",
+  "Followers",
+  "Avg. Views",
+  "Avg. Likes",
+  "Email",
+  "Last Post",
+  "URL",
+  "Sample Video URL",
+  "Source Link",
+];
 
 type FilterSectionKey = keyof typeof filterSectionDefaults;
+type BillyFilterSectionKey = keyof typeof billyFilterSectionDefaults;
+type BillyFilterSettings = {
+  followersMin: string;
+  followersMax: string;
+  followerRanges: string[];
+};
+type BillyFilterChip = {
+  key: string;
+  label: string;
+  action:
+    | {
+        type: "array";
+        field: "followerRanges";
+        value: string;
+      }
+    | {
+        type: "fields";
+        fields: Array<keyof BillyFilterSettings>;
+      };
+};
 type FilterChip = {
   key: string;
   label: string;
@@ -134,12 +177,13 @@ type RangeOption = {
   max: string;
   count: number;
 };
+type SourcingAssistantPage = "easykol" | "billy";
 type PendingLeaveAction =
   | { type: "selectProject"; projectId: string }
-  | { type: "selectTemplate"; templateId: string };
-type SourcingAssistantPage = "easykol" | "billy";
+  | { type: "selectTemplate"; templateId: string }
+  | { type: "selectAssistantPage"; page: SourcingAssistantPage };
 type HashtagScrapeReport = {
-  hashtag: string;
+  sourceLabel: string;
   sourceUrl: string;
   creatorsFound: number;
   videosFound: number;
@@ -150,7 +194,9 @@ type HashtagScrapeResponse =
   | {
       ok: true;
       platform: "tiktok";
-      hashtag: string;
+      hashtag?: string;
+      sourceType?: "hashtag" | "sound";
+      sourceLabel?: string;
       headers: string[];
       rows: Array<Record<string, string | number | boolean | null | undefined>>;
       videosFound: number;
@@ -163,9 +209,33 @@ type HashtagScrapeResponse =
       ok: false;
       error: string;
     };
+type BillyExtensionCreator = {
+  username: string;
+  profileUrl?: string;
+  sampleVideoUrl?: string;
+  videoDescription?: string;
+  sourceLink?: string;
+  videos?: string[];
+};
+type BillyExtensionPayload = {
+  collectedAt?: string;
+  sourceLabel: string;
+  sourceUrl: string;
+  videosFound: number;
+  creators: BillyExtensionCreator[];
+};
+type PendingBillyExtensionImport = {
+  id: string;
+  payload: unknown;
+};
 
 export function CreatorSourcingAssistant() {
-  const [assistantPage, setAssistantPage] = useState<SourcingAssistantPage>("easykol");
+  const [assistantPage, setAssistantPage] = useState<SourcingAssistantPage>(
+    getInitialSourcingAssistantPage,
+  );
+  const [pendingBillyExtensionImport, setPendingBillyExtensionImport] =
+    useState<PendingBillyExtensionImport | null>(null);
+  const [billyHasActiveWorkingData, setBillyHasActiveWorkingData] = useState(false);
   const [projects, setProjects] = useState<SourcingProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState("");
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -217,7 +287,8 @@ export function CreatorSourcingAssistant() {
   const hasActiveWorkingData = Boolean(
     sourceFileName || headers.length > 0 || creators.length > 0 || previewReady,
   );
-  const shouldConfirmBeforeLeaving = hasActiveWorkingData || templateHasUnsavedChanges;
+  const shouldConfirmBeforeLeaving =
+    hasActiveWorkingData || billyHasActiveWorkingData || templateHasUnsavedChanges;
   const routeBlocker = useBlocker({
     shouldBlockFn: ({ current, next }) =>
       current.pathname === "/creator-sourcing" &&
@@ -226,6 +297,35 @@ export function CreatorSourcingAssistant() {
     enableBeforeUnload: shouldConfirmBeforeLeaving,
     withResolver: true,
   });
+
+  useEffect(() => {
+    function handleHashChange() {
+      const nextPage = getSourcingAssistantPageFromHash();
+      if (nextPage) setAssistantPage(nextPage);
+    }
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  useEffect(() => {
+    function handleBillyExtensionMessage(event: MessageEvent) {
+      if (event.source !== window || !isRecord(event.data)) return;
+      if (event.data.source !== billyExtensionMessageSource) return;
+      if (event.data.type !== "BILLY_IMPORT") return;
+
+      setAssistantPage("billy");
+      updateSourcingAssistantHash("billy");
+      setPendingBillyExtensionImport({
+        id: createId("billy-extension-import"),
+        payload: event.data.payload,
+      });
+    }
+
+    window.addEventListener("message", handleBillyExtensionMessage);
+    return () => window.removeEventListener("message", handleBillyExtensionMessage);
+  }, []);
+
   const columnMap = useMemo(() => inferColumnMap(headers), [headers]);
   const filteredCreators = useMemo(
     () => filterCreators(creators, filters, columnMap),
@@ -633,6 +733,10 @@ export function CreatorSourcingAssistant() {
     if (!pendingLeaveAction) return;
     const action = pendingLeaveAction;
     setPendingLeaveAction(null);
+    if (action.type === "selectAssistantPage") {
+      switchAssistantPage(action.page);
+      return;
+    }
     if (action.type === "selectTemplate") {
       switchTemplate(action.templateId);
       return;
@@ -647,6 +751,7 @@ export function CreatorSourcingAssistant() {
       clearMessages: true,
       closeTemplateUi: true,
     });
+    setBillyHasActiveWorkingData(false);
     routeBlocker.proceed?.();
   }
 
@@ -1077,6 +1182,20 @@ export function CreatorSourcingAssistant() {
     setSelectedRowIds(previewRows.map((row) => row.id));
   }
 
+  function changeAssistantPage(nextPage: SourcingAssistantPage) {
+    if (nextPage === assistantPage) return;
+    if (assistantPage === "billy" && billyHasActiveWorkingData) {
+      setPendingLeaveAction({ type: "selectAssistantPage", page: nextPage });
+      return;
+    }
+    switchAssistantPage(nextPage);
+  }
+
+  function switchAssistantPage(nextPage: SourcingAssistantPage) {
+    setAssistantPage(nextPage);
+    updateSourcingAssistantHash(nextPage);
+  }
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <TopBar />
@@ -1103,7 +1222,7 @@ export function CreatorSourcingAssistant() {
           </div>
         </section>
 
-        <SourcingAssistantPagination page={assistantPage} onPageChange={setAssistantPage} />
+        <SourcingAssistantPagination page={assistantPage} onPageChange={changeAssistantPage} />
 
         {assistantPage === "easykol" ? (
           <>
@@ -1403,7 +1522,13 @@ export function CreatorSourcingAssistant() {
             </section>
           </>
         ) : (
-          <BillyScraperSystem projects={projects} isLoadingTemplates={isLoadingTemplates} />
+          <BillyScraperSystem
+            projects={projects}
+            isLoadingTemplates={isLoadingTemplates}
+            pendingExtensionImport={pendingBillyExtensionImport}
+            onExtensionImportHandled={() => setPendingBillyExtensionImport(null)}
+            onWorkingDataChange={setBillyHasActiveWorkingData}
+          />
         )}
       </main>
 
@@ -1457,6 +1582,14 @@ export function CreatorSourcingAssistant() {
       {pendingLeaveAction || routeBlocker.status === "blocked" ? (
         <LeaveProjectModal
           hasUnsavedTemplateChanges={templateHasUnsavedChanges}
+          workingDataKind={assistantPage === "billy" ? "billy" : "easykol"}
+          actionLabel={
+            pendingLeaveAction?.type === "selectAssistantPage"
+              ? "Switch Page"
+              : pendingLeaveAction
+                ? "Leave Campaign"
+                : "Leave Page"
+          }
           onStay={() => {
             if (pendingLeaveAction) {
               setPendingLeaveAction(null);
@@ -1538,21 +1671,25 @@ function SourcingAssistantPagination({
 function BillyScraperSystem({
   projects,
   isLoadingTemplates,
+  pendingExtensionImport,
+  onExtensionImportHandled,
+  onWorkingDataChange,
 }: {
   projects: SourcingProject[];
   isLoadingTemplates: boolean;
+  pendingExtensionImport: PendingBillyExtensionImport | null;
+  onExtensionImportHandled: () => void;
+  onWorkingDataChange: (hasWorkingData: boolean) => void;
 }) {
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [hashtagInput, setHashtagInput] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [creators, setCreators] = useState<UploadedCreator[]>([]);
-  const [filters, setFilters] = useState({
-    followersMin: "",
-    followersMax: "",
-    followingMin: "",
-    followingMax: "",
-  });
+  const [filters, setFilters] = useState<BillyFilterSettings>(() => createBillyFilters());
+  const [openFilterSections, setOpenFilterSections] = useState<
+    Record<BillyFilterSectionKey, boolean>
+  >(() => ({ ...billyFilterSectionDefaults }));
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [previewReady, setPreviewReady] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
@@ -1562,6 +1699,13 @@ function BillyScraperSystem({
   const [copyMessage, setCopyMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [scrapeReport, setScrapeReport] = useState<HashtagScrapeReport | null>(null);
+  const hasActiveWorkingData = Boolean(
+    hashtagInput.trim() ||
+    headers.length > 0 ||
+    creators.length > 0 ||
+    previewReady ||
+    scrapeReport,
+  );
 
   const activeProject =
     projects.find((project) => project.campaignId === selectedCampaignId) ?? projects[0];
@@ -1577,12 +1721,17 @@ function BillyScraperSystem({
     () => filterBillyCreators(creators, filters),
     [creators, filters],
   );
+  const followerRanges = useMemo(
+    () => getBillyMetricRangeCounts(creators, "Followers", followersRangeOptions),
+    [creators],
+  );
+  const activeFilterChips = useMemo(() => getActiveBillyFilterChips(filters), [filters]);
   const previewHeaders = useMemo(
     () => [
       ...template.map((column, index) => column.label.trim() || `Column ${index + 1}`),
-      "Following",
+      "Bio",
       "Sample Video URL",
-      "Source Hashtag",
+      "Source Link",
     ],
     [template],
   );
@@ -1599,9 +1748,9 @@ function BillyScraperSystem({
           ...baseRow,
           values: [
             ...baseRow.values,
-            stringValue(creator.data.Following),
+            stringValue(creator.data.Description),
             stringValue(creator.data["Sample Video URL"]),
-            stringValue(creator.data["Source Hashtag"]),
+            stringValue(creator.data["Source Link"]),
           ],
         };
       }),
@@ -1611,6 +1760,11 @@ function BillyScraperSystem({
     () => previewRows.filter((row) => selectedRowIds.includes(row.id)),
     [previewRows, selectedRowIds],
   );
+
+  useEffect(() => {
+    onWorkingDataChange(hasActiveWorkingData);
+    return () => onWorkingDataChange(false);
+  }, [hasActiveWorkingData, onWorkingDataChange]);
 
   useEffect(() => {
     if (!projects.length) {
@@ -1643,20 +1797,131 @@ function BillyScraperSystem({
     setSelectedRowIds([]);
   }, [creators, filters, selectedTemplateId]);
 
-  async function scrapeHashtag() {
-    if (!activeProject) {
-      setErrorMessage("Select a campaign first.");
-      return;
-    }
+  const loadBillyRows = useCallback(
+    ({
+      headers: nextHeaders,
+      rows,
+      sourceLabel,
+      sourceUrl,
+      videosFound,
+      duplicatesRemoved,
+      warnings,
+      verb = "Loaded",
+    }: {
+      headers: string[];
+      rows: Array<Record<string, string | number | boolean | null | undefined>>;
+      sourceLabel: string;
+      sourceUrl: string;
+      videosFound: number;
+      duplicatesRemoved: number;
+      warnings: string[];
+      verb?: string;
+    }) => {
+      const importId = `${sourceLabel}-${Date.now()}`;
+      const nextCreators = rows.map((row, index) => ({
+        id: `billy-${importId}-${index}`,
+        data: row,
+      }));
 
-    const hashtag = normalizeHashtagInput(hashtagInput);
-    if (!hashtag) {
-      setErrorMessage("Enter a hashtag first.");
+      setHeaders(nextHeaders);
+      setCreators(nextCreators);
+      setSelectedRowIds([]);
+      setPreviewReady(false);
+      setScrapeReport({
+        sourceLabel,
+        sourceUrl,
+        creatorsFound: nextCreators.length,
+        videosFound,
+        duplicatesRemoved,
+        warnings,
+      });
+      setStatusMessage(
+        `${verb} ${nextCreators.length.toLocaleString()} creators from ${sourceLabel}.`,
+      );
+      setCopyMessage(warnings[0] ?? "");
+    },
+    [],
+  );
+
+  const importExtensionPayload = useCallback(
+    async (rawPayload: unknown) => {
+      const payload = parseBillyExtensionPayload(rawPayload);
+      if (!payload || payload.creators.length === 0) {
+        setErrorMessage("Billy did not receive any TikTok creators from the extension.");
+        return;
+      }
+
+      setIsScraping(true);
+      setStatusMessage(
+        `Importing ${payload.creators.length.toLocaleString()} creators from the extension...`,
+      );
+      setErrorMessage("");
+      setCopyMessage("");
+      setScrapeReport(null);
+
+      try {
+        const response = await fetch("/api/sourcing/tiktok-profiles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = (await response.json().catch(() => ({
+          ok: false,
+          error: "Billy profile import returned an invalid response.",
+        }))) as HashtagScrapeResponse;
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.ok ? "Billy profile import failed." : result.error);
+        }
+
+        loadBillyRows({
+          headers: result.headers,
+          rows: result.rows,
+          sourceLabel: result.sourceLabel ?? payload.sourceLabel,
+          sourceUrl: result.sourceUrl || payload.sourceUrl,
+          videosFound: result.videosFound,
+          duplicatesRemoved: result.duplicatesRemoved,
+          warnings: result.warnings,
+          verb: "Imported",
+        });
+      } catch (error) {
+        const fallbackRows = createBillyRowsFromExtensionPayload(payload);
+        loadBillyRows({
+          headers: billyImportHeaders,
+          rows: fallbackRows,
+          sourceLabel: payload.sourceLabel,
+          sourceUrl: payload.sourceUrl,
+          videosFound: payload.videosFound,
+          duplicatesRemoved: Math.max(payload.creators.length - fallbackRows.length, 0),
+          warnings: [
+            error instanceof Error
+              ? `Profile enrichment failed. Billy kept the collected links. ${error.message}`
+              : "Profile enrichment failed. Billy kept the collected links.",
+          ],
+          verb: "Imported",
+        });
+      } finally {
+        setIsScraping(false);
+      }
+    },
+    [loadBillyRows],
+  );
+
+  useEffect(() => {
+    if (!pendingExtensionImport) return;
+    void importExtensionPayload(pendingExtensionImport.payload);
+    onExtensionImportHandled();
+  }, [importExtensionPayload, onExtensionImportHandled, pendingExtensionImport]);
+
+  async function scrapeHashtag() {
+    const sourceInput = normalizeBillySourceInput(hashtagInput);
+    if (!sourceInput) {
+      setErrorMessage("Enter a hashtag or TikTok sound link first.");
       return;
     }
 
     setIsScraping(true);
-    setStatusMessage(`Scraping #${hashtag}...`);
+    setStatusMessage(`Scraping ${sourceInput}...`);
     setErrorMessage("");
     setCopyMessage("");
     setScrapeReport(null);
@@ -1667,42 +1932,32 @@ function BillyScraperSystem({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           platform: "tiktok",
-          hashtag,
+          source: sourceInput,
           maxResults: 1000,
         }),
       });
       const payload = (await response.json().catch(() => ({
         ok: false,
-        error: "Hashtag scraper returned an invalid response.",
+        error: "Billy scraper returned an invalid response.",
       }))) as HashtagScrapeResponse;
 
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.ok ? "Hashtag scrape failed." : payload.error);
+        throw new Error(payload.ok ? "Billy scrape failed." : payload.error);
       }
 
-      const scrapedCreators = payload.rows.map((row, index) => ({
-        id: `billy-${payload.hashtag}-${Date.now()}-${index}`,
-        data: row,
-      }));
-
-      setHeaders(payload.headers);
-      setCreators(scrapedCreators);
-      setSelectedRowIds([]);
-      setPreviewReady(false);
-      setScrapeReport({
-        hashtag: payload.hashtag,
+      const sourceLabel = payload.sourceLabel ?? `#${payload.hashtag}`;
+      loadBillyRows({
+        headers: payload.headers,
+        rows: payload.rows,
+        sourceLabel,
         sourceUrl: payload.sourceUrl,
-        creatorsFound: payload.creatorsFound,
         videosFound: payload.videosFound,
         duplicatesRemoved: payload.duplicatesRemoved,
         warnings: payload.warnings,
+        verb: "Loaded",
       });
-      setStatusMessage(
-        `Loaded ${scrapedCreators.length.toLocaleString()} creators from #${payload.hashtag}.`,
-      );
-      setCopyMessage(payload.warnings[0] ?? "");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Hashtag scrape failed.");
+      setErrorMessage(error instanceof Error ? error.message : "Billy scrape failed.");
       setStatusMessage("");
     } finally {
       setIsScraping(false);
@@ -1715,7 +1970,7 @@ function BillyScraperSystem({
       return;
     }
     if (!creators.length) {
-      setErrorMessage("Scrape a hashtag first.");
+      setErrorMessage("Scrape a hashtag or sound link first.");
       return;
     }
     if (!template.length) {
@@ -1791,6 +2046,39 @@ function BillyScraperSystem({
     setSelectedRowIds(previewRows.map((row) => row.id));
   }
 
+  function toggleFilterSection(section: BillyFilterSectionKey) {
+    setOpenFilterSections((current) => ({ ...current, [section]: !current[section] }));
+  }
+
+  function togglePresetRange(range: { key: string }) {
+    setFilters((current) => {
+      const selected = current.followerRanges;
+      const next = selected.includes(range.key)
+        ? selected.filter((item) => item !== range.key)
+        : [...selected, range.key];
+      return { ...current, followerRanges: next };
+    });
+  }
+
+  function clearBillyFilterChip(chip: BillyFilterChip) {
+    setFilters((current) => {
+      const next: BillyFilterSettings = {
+        ...current,
+        followerRanges: [...current.followerRanges],
+      };
+
+      if (chip.action.type === "array") {
+        if (chip.action.field === "followerRanges") {
+          next.followerRanges = next.followerRanges.filter((item) => item !== chip.action.value);
+        }
+        return next;
+      }
+
+      chip.action.fields.forEach((field) => clearBillyFilterValue(next, field));
+      return next;
+    });
+  }
+
   if (isLoadingTemplates) {
     return (
       <Panel title="Billy's Scraper System" icon={Hash}>
@@ -1858,17 +2146,17 @@ function BillyScraperSystem({
               </>
             ) : (
               <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                Create campaigns in Campaign Profiles first. Billy's scraper uses campaign sourcing
-                templates for the final preview.
+                Billy can scrape without a campaign. Create campaigns in Campaign Profiles before
+                preparing the final preview.
               </p>
             )}
           </Panel>
 
-          <Panel title="Scrape Hashtag" icon={Hash}>
+          <Panel title="Scrape Source" icon={Hash}>
             <HashtagScraperForm
               value={hashtagInput}
               isScraping={isScraping}
-              canScrape={Boolean(activeProject)}
+              canScrape
               onChange={setHashtagInput}
               onScrape={() => {
                 void scrapeHashtag();
@@ -1878,12 +2166,23 @@ function BillyScraperSystem({
           </Panel>
 
           <Panel title="Billy Filters" icon={Filter}>
-            <BillyFilterControls filters={filters} onChange={setFilters} />
+            <BillyFilterControls
+              filters={filters}
+              openSections={openFilterSections}
+              followerRanges={followerRanges}
+              onToggleSection={toggleFilterSection}
+              onPresetRange={togglePresetRange}
+              onChange={setFilters}
+              onReset={() => setFilters(createBillyFilters())}
+            />
           </Panel>
         </aside>
 
         <div className="flex min-w-0 flex-col gap-5">
           <Panel title="Billy Preview" icon={Sparkles}>
+            {activeFilterChips.length > 0 ? (
+              <ActiveBillyFilterChips chips={activeFilterChips} onClear={clearBillyFilterChip} />
+            ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">
@@ -1891,7 +2190,7 @@ function BillyScraperSystem({
                   creators match Billy's filters
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Output uses the selected sourcing template, then appends Billy's following and
+                  Output uses the selected sourcing template, then appends Billy's full bio and
                   source link columns.
                 </p>
               </div>
@@ -1944,7 +2243,7 @@ function BillyScraperSystem({
 
             {!previewReady ? (
               <div className="mt-4 rounded-md border border-dashed border-border bg-background px-4 py-4 text-sm text-muted-foreground">
-                Scrape a hashtag, filter the creators, then prepare Billy's preview.
+                Scrape a hashtag or sound link, filter the creators, then prepare Billy's preview.
               </div>
             ) : null}
           </Panel>
@@ -1970,47 +2269,66 @@ function BillyScraperSystem({
 
 function BillyFilterControls({
   filters,
+  openSections,
+  followerRanges,
+  onToggleSection,
+  onPresetRange,
   onChange,
+  onReset,
 }: {
-  filters: {
-    followersMin: string;
-    followersMax: string;
-    followingMin: string;
-    followingMax: string;
-  };
-  onChange: (filters: {
-    followersMin: string;
-    followersMax: string;
-    followingMin: string;
-    followingMax: string;
-  }) => void;
+  filters: BillyFilterSettings;
+  openSections: Record<BillyFilterSectionKey, boolean>;
+  followerRanges: RangeOption[];
+  onToggleSection: (section: BillyFilterSectionKey) => void;
+  onPresetRange: (range: { key: string }) => void;
+  onChange: (filters: BillyFilterSettings) => void;
+  onReset: () => void;
 }) {
+  const hasActiveFilters = hasBillyFilters(filters);
+
   return (
     <div className="space-y-3">
-      <BillyRangeControl
+      <FilterDropdown
         title="Followers"
-        min={filters.followersMin}
-        max={filters.followersMax}
-        minPlaceholder="Min followers"
-        maxPlaceholder="Max followers"
-        onMin={(followersMin) => onChange({ ...filters, followersMin })}
-        onMax={(followersMax) => onChange({ ...filters, followersMax })}
-      />
-      <BillyRangeControl
-        title="Following"
-        min={filters.followingMin}
-        max={filters.followingMax}
-        minPlaceholder="Min following"
-        maxPlaceholder="Max following"
-        onMin={(followingMin) => onChange({ ...filters, followingMin })}
-        onMax={(followingMax) => onChange({ ...filters, followingMax })}
-      />
+        summary={getRangeSelectionSummary(
+          filters.followerRanges,
+          filters.followersMin,
+          filters.followersMax,
+          followersRangeOptions,
+          "Select Followers",
+          "followers",
+        )}
+        open={openSections.followers}
+        onToggle={() => onToggleSection("followers")}
+      >
+        <BillyRangeOptionList
+          selected={filters.followerRanges}
+          ranges={followerRanges}
+          onSelect={onPresetRange}
+        />
+        <BillyRangeControl
+          min={filters.followersMin}
+          max={filters.followersMax}
+          minPlaceholder="Min followers"
+          maxPlaceholder="Max followers"
+          onMin={(followersMin) => onChange({ ...filters, followersMin })}
+          onMax={(followersMax) => onChange({ ...filters, followersMax })}
+        />
+      </FilterDropdown>
+
+      <button
+        type="button"
+        onClick={onReset}
+        disabled={!hasActiveFilters}
+        className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Reset Billy Filters
+      </button>
     </div>
   );
 }
 
 function BillyRangeControl({
-  title,
   min,
   max,
   minPlaceholder,
@@ -2018,7 +2336,6 @@ function BillyRangeControl({
   onMin,
   onMax,
 }: {
-  title: string;
   min: string;
   max: string;
   minPlaceholder: string;
@@ -2027,22 +2344,70 @@ function BillyRangeControl({
   onMax: (value: string) => void;
 }) {
   return (
-    <div className="rounded-md border border-border bg-background p-3">
-      <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
+    <div className="mt-3 rounded-md border border-border bg-card p-2">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">Custom Range</p>
       <div className="grid grid-cols-2 gap-2">
         <input
           value={min}
           onChange={(event) => onMin(event.target.value)}
           placeholder={minPlaceholder}
-          className="h-9 min-w-0 rounded-md border border-input bg-card px-2 text-xs outline-none ring-ring focus:ring-2"
+          className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-xs outline-none ring-ring focus:ring-2"
         />
         <input
           value={max}
           onChange={(event) => onMax(event.target.value)}
           placeholder={maxPlaceholder}
-          className="h-9 min-w-0 rounded-md border border-input bg-card px-2 text-xs outline-none ring-ring focus:ring-2"
+          className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-xs outline-none ring-ring focus:ring-2"
         />
       </div>
+    </div>
+  );
+}
+
+function BillyRangeOptionList({
+  selected,
+  ranges,
+  onSelect,
+}: {
+  selected: string[];
+  ranges: RangeOption[];
+  onSelect: (range: RangeOption) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      {ranges.map((range) => (
+        <FilterOptionButton
+          key={range.key}
+          label={range.label}
+          count={range.count}
+          selected={selected.includes(range.key)}
+          onClick={() => onSelect(range)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ActiveBillyFilterChips({
+  chips,
+  onClear,
+}: {
+  chips: BillyFilterChip[];
+  onClear: (chip: BillyFilterChip) => void;
+}) {
+  return (
+    <div className="mb-4 flex flex-wrap gap-2">
+      {chips.map((chip) => (
+        <button
+          key={chip.key}
+          type="button"
+          onClick={() => onClear(chip)}
+          className="inline-flex h-8 items-center gap-1 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground transition hover:text-foreground"
+        >
+          {chip.label}
+          <X className="size-3" />
+        </button>
+      ))}
     </div>
   );
 }
@@ -2069,26 +2434,25 @@ function HashtagScraperForm({
       }}
     >
       <label className="block">
-        <span className="text-xs font-medium text-muted-foreground">TikTok Hashtag</span>
-        <div className="mt-1 flex rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
-          <span className="flex h-10 items-center border-r border-border px-3 text-sm text-muted-foreground">
-            #
-          </span>
+        <span className="text-xs font-medium text-muted-foreground">
+          TikTok Hashtag Or Sound Link
+        </span>
+        <div className="mt-1 rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
           <input
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            placeholder="skincare"
-            className="h-10 min-w-0 flex-1 bg-transparent px-3 text-sm outline-none"
+            placeholder="#skincare or https://www.tiktok.com/music/..."
+            className="h-10 w-full min-w-0 bg-transparent px-3 text-sm outline-none"
           />
         </div>
       </label>
       <button
         type="submit"
-        disabled={!canScrape || isScraping || !normalizeHashtagInput(value)}
+        disabled={!canScrape || isScraping || !normalizeBillySourceInput(value)}
         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isScraping ? <Loader2 className="size-4 animate-spin" /> : <Hash className="size-4" />}
-        {isScraping ? "Scraping..." : "Scrape Hashtag"}
+        {isScraping ? "Scraping..." : "Scrape Source"}
       </button>
     </form>
   );
@@ -2098,14 +2462,14 @@ function HashtagScrapeReportPanel({ report }: { report: HashtagScrapeReport }) {
   return (
     <div className="mt-3 space-y-3 rounded-md border border-border bg-background px-3 py-3 text-xs text-muted-foreground">
       <div>
-        <p className="font-medium uppercase text-muted-foreground">Current Hashtag</p>
+        <p className="font-medium uppercase text-muted-foreground">Current Source</p>
         <a
           href={report.sourceUrl}
           target="_blank"
           rel="noreferrer"
           className="mt-1 block truncate font-medium text-primary underline-offset-2 hover:underline"
         >
-          #{report.hashtag}
+          {report.sourceLabel}
         </a>
       </div>
       <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
@@ -2658,26 +3022,36 @@ function PreviewModal({
 
 function LeaveProjectModal({
   hasUnsavedTemplateChanges,
+  workingDataKind,
+  actionLabel,
   onStay,
   onLeave,
 }: {
   hasUnsavedTemplateChanges: boolean;
+  workingDataKind: "easykol" | "billy";
+  actionLabel: string;
   onStay: () => void;
   onLeave: () => void;
 }) {
+  const workingDataLabel =
+    workingDataKind === "billy"
+      ? "Billy scrape rows, filters, and preview data"
+      : "The uploaded EasyKOL file and preview data";
+  const eyebrowLabel =
+    workingDataKind === "billy" ? "Before leaving Billy:" : "Before leaving this campaign:";
+  const leaveButtonLabel = workingDataKind === "billy" ? actionLabel : "Leave Campaign";
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl">
-        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-          Before leaving this campaign:
-        </p>
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{eyebrowLabel}</p>
         <h2 className="mt-3 text-lg font-semibold">
           {hasUnsavedTemplateChanges
             ? "You have unsaved template changes."
             : "Have you copied or downloaded everything you need?"}
         </h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          The uploaded EasyKOL file and preview data will be cleared.
+          {workingDataLabel} will be cleared.
         </p>
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -2690,7 +3064,7 @@ function LeaveProjectModal({
             onClick={onLeave}
             className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
           >
-            Leave Campaign
+            {leaveButtonLabel}
           </button>
         </div>
       </div>
@@ -3444,24 +3818,60 @@ function valueInRange(value: unknown, range: { min: string; max: string }): bool
   return true;
 }
 
+function createBillyFilters(): BillyFilterSettings {
+  return {
+    ...emptyBillyFilters,
+    followerRanges: [],
+  };
+}
+
 function filterBillyCreators(
   creators: UploadedCreator[],
-  filters: {
-    followersMin: string;
-    followersMax: string;
-    followingMin: string;
-    followingMax: string;
-  },
+  filters: BillyFilterSettings,
 ): UploadedCreator[] {
   return creators.filter(({ data }) => {
-    if (!matchesBillyRange(data.Followers, filters.followersMin, filters.followersMax)) {
-      return false;
-    }
-    if (!matchesBillyRange(data.Following, filters.followingMin, filters.followingMax)) {
+    if (
+      !matchesBillyRangeGroup(
+        data.Followers,
+        filters.followerRanges,
+        filters.followersMin,
+        filters.followersMax,
+        followersRangeOptions,
+      )
+    ) {
       return false;
     }
     return true;
   });
+}
+
+function getBillyMetricRangeCounts(
+  creators: UploadedCreator[],
+  field: string,
+  ranges: ReadonlyArray<{ key: string; label: string; min: string; max: string }>,
+): RangeOption[] {
+  return ranges.map((range) => ({
+    ...range,
+    count: creators.filter(({ data }) => valueInRange(data[field], range)).length,
+  }));
+}
+
+function matchesBillyRangeGroup(
+  value: unknown,
+  selectedRangeKeys: string[],
+  customMin: string,
+  customMax: string,
+  ranges: ReadonlyArray<{ key: string; min: string; max: string }>,
+): boolean {
+  const hasCustomRange = Boolean(customMin || customMax);
+  if (selectedRangeKeys.length === 0 && !hasCustomRange) return true;
+
+  const matchesPreset = selectedRangeKeys.some((key) => {
+    const range = ranges.find((option) => option.key === key);
+    return range ? matchesBillyRange(value, range.min, range.max) : false;
+  });
+  const matchesCustom = hasCustomRange && matchesBillyRange(value, customMin, customMax);
+  return matchesPreset || matchesCustom;
 }
 
 function matchesBillyRange(value: unknown, min: string, max: string): boolean {
@@ -3473,6 +3883,155 @@ function matchesBillyRange(value: unknown, min: string, max: string): boolean {
   if (minValue != null && metric < minValue) return false;
   if (maxValue != null && metric > maxValue) return false;
   return true;
+}
+
+function hasBillyFilters(filters: BillyFilterSettings): boolean {
+  return filters.followerRanges.length > 0 || Boolean(filters.followersMin || filters.followersMax);
+}
+
+function clearBillyFilterValue(filters: BillyFilterSettings, key: keyof BillyFilterSettings) {
+  if (key === "followersMin") filters.followersMin = "";
+  if (key === "followersMax") filters.followersMax = "";
+  if (key === "followerRanges") filters.followerRanges = [];
+}
+
+function getActiveBillyFilterChips(filters: BillyFilterSettings): BillyFilterChip[] {
+  const chips: BillyFilterChip[] = [];
+
+  filters.followerRanges.forEach((rangeKey) => {
+    const range = followersRangeOptions.find((option) => option.key === rangeKey);
+    if (!range) return;
+    chips.push({
+      key: range.key,
+      label: `${range.label} Followers`,
+      action: { type: "array", field: "followerRanges", value: range.key },
+    });
+  });
+  if (filters.followersMin || filters.followersMax) {
+    chips.push({
+      key: "billy-followers-custom",
+      label: getRangeChipLabel(
+        filters.followersMin,
+        filters.followersMax,
+        "Followers",
+        followersRangeOptions,
+      ),
+      action: { type: "fields", fields: ["followersMin", "followersMax"] },
+    });
+  }
+  return chips;
+}
+
+function parseBillyExtensionPayload(value: unknown): BillyExtensionPayload | undefined {
+  if (!isRecord(value)) return undefined;
+  const rawCreators = Array.isArray(value.creators) ? value.creators : [];
+  const creators = rawCreators
+    .map(parseBillyExtensionCreator)
+    .filter((creator): creator is BillyExtensionCreator => Boolean(creator));
+  const sourceUrl = typeof value.sourceUrl === "string" ? value.sourceUrl : "";
+  const sourceLabel =
+    typeof value.sourceLabel === "string" && value.sourceLabel.trim()
+      ? value.sourceLabel.trim()
+      : "TikTok extension import";
+  const videosFound =
+    typeof value.videosFound === "number" && Number.isFinite(value.videosFound)
+      ? value.videosFound
+      : creators.reduce((count, creator) => count + (creator.videos?.length || 1), 0);
+
+  return {
+    collectedAt: typeof value.collectedAt === "string" ? value.collectedAt : undefined,
+    sourceLabel,
+    sourceUrl,
+    videosFound,
+    creators: dedupeBillyExtensionCreators(creators),
+  };
+}
+
+function parseBillyExtensionCreator(value: unknown): BillyExtensionCreator | undefined {
+  if (!isRecord(value)) return undefined;
+  const username = cleanBillyUsername(stringValue(value.username));
+  if (!username) return undefined;
+  const videos = Array.isArray(value.videos)
+    ? value.videos.filter((item): item is string => typeof item === "string" && item.trim())
+    : undefined;
+  return {
+    username,
+    profileUrl:
+      typeof value.profileUrl === "string" && value.profileUrl.trim()
+        ? value.profileUrl.trim()
+        : `https://www.tiktok.com/@${username}`,
+    sampleVideoUrl:
+      typeof value.sampleVideoUrl === "string" && value.sampleVideoUrl.trim()
+        ? value.sampleVideoUrl.trim()
+        : videos?.[0],
+    videoDescription:
+      typeof value.videoDescription === "string" ? value.videoDescription.trim() : undefined,
+    sourceLink: typeof value.sourceLink === "string" ? value.sourceLink.trim() : undefined,
+    videos,
+  };
+}
+
+function dedupeBillyExtensionCreators(creators: BillyExtensionCreator[]): BillyExtensionCreator[] {
+  const creatorsByUsername = new Map<string, BillyExtensionCreator>();
+
+  creators.forEach((creator) => {
+    const key = cleanBillyUsername(creator.username).toLowerCase();
+    if (!key) return;
+    const existing = creatorsByUsername.get(key);
+    if (!existing) {
+      creatorsByUsername.set(key, {
+        ...creator,
+        username: cleanBillyUsername(creator.username),
+        videos: [...(creator.videos ?? [])],
+      });
+      return;
+    }
+
+    creatorsByUsername.set(key, {
+      ...existing,
+      profileUrl: existing.profileUrl || creator.profileUrl,
+      sampleVideoUrl: existing.sampleVideoUrl || creator.sampleVideoUrl,
+      videoDescription: existing.videoDescription || creator.videoDescription,
+      sourceLink: existing.sourceLink || creator.sourceLink,
+      videos: Array.from(new Set([...(existing.videos ?? []), ...(creator.videos ?? [])])),
+    });
+  });
+
+  return Array.from(creatorsByUsername.values());
+}
+
+function createBillyRowsFromExtensionPayload(
+  payload: BillyExtensionPayload,
+): Array<Record<string, string | number | boolean | null | undefined>> {
+  return payload.creators.map((creator) => {
+    const username = cleanBillyUsername(creator.username);
+    const description = creator.videoDescription ?? "";
+    return {
+      Nickname: username,
+      "@Username": `@${username}`,
+      Description: description,
+      Platform: "TikTok",
+      Followers: "",
+      "Avg. Views": "",
+      "Avg. Likes": "",
+      Email: extractEmailFromText(description),
+      "Last Post": "",
+      URL: creator.profileUrl || `https://www.tiktok.com/@${username}`,
+      "Sample Video URL": creator.sampleVideoUrl || creator.videos?.[0] || "",
+      "Source Link": creator.sourceLink || payload.sourceUrl,
+    };
+  });
+}
+
+function cleanBillyUsername(value: string): string {
+  return value
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/[/?#].*$/, "");
+}
+
+function extractEmailFromText(value: string): string {
+  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? "";
 }
 
 function getSelectionSummary(
@@ -3517,7 +4076,7 @@ function getRangeChipLabel(
   min: string,
   max: string,
   label: string,
-  ranges: ReadonlyArray<{ label: string; min: string; max: string }>,
+  ranges: ReadonlyArray<{ label: string; min: string; max: string }> = [],
 ): string {
   const preset = ranges.find((range) => range.min === min && range.max === max);
   if (preset) return `${preset.label} ${label}`;
@@ -4122,8 +4681,31 @@ function stringValue(value: unknown): string {
   return String(value);
 }
 
-function normalizeHashtagInput(value: string): string {
-  return value.trim().replace(/^#+/, "").replace(/\s+/g, "");
+function normalizeBillySourceInput(value: string): string {
+  return value.trim();
+}
+
+function getInitialSourcingAssistantPage(): SourcingAssistantPage {
+  return getSourcingAssistantPageFromHash() ?? "easykol";
+}
+
+function getSourcingAssistantPageFromHash(): SourcingAssistantPage | undefined {
+  if (typeof window === "undefined") return undefined;
+  const hash = window.location.hash.toLowerCase();
+  if (hash.includes("billy")) return "billy";
+  if (hash.includes("easykol")) return "easykol";
+  return undefined;
+}
+
+function updateSourcingAssistantHash(page: SourcingAssistantPage) {
+  if (typeof window === "undefined") return;
+  const nextHash = page === "billy" ? "#billy" : "#easykol";
+  if (window.location.hash === nextHash) return;
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${window.location.search}${nextHash}`,
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
