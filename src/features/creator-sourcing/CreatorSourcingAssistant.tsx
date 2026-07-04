@@ -1683,7 +1683,6 @@ function BillyScraperSystem({
 }) {
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [hashtagInput, setHashtagInput] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [creators, setCreators] = useState<UploadedCreator[]>([]);
   const [filters, setFilters] = useState<BillyFilterSettings>(() => createBillyFilters());
@@ -1700,11 +1699,7 @@ function BillyScraperSystem({
   const [errorMessage, setErrorMessage] = useState("");
   const [scrapeReport, setScrapeReport] = useState<HashtagScrapeReport | null>(null);
   const hasActiveWorkingData = Boolean(
-    hashtagInput.trim() ||
-    headers.length > 0 ||
-    creators.length > 0 ||
-    previewReady ||
-    scrapeReport,
+    headers.length > 0 || creators.length > 0 || previewReady || scrapeReport,
   );
 
   const activeProject =
@@ -1913,64 +1908,13 @@ function BillyScraperSystem({
     onExtensionImportHandled();
   }, [importExtensionPayload, onExtensionImportHandled, pendingExtensionImport]);
 
-  async function scrapeHashtag() {
-    const sourceInput = normalizeBillySourceInput(hashtagInput);
-    if (!sourceInput) {
-      setErrorMessage("Enter a hashtag or TikTok sound link first.");
-      return;
-    }
-
-    setIsScraping(true);
-    setStatusMessage(`Scraping ${sourceInput}...`);
-    setErrorMessage("");
-    setCopyMessage("");
-    setScrapeReport(null);
-
-    try {
-      const response = await fetch("/api/sourcing/hashtag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          platform: "tiktok",
-          source: sourceInput,
-          maxResults: 1000,
-        }),
-      });
-      const payload = (await response.json().catch(() => ({
-        ok: false,
-        error: "Billy scraper returned an invalid response.",
-      }))) as HashtagScrapeResponse;
-
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.ok ? "Billy scrape failed." : payload.error);
-      }
-
-      const sourceLabel = payload.sourceLabel ?? `#${payload.hashtag}`;
-      loadBillyRows({
-        headers: payload.headers,
-        rows: payload.rows,
-        sourceLabel,
-        sourceUrl: payload.sourceUrl,
-        videosFound: payload.videosFound,
-        duplicatesRemoved: payload.duplicatesRemoved,
-        warnings: payload.warnings,
-        verb: "Loaded",
-      });
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Billy scrape failed.");
-      setStatusMessage("");
-    } finally {
-      setIsScraping(false);
-    }
-  }
-
   async function preparePreview() {
     if (!activeProject) {
       setErrorMessage("Select a campaign first.");
       return;
     }
     if (!creators.length) {
-      setErrorMessage("Scrape a hashtag or sound link first.");
+      setErrorMessage("Import a TikTok session from Billy's extension first.");
       return;
     }
     if (!template.length) {
@@ -2030,6 +1974,18 @@ function BillyScraperSystem({
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Excel export failed.");
     }
+  }
+
+  function clearBillySession() {
+    setHeaders([]);
+    setCreators([]);
+    setSelectedRowIds([]);
+    setPreviewReady(false);
+    setIsPreviewModalOpen(false);
+    setScrapeReport(null);
+    setStatusMessage("");
+    setCopyMessage("");
+    setErrorMessage("");
   }
 
   function toggleRow(rowId: string) {
@@ -2152,17 +2108,15 @@ function BillyScraperSystem({
             )}
           </Panel>
 
-          <Panel title="Scrape Source" icon={Hash}>
-            <HashtagScraperForm
-              value={hashtagInput}
-              isScraping={isScraping}
-              canScrape
-              onChange={setHashtagInput}
-              onScrape={() => {
-                void scrapeHashtag();
-              }}
+          <Panel title="TikTok Session" icon={Hash}>
+            <BillyExtensionSessionPanel
+              report={scrapeReport}
+              isImporting={isScraping}
+              canClear={
+                headers.length > 0 || creators.length > 0 || previewReady || Boolean(scrapeReport)
+              }
+              onClear={clearBillySession}
             />
-            {scrapeReport ? <HashtagScrapeReportPanel report={scrapeReport} /> : null}
           </Panel>
 
           <Panel title="Billy Filters" icon={Filter}>
@@ -2243,7 +2197,8 @@ function BillyScraperSystem({
 
             {!previewReady ? (
               <div className="mt-4 rounded-md border border-dashed border-border bg-background px-4 py-4 text-sm text-muted-foreground">
-                Scrape a hashtag or sound link, filter the creators, then prepare Billy's preview.
+                Import a TikTok session from Billy's extension, filter the creators, then prepare
+                Billy's preview.
               </div>
             ) : null}
           </Panel>
@@ -2412,49 +2367,53 @@ function ActiveBillyFilterChips({
   );
 }
 
-function HashtagScraperForm({
-  value,
-  isScraping,
-  canScrape,
-  onChange,
-  onScrape,
+function BillyExtensionSessionPanel({
+  report,
+  isImporting,
+  canClear,
+  onClear,
 }: {
-  value: string;
-  isScraping: boolean;
-  canScrape: boolean;
-  onChange: (value: string) => void;
-  onScrape: () => void;
+  report: HashtagScrapeReport | null;
+  isImporting: boolean;
+  canClear: boolean;
+  onClear: () => void;
 }) {
   return (
-    <form
-      className="space-y-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onScrape();
-      }}
-    >
-      <label className="block">
-        <span className="text-xs font-medium text-muted-foreground">
-          TikTok Hashtag Or Sound Link
-        </span>
-        <div className="mt-1 rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
-          <input
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            placeholder="#skincare or https://www.tiktok.com/music/..."
-            className="h-10 w-full min-w-0 bg-transparent px-3 text-sm outline-none"
-          />
+    <div className="space-y-3">
+      <div className="rounded-md border border-border bg-background px-3 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">
+              {isImporting
+                ? "Importing TikTok session..."
+                : report
+                  ? "TikTok session imported"
+                  : "Waiting for Billy extension"}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {report
+                ? "This data stays temporary on this Billy page until you switch pages, reload, or clear the session."
+                : "Open a TikTok hashtag or sound page, run Billy's Chrome extension, then send the session here."}
+            </p>
+          </div>
+          {isImporting ? (
+            <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
+          ) : (
+            <Hash className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          )}
         </div>
-      </label>
+      </div>
       <button
-        type="submit"
-        disabled={!canScrape || isScraping || !normalizeBillySourceInput(value)}
-        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        type="button"
+        onClick={onClear}
+        disabled={!canClear}
+        className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {isScraping ? <Loader2 className="size-4 animate-spin" /> : <Hash className="size-4" />}
-        {isScraping ? "Scraping..." : "Scrape Source"}
+        <Trash2 className="size-3.5" />
+        Clear Billy Session
       </button>
-    </form>
+      {report ? <HashtagScrapeReportPanel report={report} /> : null}
+    </div>
   );
 }
 
@@ -4679,10 +4638,6 @@ function formatSavedAt(value?: string): string {
 function stringValue(value: unknown): string {
   if (value == null) return "";
   return String(value);
-}
-
-function normalizeBillySourceInput(value: string): string {
-  return value.trim();
 }
 
 function getInitialSourcingAssistantPage(): SourcingAssistantPage {
