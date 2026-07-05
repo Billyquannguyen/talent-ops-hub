@@ -12,6 +12,7 @@ import {
   createOutreachTemplateInGoogleSheets,
   deleteActiveCampaignCreatorFromGoogleSheets,
   deleteAgencyDatabaseFromGoogleSheets,
+  deleteCampaignProfileFromGoogleSheets,
   deleteCampaignMemoryCardFromGoogleSheets,
   deleteCampaignPromptVaultFromGoogleSheets,
   deleteCreatorDatabaseFromGoogleSheets,
@@ -38,6 +39,7 @@ import {
   saveAgencyDatabaseToGoogleSheets,
   saveDatabaseToGoogleSheets,
   saveAppSettingToGoogleSheets,
+  saveCampaignProfileToGoogleSheets,
   saveCampaignPromptVaultToGoogleSheets,
   saveCreatorDatabaseToGoogleSheets,
   saveEmployeeProfileToGoogleSheets,
@@ -196,6 +198,39 @@ export async function listCampaignProfilesFromGoogleSheetsOnly(): Promise<Campai
   if (!result.ok) {
     throw new Error(getStorageFailureMessage(result.status));
   }
+  rememberCampaignProfiles(result.records);
+  return result.records;
+}
+
+export async function saveCampaignProfileToGoogleSheetsOnly(
+  record: CampaignProfileRecord,
+): Promise<CampaignProfileRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "save-campaign-profile-start", {
+    campaignId: record.campaignId,
+    campaignName: record.campaignName,
+    at: new Date().toISOString(),
+  });
+  const result = await saveCampaignProfileToGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignProfiles(result.records);
+  return result.records;
+}
+
+export async function deleteCampaignProfileFromGoogleSheetsOnly(
+  campaignId: string,
+): Promise<CampaignProfileRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "delete-campaign-profile-start", {
+    campaignId,
+    at: new Date().toISOString(),
+  });
+  const result = await deleteCampaignProfileFromGoogleSheets(campaignId);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
   rememberCampaignProfiles(result.records);
   return result.records;
 }
@@ -764,6 +799,10 @@ export function saveAppDatabase(database: CentralAppDatabase) {
   }
 }
 
+export function saveAppDatabaseLocally(database: CentralAppDatabase) {
+  saveCentralDatabaseToLocalStorage(database);
+}
+
 function reportGoogleSheetsWriteFailure(diagnostics: StorageStatus["diagnostics"]) {
   const message =
     diagnostics.map((diagnostic) => diagnostic.message).join("\n") ||
@@ -1100,5 +1139,5 @@ export function setAppSetting(settingKey: string, settingValue: string) {
 export function updateDatabase(mutator: (database: CentralAppDatabase) => void) {
   const database = loadAppDatabase();
   mutator(database);
-  saveAppDatabase(database);
+  saveAppDatabaseLocally(database);
 }

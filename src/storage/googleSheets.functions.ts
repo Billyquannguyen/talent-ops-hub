@@ -256,6 +256,86 @@ export const listCampaignProfileRecords = createServerFn({ method: "POST" }).han
   }
 });
 
+export const saveCampaignProfileRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertCampaignProfileInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as CampaignProfileRecord[],
+          status,
+        };
+      }
+
+      const result = await upsertCampaignProfileInGoogleSheets(
+        data.record as CampaignProfileRecord,
+      );
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CampaignProfileRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const deleteCampaignProfileRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ campaignId: z.string() }))
+  .handler(async ({ data }) => {
+    const {
+      deleteCampaignProfileInGoogleSheets,
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as CampaignProfileRecord[],
+          status,
+        };
+      }
+
+      const result = await deleteCampaignProfileInGoogleSheets(data.campaignId);
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CampaignProfileRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
 export const migrateAgencyDatabaseContactsRecord = createServerFn({ method: "POST" }).handler(
   async () => {
     const {

@@ -50,6 +50,7 @@ export function CampaignProfiles() {
   const skipNextRegistrySave = useRef(false);
 
   useEffect(() => {
+    skipNextRegistrySave.current = true;
     setRegistry(loadCampaignRegistry());
     setLoaded(true);
   }, []);

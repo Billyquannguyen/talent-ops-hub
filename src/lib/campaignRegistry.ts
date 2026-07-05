@@ -1,13 +1,15 @@
 import {
   createActiveCampaignCreatorInGoogleSheetsOnly,
   deleteActiveCampaignCreatorFromGoogleSheetsOnly,
+  deleteCampaignProfileFromGoogleSheetsOnly,
   listCampaignProfilesFromGoogleSheetsOnly,
   loadActiveCampaignsBundleFromGoogleSheetsOnly,
   loadAppDatabase,
   listActiveCampaignCreatorsFromGoogleSheetsOnly,
   listCampaignMemoryCardsFromGoogleSheetsOnly,
   replaceCampaignMemoryCardsForCampaignInGoogleSheetsOnly,
-  saveAppDatabase,
+  saveAppDatabaseLocally,
+  saveCampaignProfileToGoogleSheetsOnly,
   updateActiveCampaignCreatorInGoogleSheetsOnly,
 } from "@/storage/appRepository";
 import type {
@@ -174,9 +176,10 @@ export async function saveCampaignMemoryForCampaign(
 
 export function saveCampaignRegistry(registry: GlobalCampaignRegistry) {
   if (typeof window === "undefined") return;
-  const database = loadAppDatabase();
+  const previousDatabase = loadAppDatabase();
+  const database = JSON.parse(JSON.stringify(previousDatabase)) as CentralAppDatabase;
   const existingProfiles = new Map(
-    database.worksheets.CampaignProfiles.map((campaign) => [campaign.campaignId, campaign]),
+    previousDatabase.worksheets.CampaignProfiles.map((campaign) => [campaign.campaignId, campaign]),
   );
   database.worksheets.CampaignProfiles = registry.campaigns.map((campaign) => ({
     campaignId: campaign.id,
@@ -199,7 +202,62 @@ export function saveCampaignRegistry(registry: GlobalCampaignRegistry) {
       updatedAt: campaign.updatedAt,
     })),
   );
-  saveAppDatabase(database);
+  saveAppDatabaseLocally(database);
+  void promoteCampaignRegistryToGoogleSheets(previousDatabase, database).catch((error) => {
+    reportCampaignRegistryStorageError(
+      error instanceof Error ? error.message : "Campaign Profiles could not sync to Google Sheets.",
+    );
+  });
+}
+
+async function promoteCampaignRegistryToGoogleSheets(
+  previousDatabase: CentralAppDatabase,
+  nextDatabase: CentralAppDatabase,
+) {
+  const nextProfilesById = new Map(
+    nextDatabase.worksheets.CampaignProfiles.map((campaign) => [campaign.campaignId, campaign]),
+  );
+  const previousProfilesById = new Map(
+    previousDatabase.worksheets.CampaignProfiles.map((campaign) => [campaign.campaignId, campaign]),
+  );
+
+  for (const profile of nextProfilesById.values()) {
+    await saveCampaignProfileToGoogleSheetsOnly(profile);
+    await replaceCampaignMemoryCardsForCampaignInGoogleSheetsOnly({
+      campaignId: profile.campaignId,
+      preferredLanguages: profile.preferredLanguages,
+      records: nextDatabase.worksheets.CampaignMemoryCards.filter(
+        (card) => card.campaignId === profile.campaignId,
+      ),
+    });
+  }
+
+  for (const campaignId of previousProfilesById.keys()) {
+    if (nextProfilesById.has(campaignId)) continue;
+    await deleteCampaignProfileFromGoogleSheetsOnly(campaignId);
+    await replaceCampaignMemoryCardsForCampaignInGoogleSheetsOnly({
+      campaignId,
+      preferredLanguages: "",
+      records: [],
+    });
+
+    const deletedCreatorRecords = previousDatabase.worksheets.ActiveCampaignCreators.filter(
+      (record) => record.campaignId === campaignId,
+    );
+    for (const record of deletedCreatorRecords) {
+      await deleteActiveCampaignCreatorFromGoogleSheetsOnly(record.recordId);
+    }
+  }
+}
+
+function reportCampaignRegistryStorageError(message: string) {
+  console.error(message);
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("katlas-storage-error", {
+      detail: { message },
+    }),
+  );
 }
 
 export async function loadActiveCampaignCreatorsFromGoogleSheetsOnly(): Promise<

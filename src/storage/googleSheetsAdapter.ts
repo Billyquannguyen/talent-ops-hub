@@ -27,6 +27,7 @@ import {
   createOutreachTemplateRecord,
   deleteActiveCampaignCreatorRecord,
   deleteAgencyDatabaseRecord,
+  deleteCampaignProfileRecord,
   deleteCampaignMemoryCardRecord,
   deleteCampaignPromptVaultRecord,
   deleteCreatorDatabaseRecord,
@@ -52,6 +53,7 @@ import {
   replaceCampaignMemoryCardsForCampaignRecord,
   saveAgencyDatabaseRecord,
   saveAppSettingRecord,
+  saveCampaignProfileRecord,
   saveCampaignPromptVaultRecord,
   saveCreatorDatabaseRecord,
   saveEmployeeProfileRecord,
@@ -242,6 +244,18 @@ export async function loadPromptVaultBundleFromGoogleSheets(): Promise<PromptVau
 
 export async function listCampaignProfilesFromGoogleSheets(): Promise<CampaignProfilesResult> {
   return listCampaignProfileRecords();
+}
+
+export async function saveCampaignProfileToGoogleSheets(
+  record: CampaignProfileRecord,
+): Promise<CampaignProfilesResult> {
+  return saveCampaignProfileRecord({ data: { record } });
+}
+
+export async function deleteCampaignProfileFromGoogleSheets(
+  campaignId: string,
+): Promise<CampaignProfilesResult> {
+  return deleteCampaignProfileRecord({ data: { campaignId } });
 }
 
 export async function listAgencyDatabaseFromGoogleSheets(): Promise<AgencyDatabaseResult> {

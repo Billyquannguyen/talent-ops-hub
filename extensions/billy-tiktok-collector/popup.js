@@ -197,7 +197,9 @@ async function refreshActiveSession() {
   if (!targetTabId) return;
 
   try {
-    const response = await chrome.tabs.sendMessage(targetTabId, { type: "GET_BILLY_SESSION_STATE" });
+    const response = await chrome.tabs.sendMessage(targetTabId, {
+      type: "GET_BILLY_SESSION_STATE",
+    });
     if (!response?.ok) return;
     sessionActive = Boolean(response.active);
 
@@ -228,21 +230,32 @@ async function refreshActiveSession() {
 async function openBillyTabInBackground(appUrl) {
   const target = new URL(appUrl);
   const tabs = await chrome.tabs.query({});
-  const existing = tabs.find((tab) => {
-    try {
-      const url = new URL(tab.url || "");
-      return url.origin === target.origin && url.pathname === target.pathname;
-    } catch {
-      return false;
-    }
-  });
+  const existing =
+    tabs.find((tab) => isExistingBillyDashboardTab(tab, target, true)) ||
+    tabs.find((tab) => isExistingBillyDashboardTab(tab, target, false));
 
   if (existing?.id) {
-    await chrome.tabs.update(existing.id, { active: false, url: target.href });
     return existing;
   }
 
   return await chrome.tabs.create({ active: false, url: target.href });
+}
+
+function isExistingBillyDashboardTab(tab, target, requireSameOrigin) {
+  try {
+    const url = new URL(tab.url || "");
+    if (!url.pathname.includes("/creator-sourcing")) return false;
+    if (requireSameOrigin) return url.origin === target.origin;
+    return isKatlasAppHost(url, target);
+  } catch {
+    return false;
+  }
+}
+
+function isKatlasAppHost(url, target) {
+  if (url.origin === target.origin) return true;
+  if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return true;
+  return url.hostname.includes("katlas-buddy") && url.hostname.endsWith(".vercel.app");
 }
 
 async function sendPayloadToTab(tabId, payload, importId) {

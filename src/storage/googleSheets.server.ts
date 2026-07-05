@@ -39,6 +39,11 @@ import {
   upsertCampaignMemoryCardRecord,
 } from "./campaignMemoryCards";
 import {
+  cleanupCampaignProfileRecords,
+  removeCampaignProfileRecord,
+  upsertCampaignProfileRecord,
+} from "./campaignProfiles";
+import {
   cleanupActiveCampaignCreatorRecords,
   removeActiveCampaignCreatorRecord,
   upsertActiveCampaignCreatorRecord,
@@ -329,13 +334,83 @@ export async function listCampaignProfilesInGoogleSheets() {
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
 
-  const records = (await readWorksheetRows(
+  const profileRows = await readWorksheetRecordsWithRowNumbers<CampaignProfileRecord>(
     spreadsheetId,
     "CampaignProfiles",
-  )) as CampaignProfileRecord[];
+  );
+  const cleanup = cleanupCampaignProfileRecords(profileRows.rows.map((row) => row.record));
+
+  if (cleanup.removedCount > 0) {
+    await writeCurrentStateWorksheetRows(
+      spreadsheetId,
+      "CampaignProfiles",
+      profileRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("campaign-profile-list-cleanup");
+    invalidateCreatorSourcingReadCache("campaign-profile-list-cleanup");
+  }
 
   return {
-    records,
+    records: cleanup.records,
+  };
+}
+
+export async function upsertCampaignProfileInGoogleSheets(record: CampaignProfileRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const profileRows = await readWorksheetRecordsWithRowNumbers<CampaignProfileRecord>(
+    spreadsheetId,
+    "CampaignProfiles",
+  );
+  const cleanup = upsertCampaignProfileRecord(
+    profileRows.rows.map((row) => row.record),
+    record,
+  );
+
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignProfiles",
+    profileRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("campaign-profile-targeted-write");
+  invalidateCreatorSourcingReadCache("campaign-profile-targeted-write");
+
+  return {
+    records: cleanup.records,
+  };
+}
+
+export async function deleteCampaignProfileInGoogleSheets(campaignId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const profileRows = await readWorksheetRecordsWithRowNumbers<CampaignProfileRecord>(
+    spreadsheetId,
+    "CampaignProfiles",
+  );
+  const cleanup = removeCampaignProfileRecord(
+    profileRows.rows.map((row) => row.record),
+    campaignId,
+  );
+
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignProfiles",
+    profileRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("campaign-profile-targeted-delete");
+  invalidateCreatorSourcingReadCache("campaign-profile-targeted-delete");
+
+  return {
+    records: cleanup.records,
   };
 }
 
