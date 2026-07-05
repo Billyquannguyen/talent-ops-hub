@@ -1,5 +1,8 @@
 const DEFAULT_APP_URL = "https://katlas-buddy-app.vercel.app/creator-sourcing#billy";
 const OLD_LOCAL_APP_URL = "http://127.0.0.1:8080/creator-sourcing#billy";
+const BILLY_EXTENSION_SOURCE = "katlas-billy-extension";
+const BILLY_IMPORT_STORAGE_KEY = "katlas-billy-extension-import-v1";
+const BILLY_IMPORT_ACK_STORAGE_KEY = "katlas-billy-extension-import-ack-v1";
 
 const appUrlInput = document.getElementById("appUrl");
 const collectButton = document.getElementById("collect");
@@ -11,6 +14,7 @@ const statusLine = document.getElementById("status");
 let lastPayload;
 let sessionActive = false;
 let sessionTabId;
+let liveRefreshTimer;
 
 init();
 
@@ -34,6 +38,7 @@ async function init() {
   collectButton.addEventListener("click", beginScrapingSession);
   sendButton.addEventListener("click", sendToBilly);
   await syncActiveTikTokSession();
+  startLiveSessionRefresh();
 }
 
 async function beginScrapingSession() {
@@ -56,6 +61,7 @@ async function beginScrapingSession() {
       billySessionTabId: sessionTabId,
     });
     renderPayload(lastPayload);
+    startLiveSessionRefresh();
     setStatus("Session started. Scroll TikTok and Billy will keep adding loaded videos.");
   } catch (error) {
     setStatus(`Could not start. Reload the TikTok page and try again. ${getError(error)}`);
@@ -84,10 +90,11 @@ async function sendToBilly() {
 
   try {
     const tab = await openBillyTabInBackground(appUrl);
-    await sendPayloadToTab(tab.id, payload);
+    await sendPayloadToTab(tab.id, payload, createImportId());
     lastPayload = undefined;
     sessionActive = false;
     sessionTabId = undefined;
+    stopLiveSessionRefresh();
     await chrome.storage.local.remove(["billySessionTabId", "lastBillyPayload"]);
     renderPayload(undefined);
     await notifyTikTokTab(
@@ -105,6 +112,7 @@ async function syncActiveTikTokSession() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || !tab.url?.includes("tiktok.com")) {
     renderPayload(undefined);
+    stopLiveSessionRefresh();
     return;
   }
 
@@ -117,6 +125,7 @@ async function syncActiveTikTokSession() {
       lastPayload = undefined;
       await chrome.storage.local.remove(["billySessionTabId", "lastBillyPayload"]);
       renderPayload(undefined);
+      stopLiveSessionRefresh();
       setStatus("No Billy session running. Click Begin when you want to start collecting.");
       return;
     }
@@ -130,6 +139,7 @@ async function syncActiveTikTokSession() {
       });
     }
     renderPayload(lastPayload);
+    startLiveSessionRefresh();
     setStatus("Session is running. Keep scrolling TikTok, then finish and send.");
   } catch {
     renderPayload(undefined);
@@ -146,6 +156,7 @@ async function finishActiveSession(targetTabId) {
     sessionActive = false;
     sessionTabId = undefined;
     lastPayload = response.payload;
+    stopLiveSessionRefresh();
     await chrome.storage.local.set({ lastBillyPayload: lastPayload });
     await chrome.storage.local.remove("billySessionTabId");
     renderPayload(lastPayload);
@@ -161,6 +172,57 @@ async function finishActiveSession(targetTabId) {
 async function getActiveTikTokTabId() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab?.id && tab.url?.includes("tiktok.com") ? tab.id : undefined;
+}
+
+function startLiveSessionRefresh() {
+  if (liveRefreshTimer || !sessionActive) return;
+  liveRefreshTimer = window.setInterval(() => {
+    void refreshActiveSession();
+  }, 1000);
+}
+
+function stopLiveSessionRefresh() {
+  if (!liveRefreshTimer) return;
+  window.clearInterval(liveRefreshTimer);
+  liveRefreshTimer = undefined;
+}
+
+async function refreshActiveSession() {
+  if (!sessionActive) {
+    stopLiveSessionRefresh();
+    return;
+  }
+
+  const targetTabId = sessionTabId || (await getActiveTikTokTabId());
+  if (!targetTabId) return;
+
+  try {
+    const response = await chrome.tabs.sendMessage(targetTabId, { type: "GET_BILLY_SESSION_STATE" });
+    if (!response?.ok) return;
+    sessionActive = Boolean(response.active);
+
+    if (!sessionActive) {
+      sessionTabId = undefined;
+      lastPayload = undefined;
+      await chrome.storage.local.remove(["billySessionTabId", "lastBillyPayload"]);
+      renderPayload(undefined);
+      stopLiveSessionRefresh();
+      setStatus("No Billy session running. Click Begin when you want to start collecting.");
+      return;
+    }
+
+    sessionTabId = targetTabId;
+    if (response.payload) {
+      lastPayload = response.payload;
+      await chrome.storage.local.set({
+        lastBillyPayload: lastPayload,
+        billySessionTabId: sessionTabId,
+      });
+      renderPayload(lastPayload);
+    }
+  } catch {
+    // Keep the current numbers visible. The popup will retry while it is open.
+  }
 }
 
 async function openBillyTabInBackground(appUrl) {
@@ -183,7 +245,7 @@ async function openBillyTabInBackground(appUrl) {
   return await chrome.tabs.create({ active: false, url: target.href });
 }
 
-async function sendPayloadToTab(tabId, payload) {
+async function sendPayloadToTab(tabId, payload, importId) {
   for (let attempt = 0; attempt < 18; attempt += 1) {
     await wait(500);
     try {
@@ -191,14 +253,62 @@ async function sendPayloadToTab(tabId, payload) {
       if (!ping?.ok) continue;
       const response = await chrome.tabs.sendMessage(tabId, {
         type: "SEND_BILLY_IMPORT",
+        importId,
         payload,
       });
-      if (response?.ok) return;
+      if (response?.ok) {
+        await waitForBillyImportAck(tabId, importId);
+        return;
+      }
     } catch {
       // The app tab may still be loading. Retry briefly.
     }
   }
+
+  await injectBillyImportIntoTab(tabId, payload, importId);
+  await waitForBillyImportAck(tabId, importId);
+}
+
+async function injectBillyImportIntoTab(tabId, payload, importId) {
+  if (!chrome.scripting?.executeScript) {
+    throw new Error("Reload the Billy extension so it can use the improved sender.");
+  }
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await wait(500);
+    try {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: queueBillyImportInPage,
+        args: [payload, importId, BILLY_EXTENSION_SOURCE, BILLY_IMPORT_STORAGE_KEY],
+      });
+      if (result?.result?.ok) return;
+    } catch {
+      // The app tab may still be loading. Retry briefly.
+    }
+  }
+
   throw new Error("Make sure your Katlas app is open and the extension has permission for it.");
+}
+
+async function waitForBillyImportAck(tabId, importId) {
+  if (!chrome.scripting?.executeScript) return;
+
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    await wait(500);
+    try {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: readBillyImportAck,
+        args: [BILLY_IMPORT_ACK_STORAGE_KEY, importId],
+      });
+      if (result?.result?.ok) return;
+    } catch {
+      // Keep polling until the dashboard has mounted and confirmed the import.
+    }
+  }
+
+  throw new Error("Billy opened, but the dashboard did not confirm the import.");
 }
 
 async function notifyTikTokTab(tabId, message) {
@@ -250,6 +360,40 @@ function setStatus(value) {
 
 function getError(error) {
   return error instanceof Error ? error.message : "";
+}
+
+function createImportId() {
+  return `billy-import-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function queueBillyImportInPage(payload, importId, source, storageKey) {
+  const envelope = {
+    id: importId,
+    source,
+    type: "BILLY_IMPORT",
+    queuedAt: new Date().toISOString(),
+    payload,
+  };
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(envelope));
+  } catch {
+    // The live message below can still be received by the app.
+  }
+
+  window.postMessage(envelope, window.location.origin);
+  return { ok: true };
+}
+
+function readBillyImportAck(storageKey, importId) {
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return { ok: false };
+    const ack = JSON.parse(raw);
+    return { ok: ack?.id === importId };
+  } catch {
+    return { ok: false };
+  }
 }
 
 function wait(ms) {

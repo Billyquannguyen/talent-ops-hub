@@ -2,12 +2,12 @@
   "manifest_version": 3,
   "name": "Billy TikTok Collector",
   "description": "Collect loaded TikTok hashtag or sound page creators and send them to Billy's Scraper System.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Billy TikTok Collector"
   },
-  "permissions": ["activeTab", "storage", "tabs"],
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "host_permissions": [
     "https://www.tiktok.com/*",
     "http://127.0.0.1:8080/*",

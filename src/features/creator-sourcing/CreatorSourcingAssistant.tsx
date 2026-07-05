@@ -110,6 +110,8 @@ const billyFilterSectionDefaults = {
   followers: false,
 };
 const billyExtensionMessageSource = "katlas-billy-extension";
+const billyExtensionImportStorageKey = "katlas-billy-extension-import-v1";
+const billyExtensionImportAckStorageKey = "katlas-billy-extension-import-ack-v1";
 const billyImportHeaders = [
   "Nickname",
   "@Username",
@@ -309,20 +311,32 @@ export function CreatorSourcingAssistant() {
   }, []);
 
   useEffect(() => {
+    function receiveBillyExtensionImport(payload: unknown, importId?: string) {
+      clearQueuedBillyExtensionImport();
+      acknowledgeBillyExtensionImport(importId);
+      setAssistantPage("billy");
+      updateSourcingAssistantHash("billy");
+      setPendingBillyExtensionImport({
+        id: importId || createId("billy-extension-import"),
+        payload,
+      });
+    }
+
     function handleBillyExtensionMessage(event: MessageEvent) {
       if (event.source !== window || !isRecord(event.data)) return;
       if (event.data.source !== billyExtensionMessageSource) return;
       if (event.data.type !== "BILLY_IMPORT") return;
 
-      setAssistantPage("billy");
-      updateSourcingAssistantHash("billy");
-      setPendingBillyExtensionImport({
-        id: createId("billy-extension-import"),
-        payload: event.data.payload,
-      });
+      receiveBillyExtensionImport(
+        event.data.payload,
+        typeof event.data.id === "string" ? event.data.id : undefined,
+      );
     }
 
     window.addEventListener("message", handleBillyExtensionMessage);
+    const queuedImport = readQueuedBillyExtensionImport();
+    if (queuedImport) receiveBillyExtensionImport(queuedImport.payload, queuedImport.id);
+
     return () => window.removeEventListener("message", handleBillyExtensionMessage);
   }, []);
 
@@ -4785,6 +4799,53 @@ function updateSourcingAssistantHash(page: SourcingAssistantPage) {
     "",
     `${window.location.pathname}${window.location.search}${nextHash}`,
   );
+}
+
+function readQueuedBillyExtensionImport(): { id?: string; payload: unknown } | undefined {
+  if (typeof window === "undefined") return undefined;
+
+  try {
+    const raw = window.localStorage.getItem(billyExtensionImportStorageKey);
+    if (!raw) return undefined;
+    window.localStorage.removeItem(billyExtensionImportStorageKey);
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed)) return undefined;
+    if (parsed.source !== billyExtensionMessageSource || parsed.type !== "BILLY_IMPORT") {
+      return undefined;
+    }
+
+    return {
+      id: typeof parsed.id === "string" ? parsed.id : undefined,
+      payload: parsed.payload,
+    };
+  } catch {
+    clearQueuedBillyExtensionImport();
+    return undefined;
+  }
+}
+
+function clearQueuedBillyExtensionImport() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(billyExtensionImportStorageKey);
+  } catch {
+    // If localStorage is blocked, the live postMessage path can still work.
+  }
+}
+
+function acknowledgeBillyExtensionImport(importId?: string) {
+  if (typeof window === "undefined" || !importId) return;
+
+  try {
+    window.localStorage.setItem(
+      billyExtensionImportAckStorageKey,
+      JSON.stringify({ id: importId, receivedAt: new Date().toISOString() }),
+    );
+  } catch {
+    // The import itself has already been accepted by the dashboard.
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
