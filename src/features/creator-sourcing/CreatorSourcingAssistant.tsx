@@ -10,10 +10,12 @@ import {
   Copy,
   CopyPlus,
   Download,
+  FileText,
   FileSpreadsheet,
   Filter,
   Hash,
   Loader2,
+  Mail,
   Pencil,
   Plus,
   RotateCcw,
@@ -34,6 +36,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCountryLabel, matchesCountryQuery } from "@/lib/countries";
 import {
   deleteSourcingTemplateFromGoogleSheetsOnly,
@@ -52,8 +55,8 @@ import type {
 import {
   buildContactEnrichmentReport,
   buildPreviewRow,
+  createEmptyContactInfo,
   hasContactInfo,
-  runEnrichmentPipeline,
 } from "./enrichment";
 import { exportPreviewSpreadsheet, parseSpreadsheet } from "./excel";
 import {
@@ -68,9 +71,7 @@ import {
   easyKolFields,
   type EmailAvailability,
   type ContactEnrichmentReport,
-  type ContactField,
   type ContactInfo,
-  type CreatorEnrichmentResult,
   type EasyKolField,
   type FilterSettings,
   type PreviewRow,
@@ -112,6 +113,11 @@ const billyFilterSectionDefaults = {
 const billyExtensionMessageSource = "katlas-billy-extension";
 const billyExtensionImportStorageKey = "katlas-billy-extension-import-v1";
 const billyExtensionImportAckStorageKey = "katlas-billy-extension-import-ack-v1";
+const contactsColumnName = "Contacts";
+const enabledEnrichmentTooltip =
+  "EasyKOL emails are imported into Contacts on upload. Enrich copies the full EasyKOL bio/description into Contacts only for rows that still have blank Contacts, without AI.";
+const disabledEnrichmentTooltip =
+  "Add a Contacts column to the active template before enriching contacts.";
 const billyImportHeaders = [
   "Nickname",
   "@Username",
@@ -282,6 +288,7 @@ export function CreatorSourcingAssistant() {
   const activeProject = projects.find((project) => project.campaignId === activeProjectId);
   const activeTemplateId = activeProject?.activeTemplateId ?? "";
   const template = useMemo(() => draftTemplate, [draftTemplate]);
+  const templateHasContacts = template.some((column) => column.blockType === "contacts");
   const templateHasUnsavedChanges = activeProject
     ? !templatesEqual(draftTemplate, activeProject.template) ||
       draftTemplateName.trim() !== activeProject.templateName
@@ -468,11 +475,11 @@ export function CreatorSourcingAssistant() {
 
   useEffect(() => {
     setPreviewReady(false);
-  }, [creators, filters, template]);
+  }, [filters, template]);
 
   useEffect(() => {
     setEnrichmentReport(null);
-  }, [creators, filters]);
+  }, [filters]);
 
   useEffect(() => {
     setCustomRanges({
@@ -778,21 +785,22 @@ export function CreatorSourcingAssistant() {
 
     try {
       const parsed = await parseSpreadsheet(file);
-      const uploadedCreators = parsed.rows.map((row, index) => ({
+      const initialized = initializeEasyKolContacts(parsed.headers, parsed.rows);
+      const uploadedCreators = initialized.rows.map((row, index) => ({
         id: `${Date.now()}-${index}`,
         data: row,
       }));
 
-      setHeaders(parsed.headers);
+      setHeaders(initialized.headers);
       setCreators(uploadedCreators);
       setSourceFileName(file.name);
       setSheetName(parsed.sheetName);
       setSelectedRowIds([]);
       setPreviewReady(false);
-      setContactInfoByCreatorId({});
+      setContactInfoByCreatorId(createContactInfoMap(uploadedCreators, initialized.contactsHeader));
       setEnrichmentReport(null);
       setStatusMessage(
-        `Loaded ${uploadedCreators.length.toLocaleString()} creators from ${parsed.sheetName}.`,
+        `Loaded ${uploadedCreators.length.toLocaleString()} creators from ${parsed.sheetName}. Imported ${initialized.importedEmails.toLocaleString()} EasyKOL emails into Contacts.`,
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Upload failed.");
@@ -811,6 +819,10 @@ export function CreatorSourcingAssistant() {
       setErrorMessage("Upload an EasyKOL export first.");
       return;
     }
+    if (!templateHasContacts) {
+      setErrorMessage("Add a Contacts column to the active template before enriching contacts.");
+      return;
+    }
 
     setIsEnrichingContacts(true);
     setErrorMessage("");
@@ -819,47 +831,35 @@ export function CreatorSourcingAssistant() {
 
     try {
       for (const message of [
-        "Scanning EasyKOL Email column...",
-        "Scanning Description...",
-        "Scanning URL fields...",
+        "Finding rows without Contacts values...",
+        "Filling EasyKOL emails first, then full bios for the remaining blanks...",
+        "Updating Contacts cells...",
       ]) {
         setStatusMessage(message);
-        await wait(220);
+        await wait(160);
       }
 
-      const result = await runEnrichmentPipeline({
-        creators: filteredCreators,
+      const result = fillBlankContacts({
+        creators,
+        targetCreatorIds: new Set(filteredCreators.map((creator) => creator.id)),
+        headers,
         columnMap,
+        mode: "email-then-bio",
       });
-
-      let enrichmentResults = result.results;
-      let aiStatusMessage = "";
-      try {
-        setStatusMessage("Fetching public links...");
-        await wait(220);
-        setStatusMessage("Extracting contacts with AI...");
-        const aiResult = await enrichContactsWithAI(filteredCreators);
-        enrichmentResults = mergeAIEnrichmentResults(result.results, aiResult.results);
-        aiStatusMessage =
-          aiResult.skipped > 0
-            ? ` AI checked ${aiResult.processed} creators. ${aiResult.skipped} skipped by batch limit.`
-            : ` AI checked ${aiResult.processed} creators.`;
-      } catch (error) {
-        aiStatusMessage =
-          error instanceof Error
-            ? ` OpenRouter enrichment unavailable: ${error.message}`
-            : " OpenRouter enrichment unavailable.";
-      }
-
-      setStatusMessage("Generating Contacts...");
-      await wait(220);
-      setContactInfoByCreatorId(
-        Object.fromEntries(
-          enrichmentResults.map((row) => [row.creatorId, row.contactInfo] as const),
+      setHeaders(result.headers);
+      setCreators(result.creators);
+      setContactInfoByCreatorId(result.contactInfoByCreatorId);
+      setEnrichmentReport(
+        buildContactEnrichmentReport(
+          filteredCreators.map((creator) => ({
+            creatorId: creator.id,
+            contactInfo: result.contactInfoByCreatorId[creator.id] ?? createEmptyContactInfo(),
+          })),
         ),
       );
-      setEnrichmentReport(buildContactEnrichmentReport(enrichmentResults));
-      setStatusMessage(`Done.${aiStatusMessage}`);
+      setStatusMessage(
+        `Done. Filled ${result.emailCount.toLocaleString()} EasyKOL emails and copied ${result.bioCount.toLocaleString()} full bios into blank Contacts cells. No AI call used.`,
+      );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
       setStatusMessage("");
@@ -897,7 +897,7 @@ export function CreatorSourcingAssistant() {
 
     for (const message of [
       "Applying Filters...",
-      "Extracting Contacts...",
+      "Applying Contacts...",
       "Applying Template...",
       "Preparing Preview...",
     ]) {
@@ -1454,23 +1454,30 @@ export function CreatorSourcingAssistant() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={enrichContacts}
-                        disabled={
-                          isEnrichingContacts ||
-                          isProcessing ||
-                          !activeProject ||
-                          creators.length === 0
+                      <ContactEnrichmentTooltip
+                        content={
+                          templateHasContacts ? enabledEnrichmentTooltip : disabledEnrichmentTooltip
                         }
-                        className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {isEnrichingContacts ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <Sparkles className="size-4" />
-                        )}
-                        Enrich Contacts
-                      </button>
+                        <button
+                          onClick={enrichContacts}
+                          disabled={
+                            isEnrichingContacts ||
+                            isProcessing ||
+                            !activeProject ||
+                            creators.length === 0 ||
+                            !templateHasContacts
+                          }
+                          className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isEnrichingContacts ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <FileText className="size-4" />
+                          )}
+                          Enrich Contacts
+                        </button>
+                      </ContactEnrichmentTooltip>
                       <button
                         onClick={preparePreview}
                         disabled={
@@ -1707,6 +1714,11 @@ function BillyScraperSystem({
   const [previewReady, setPreviewReady] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [isTemplatePreviewModalOpen, setIsTemplatePreviewModalOpen] = useState(false);
+  const [contactInfoByCreatorId, setContactInfoByCreatorId] = useState<Record<string, ContactInfo>>(
+    {},
+  );
+  const [isEnrichingContacts, setIsEnrichingContacts] = useState(false);
+  const [isEnrichmentMenuOpen, setIsEnrichmentMenuOpen] = useState(false);
   const [isScraping, setIsScraping] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -1726,6 +1738,7 @@ function BillyScraperSystem({
     ) ??
     activeProject?.templates[0];
   const template = useMemo(() => activeTemplate?.columns ?? [], [activeTemplate]);
+  const templateHasContacts = template.some((column) => column.blockType === "contacts");
   const columnMap = useMemo(() => inferColumnMap(headers), [headers]);
   const filteredCreators = useMemo(
     () => filterBillyCreators(creators, filters),
@@ -1748,9 +1761,10 @@ function BillyScraperSystem({
           data: creator.data,
           columnMap,
           template,
+          contactInfo: contactInfoByCreatorId[creator.id],
         }),
       ),
-    [filteredCreators, columnMap, template],
+    [filteredCreators, columnMap, template, contactInfoByCreatorId],
   );
   const selectedPreviewRows = useMemo(
     () => previewRows.filter((row) => selectedRowIds.includes(row.id)),
@@ -1791,7 +1805,7 @@ function BillyScraperSystem({
   useEffect(() => {
     setPreviewReady(false);
     setSelectedRowIds([]);
-  }, [creators, filters, selectedTemplateId]);
+  }, [filters, selectedTemplateId]);
 
   const loadBillyRows = useCallback(
     ({
@@ -1814,15 +1828,18 @@ function BillyScraperSystem({
       verb?: string;
     }) => {
       const importId = `${sourceLabel}-${Date.now()}`;
-      const nextCreators = rows.map((row, index) => ({
+      const initialized = ensureContactsColumn(nextHeaders, rows);
+      const nextCreators = initialized.rows.map((row, index) => ({
         id: `billy-${importId}-${index}`,
         data: row,
       }));
 
-      setHeaders(nextHeaders);
+      setHeaders(initialized.headers);
       setCreators(nextCreators);
+      setContactInfoByCreatorId(createContactInfoMap(nextCreators, initialized.contactsHeader));
       setSelectedRowIds([]);
       setPreviewReady(false);
+      setIsEnrichmentMenuOpen(false);
       setScrapeReport({
         sourceLabel,
         sourceUrl,
@@ -1909,6 +1926,69 @@ function BillyScraperSystem({
     onExtensionImportHandled();
   }, [importExtensionPayload, onExtensionImportHandled, pendingExtensionImport]);
 
+  async function enrichBillyContacts(mode: "email-only" | "bio-only") {
+    setIsEnrichmentMenuOpen(false);
+    if (!activeProject) {
+      setErrorMessage("Select a campaign first.");
+      return;
+    }
+    if (!creators.length) {
+      setErrorMessage("Import a TikTok session from Billy's extension first.");
+      return;
+    }
+    if (!templateHasContacts) {
+      setErrorMessage("Add a Contacts column to the active template before enriching contacts.");
+      return;
+    }
+
+    setIsEnrichingContacts(true);
+    setErrorMessage("");
+    setCopyMessage("");
+
+    try {
+      const progressMessages =
+        mode === "email-only"
+          ? [
+              "Finding rows without Contacts values...",
+              "Extracting public emails from collected bios...",
+              "Updating Contacts cells...",
+            ]
+          : [
+              "Finding rows without Contacts values...",
+              "Copying complete collected bios without rewriting them...",
+              "Updating Contacts cells...",
+            ];
+
+      for (const message of progressMessages) {
+        setStatusMessage(message);
+        await wait(160);
+      }
+
+      const result = fillBlankContacts({
+        creators,
+        targetCreatorIds: new Set(filteredCreators.map((creator) => creator.id)),
+        headers,
+        columnMap,
+        mode,
+        findEmailInBio: mode === "email-only",
+      });
+
+      setHeaders(result.headers);
+      setCreators(result.creators);
+      setContactInfoByCreatorId(result.contactInfoByCreatorId);
+      setStatusMessage(
+        mode === "email-only"
+          ? `Done. Extracted ${result.emailCount.toLocaleString()} public emails from collected profile data into blank Contacts cells. No AI call used.`
+          : `Done. Copied ${result.bioCount.toLocaleString()} full bios into blank Contacts cells. No AI call used.`,
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
+      setStatusMessage("");
+    } finally {
+      setIsEnrichingContacts(false);
+    }
+  }
+
   async function preparePreview() {
     if (!activeProject) {
       setErrorMessage("Select a campaign first.");
@@ -1980,10 +2060,12 @@ function BillyScraperSystem({
   function clearBillySession() {
     setHeaders([]);
     setCreators([]);
+    setContactInfoByCreatorId({});
     setSelectedRowIds([]);
     setPreviewReady(false);
     setIsPreviewModalOpen(false);
     setIsTemplatePreviewModalOpen(false);
+    setIsEnrichmentMenuOpen(false);
     setScrapeReport(null);
     setStatusMessage("");
     setCopyMessage("");
@@ -2155,14 +2237,90 @@ function BillyScraperSystem({
                   creators match Billy's filters
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Output follows the selected sourcing template exactly. Billy uses the full bio as
-                  the contact value.
+                  Output follows the selected sourcing template exactly. Enrichment only fills blank
+                  Contacts values when you choose an action.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
+                <div
+                  className="relative"
+                  onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) {
+                      setIsEnrichmentMenuOpen(false);
+                    }
+                  }}
+                >
+                  <ContactEnrichmentTooltip
+                    content={
+                      templateHasContacts
+                        ? "Choose whether Billy extracts standard public emails from collected bios or copies complete bios into blank Contacts cells. No AI or external API is used."
+                        : disabledEnrichmentTooltip
+                    }
+                  >
+                    <button
+                      type="button"
+                      aria-haspopup="menu"
+                      aria-expanded={isEnrichmentMenuOpen}
+                      onClick={() => setIsEnrichmentMenuOpen((current) => !current)}
+                      disabled={
+                        isEnrichingContacts ||
+                        isProcessing ||
+                        !activeProject ||
+                        creators.length === 0 ||
+                        !templateHasContacts
+                      }
+                      className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isEnrichingContacts ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <FileText className="size-4" />
+                      )}
+                      Enrich Contacts
+                      <ChevronDown className="size-3.5" />
+                    </button>
+                  </ContactEnrichmentTooltip>
+                  {isEnrichmentMenuOpen ? (
+                    <div
+                      role="menu"
+                      className="absolute right-0 top-12 z-30 w-72 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-xl"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void enrichBillyContacts("email-only")}
+                        className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition hover:bg-accent"
+                      >
+                        <Mail className="mt-0.5 size-4 shrink-0 text-cyan-300" />
+                        <span>
+                          <span className="block text-sm font-medium">Extract Emails</span>
+                          <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                            Find standard public emails in collected bios.
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void enrichBillyContacts("bio-only")}
+                        className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition hover:bg-accent"
+                      >
+                        <FileText className="mt-0.5 size-4 shrink-0 text-emerald-300" />
+                        <span>
+                          <span className="block text-sm font-medium">Copy Full Bios</span>
+                          <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                            Preserve the complete bio for manual contact review.
+                          </span>
+                        </span>
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
                 <button
                   onClick={preparePreview}
-                  disabled={isProcessing || !activeProject || creators.length === 0}
+                  disabled={
+                    isProcessing || isEnrichingContacts || !activeProject || creators.length === 0
+                  }
                   className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isProcessing ? (
@@ -2390,52 +2548,24 @@ function buildBillyPreviewRow({
   data,
   columnMap,
   template,
+  contactInfo,
 }: {
   id: string;
   data: UploadedCreator["data"];
   columnMap: ReturnType<typeof inferColumnMap>;
   template: TemplateColumn[];
+  contactInfo?: ContactInfo;
 }): PreviewRow {
-  const bio = stringValue(data.Description);
-  const contactInfo = createBillyBioContactInfo(bio, stringValue(data.URL));
+  const resolvedContactInfo = contactInfo ?? createEmptyContactInfo();
   const values = template.map((column) => {
     if (column.blockType === "blank") return "";
     if (column.blockType === "custom") return column.customValue ?? "";
-    if (column.blockType === "contacts") return bio;
+    if (column.blockType === "contacts") return resolvedContactInfo.rawText ?? "";
     if (!column.fieldKey) return "";
-    if (column.fieldKey === "Email") return bio;
     return getCell(data, columnMap, column.fieldKey);
   });
 
-  return { id, values, contactInfo };
-}
-
-function createBillyBioContactInfo(bio: string, sourceUrl: string): ContactInfo {
-  if (!bio.trim()) {
-    return {
-      confidence: 0,
-      discoveryMethod: "Billy Bio: no bio found",
-      discoveries: [],
-    };
-  }
-
-  return {
-    other: bio,
-    sourceUrl,
-    confidence: 100,
-    discoveryMethod: "Billy Bio",
-    discoveries: [
-      {
-        field: "other",
-        value: bio,
-        source: "Description",
-        discoveryMethod: "Regex",
-        provider: "Billy Bio",
-        confidence: 100,
-        sourceUrl,
-      },
-    ],
-  };
+  return { id, values, contactInfo: resolvedContactInfo };
 }
 
 function BillyTemplatePreviewModal({
@@ -2489,8 +2619,8 @@ function BillyTemplatePreviewModal({
             </table>
           </div>
           <p className="mt-3 text-xs leading-5 text-muted-foreground">
-            Billy does not append extra columns. If a template maps Contacts or Email, Billy pastes
-            the full scraped TikTok bio into that column.
+            Billy does not append extra output columns. A Contacts block uses the enrichment choice
+            you apply to blank Contacts values.
           </p>
         </div>
       </section>
@@ -2503,8 +2633,7 @@ function getBillyTemplateValueDescription(column: TemplateColumn): string {
   if (column.blockType === "custom") {
     return column.customValue ? `Custom: ${column.customValue}` : "Custom value";
   }
-  if (column.blockType === "contacts") return "Full TikTok bio";
-  if (column.fieldKey === "Email") return "Full TikTok bio";
+  if (column.blockType === "contacts") return "Enriched Contacts value";
   if (column.blockType === "field" && column.fieldKey) return column.fieldKey;
   return "Empty cell";
 }
@@ -3775,6 +3904,24 @@ function EmptyPanel({
   );
 }
 
+function ContactEnrichmentTooltip({ content, children }: { content: string; children: ReactNode }) {
+  return (
+    <TooltipProvider delayDuration={160}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">{children}</span>
+        </TooltipTrigger>
+        <TooltipContent
+          side="top"
+          className="max-w-xs border border-border bg-popover px-3 py-2 text-popover-foreground shadow-xl"
+        >
+          <p className="text-xs leading-5">{content}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function Panel({
   title,
   icon: Icon,
@@ -3842,7 +3989,7 @@ function getTemplateBlockValue(column: TemplateColumn): string {
 }
 
 function getBlockDescription(column: TemplateColumn): string {
-  if (column.blockType === "contacts") return "Generated Email, LINE, WhatsApp, Instagram block";
+  if (column.blockType === "contacts") return "EasyKOL email or full creator bio";
   if (column.blockType === "blank") return "Outputs empty cells";
   if (column.blockType === "field") return column.fieldKey ?? "Choose an EasyKOL field";
   return "Fixed value";
@@ -4633,122 +4780,170 @@ function normalizeEmailAvailabilityArray(
   return Array.from(new Set([legacyValue, ...values].filter(Boolean))) as EmailAvailability[];
 }
 
-type AIContactEnrichmentResponse =
-  | {
-      ok: true;
-      results: AIContactEnrichmentResult[];
-      processed: number;
-      skipped: number;
-      maxCreators: number;
-    }
-  | {
-      ok: false;
-      error: string;
-    };
+type ContactFillMode = "email-then-bio" | "email-only" | "bio-only";
 
-type AIContactEnrichmentResult = {
-  creatorId: string;
-  contactsText: string;
-  contacts: Partial<Record<ContactField, string>>;
-  confidence: "high" | "medium" | "low";
-  source: string;
-  reasoning: string;
-  sourcesChecked: string[];
-  warnings: string[];
-  modelUsed: string;
-};
+function initializeEasyKolContacts(headers: string[], rows: Array<UploadedCreator["data"]>) {
+  const initialized = ensureContactsColumn(headers, rows);
+  const columnMap = inferColumnMap(initialized.headers);
+  const emailHeader = columnMap.Email;
+  let importedEmails = 0;
 
-async function enrichContactsWithAI(
-  creators: UploadedCreator[],
-): Promise<Extract<AIContactEnrichmentResponse, { ok: true }>> {
-  const response = await fetch("/api/ai/enrich-contacts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      creators: creators.map((creator) => ({
-        creatorId: creator.id,
-        data: creator.data,
-      })),
-      maxCreators: 10,
-    }),
-  });
-  const payload = (await response.json().catch(() => ({
-    ok: false,
-    error: "AI enrichment API returned an invalid response.",
-  }))) as AIContactEnrichmentResponse;
+  const nextRows = initialized.rows.map((row) => {
+    const existingContacts = stringValue(row[initialized.contactsHeader]).trim();
+    if (existingContacts || !emailHeader) return row;
 
-  if (!response.ok || !payload.ok) {
-    throw new Error(payload.ok ? "AI enrichment failed." : payload.error);
-  }
-
-  return payload;
-}
-
-function mergeAIEnrichmentResults(
-  localResults: CreatorEnrichmentResult[],
-  aiResults: AIContactEnrichmentResult[],
-): CreatorEnrichmentResult[] {
-  const aiByCreatorId = new Map(aiResults.map((result) => [result.creatorId, result]));
-
-  return localResults.map((result) => {
-    const aiResult = aiByCreatorId.get(result.creatorId);
-    if (!aiResult) return result;
-
+    const emailValue = stringValue(row[emailHeader]).trim();
+    if (!emailValue) return row;
+    importedEmails += 1;
     return {
-      creatorId: result.creatorId,
-      contactInfo: mergeContactInfoWithAI(result.contactInfo, aiResult),
+      ...row,
+      [initialized.contactsHeader]: formatEmailContact(emailValue),
     };
   });
-}
-
-function mergeContactInfoWithAI(
-  localContactInfo: ContactInfo,
-  aiResult: AIContactEnrichmentResult,
-): ContactInfo {
-  const aiConfidence = getAIConfidenceScore(aiResult.confidence);
-  const aiDiscoveries = (
-    Object.entries(aiResult.contacts) as Array<[ContactField, string | undefined]>
-  )
-    .filter(([, value]) => Boolean(value?.trim()))
-    .map(([field, value]) => ({
-      field,
-      value: value?.trim() ?? "",
-      source: "External Discovery" as const,
-      discoveryMethod: "AI Extraction" as const,
-      provider: aiResult.modelUsed ? `OpenRouter ${aiResult.modelUsed}` : "OpenRouter",
-      confidence: aiConfidence,
-      sourceUrl: aiResult.sourcesChecked.find((source) => /^https?:\/\//i.test(source)),
-    }));
 
   return {
-    ...localContactInfo,
-    email: localContactInfo.email || aiResult.contacts.email,
-    line: localContactInfo.line || aiResult.contacts.line,
-    whatsapp: localContactInfo.whatsapp || aiResult.contacts.whatsapp,
-    phone: localContactInfo.phone || aiResult.contacts.phone,
-    instagram: localContactInfo.instagram || aiResult.contacts.instagram,
-    tiktok: localContactInfo.tiktok || aiResult.contacts.tiktok,
-    youtube: localContactInfo.youtube || aiResult.contacts.youtube,
-    website: localContactInfo.website || aiResult.contacts.website,
-    other: localContactInfo.other || aiResult.contacts.other,
-    sourceUrl:
-      localContactInfo.sourceUrl ||
-      aiResult.sourcesChecked.find((source) => /^https?:\/\//i.test(source)),
-    confidence: Math.max(localContactInfo.confidence, aiConfidence),
-    discoveryMethod: aiDiscoveries.length
-      ? `OpenRouter: ${aiResult.source || "available sources"}`
-      : localContactInfo.discoveryMethod,
-    discoveries: [...localContactInfo.discoveries, ...aiDiscoveries],
-    externalDiscoveryStatus: aiDiscoveries.length
-      ? `AI enrichment complete: ${aiResult.reasoning || "contacts extracted"}`
-      : `AI enrichment complete: ${aiResult.reasoning || "no extra contacts found"}`,
+    ...initialized,
+    rows: nextRows,
+    importedEmails,
   };
 }
 
-function getAIConfidenceScore(confidence: AIContactEnrichmentResult["confidence"]): number {
-  if (confidence === "high") return 90;
-  if (confidence === "medium") return 70;
-  return 45;
+function ensureContactsColumn(headers: string[], rows: Array<UploadedCreator["data"]>) {
+  const existingHeader = headers.find(
+    (header) => normalizeFieldLookupValue(header) === normalizeFieldLookupValue(contactsColumnName),
+  );
+  const contactsHeader = existingHeader ?? contactsColumnName;
+  const nextHeaders = existingHeader ? [...headers] : [...headers, contactsHeader];
+  const nextRows = rows.map((row) => ({
+    ...row,
+    [contactsHeader]: stringValue(row[contactsHeader]),
+  }));
+
+  return {
+    headers: nextHeaders,
+    rows: nextRows,
+    contactsHeader,
+  };
+}
+
+function fillBlankContacts({
+  creators,
+  targetCreatorIds,
+  headers,
+  columnMap,
+  mode,
+  findEmailInBio = false,
+}: {
+  creators: UploadedCreator[];
+  targetCreatorIds: Set<string>;
+  headers: string[];
+  columnMap: ReturnType<typeof inferColumnMap>;
+  mode: ContactFillMode;
+  findEmailInBio?: boolean;
+}) {
+  const initialized = ensureContactsColumn(
+    headers,
+    creators.map((creator) => creator.data),
+  );
+  let emailCount = 0;
+  let bioCount = 0;
+
+  const nextCreators = creators.map((creator, index) => {
+    const data = initialized.rows[index] ?? creator.data;
+    if (!targetCreatorIds.has(creator.id)) return { ...creator, data };
+
+    const existingContacts = stringValue(data[initialized.contactsHeader]).trim();
+    if (existingContacts) return { ...creator, data };
+
+    const emailColumnValue = getCell(data, columnMap, "Email");
+    const bio = getCell(data, columnMap, "Description");
+    const email =
+      mode === "bio-only"
+        ? ""
+        : findEmailInBio
+          ? extractFirstEmail(`${emailColumnValue} ${bio}`)
+          : extractFirstEmail(emailColumnValue) || emailColumnValue.trim();
+
+    if (email) {
+      emailCount += 1;
+      return {
+        ...creator,
+        data: {
+          ...data,
+          [initialized.contactsHeader]: formatEmailContact(email),
+        },
+      };
+    }
+
+    if (mode !== "email-only" && bio.trim()) {
+      bioCount += 1;
+      return {
+        ...creator,
+        data: {
+          ...data,
+          [initialized.contactsHeader]: bio,
+        },
+      };
+    }
+
+    return { ...creator, data };
+  });
+
+  return {
+    headers: initialized.headers,
+    creators: nextCreators,
+    contactInfoByCreatorId: createContactInfoMap(nextCreators, initialized.contactsHeader),
+    emailCount,
+    bioCount,
+  };
+}
+
+function createContactInfoMap(creators: UploadedCreator[], contactsHeader: string) {
+  return Object.fromEntries(
+    creators.map((creator) => [
+      creator.id,
+      createContactInfoFromText(
+        stringValue(creator.data[contactsHeader]),
+        stringValue(creator.data.URL),
+      ),
+    ]),
+  );
+}
+
+function createContactInfoFromText(text: string, sourceUrl = ""): ContactInfo {
+  const contactText = text.trim();
+  if (!contactText) return createEmptyContactInfo();
+
+  const email = extractFirstEmail(contactText);
+  return {
+    rawText: contactText,
+    email: email || undefined,
+    other: email ? undefined : contactText,
+    sourceUrl: sourceUrl || undefined,
+    confidence: 100,
+    discoveryMethod: "Contacts Column: direct value",
+    discoveries: [
+      {
+        field: email ? "email" : "other",
+        value: email || contactText,
+        source: "Contacts Column",
+        discoveryMethod: "Direct Copy",
+        provider: "Contacts Column",
+        confidence: 100,
+        sourceUrl: sourceUrl || undefined,
+      },
+    ],
+  };
+}
+
+function extractFirstEmail(value: string): string {
+  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.trim() ?? "";
+}
+
+function formatEmailContact(value: string): string {
+  const email = value.trim();
+  if (!email) return "";
+  return /^email\s*:/i.test(email) ? email : `Email: ${email}`;
 }
 
 function cloneTemplate(template: TemplateColumn[]): TemplateColumn[] {

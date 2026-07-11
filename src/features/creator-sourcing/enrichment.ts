@@ -166,13 +166,18 @@ export function extractContactInfo(data: CreatorRow, columnMap: ColumnMap): Cont
 }
 
 export function hasContactInfo(contactInfo: ContactInfo): boolean {
-  return contactFields.some((field) => Boolean(contactInfo[field]));
+  return (
+    Boolean(contactInfo.rawText?.trim()) ||
+    contactFields.some((field) => Boolean(contactInfo[field]))
+  );
 }
 
 export function formatContacts(contactInfo: ContactInfo): string {
+  if (contactInfo.rawText?.trim()) return contactInfo.rawText;
+
   const lines: string[] = [];
   if (contactInfo.email) {
-    lines.push(`Email: [${contactInfo.email}](mailto:${contactInfo.email})`);
+    lines.push(`Email: ${contactInfo.email}`);
   }
   if (contactInfo.line) {
     lines.push(`Line: ${formatHandle(contactInfo.line)}`);
@@ -214,7 +219,7 @@ export function buildPreviewRow({
   template: TemplateColumn[];
   contactInfo?: ContactInfo;
 }): PreviewRow {
-  const resolvedContactInfo = contactInfo ?? extractContactInfo(data, columnMap);
+  const resolvedContactInfo = contactInfo ?? createEmptyContactInfo();
   const values = template.map((column) => {
     if (column.blockType === "blank") return "";
     if (column.blockType === "custom") return column.customValue ?? "";
@@ -224,6 +229,14 @@ export function buildPreviewRow({
   });
 
   return { id, values, contactInfo: resolvedContactInfo };
+}
+
+export function createEmptyContactInfo(): ContactInfo {
+  return {
+    confidence: 0,
+    discoveryMethod: "No contact found",
+    discoveries: [],
+  };
 }
 
 function mergeContactDiscoveries(

@@ -100,14 +100,21 @@ export type ContactField =
 export type ContactDiscovery = {
   field: ContactField;
   value: string;
-  source: "Email Column" | "Description" | "URL" | "External Discovery";
-  discoveryMethod: "Regex" | "URL Match" | "Not implemented" | "AI Extraction";
+  source: "Contacts Column" | "Email Column" | "Description" | "URL" | "External Discovery";
+  discoveryMethod:
+    | "Direct Copy"
+    | "Full Bio Copy"
+    | "Regex"
+    | "URL Match"
+    | "Not implemented"
+    | "AI Extraction";
   provider: string;
   confidence: number;
   sourceUrl?: string;
 };
 
 export type ContactInfo = {
+  rawText?: string;
   email?: string;
   line?: string;
   whatsapp?: string;
