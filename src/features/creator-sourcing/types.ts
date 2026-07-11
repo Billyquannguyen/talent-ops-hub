@@ -26,7 +26,7 @@ export type UploadedCreator = {
   data: CreatorRow;
 };
 
-export type EmailAvailability = "has" | "none";
+export type EmailAvailability = "personal" | "agency" | "none";
 
 export type FilterSettings = {
   followersMin: string;
@@ -47,7 +47,7 @@ export type FilterSettings = {
   posts7dMin: string;
   posts30dMin: string;
   hasEmail: boolean;
-  emailAvailability: "" | "has" | "none";
+  emailAvailability: "" | "has" | "personal" | "agency" | "none";
   emailAvailabilitySelections: EmailAvailability[];
   keyword: string;
 };

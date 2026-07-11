@@ -1,4 +1,12 @@
-import type { ColumnMap, CreatorRow, EasyKolField, FilterSettings, UploadedCreator } from "./types";
+import { classifyEmailText, type EmailCategory } from "./emailClassification";
+import type {
+  ColumnMap,
+  CreatorRow,
+  EasyKolField,
+  EmailAvailability,
+  FilterSettings,
+  UploadedCreator,
+} from "./types";
 
 export const emptyFilters: FilterSettings = {
   followersMin: "",
@@ -149,11 +157,13 @@ export function filterCreators(
     if (!matchesDateAfter(data, columnMap, "Last Post", filters.lastPostAfter)) return false;
     if (!matchesMinimum(data, columnMap, "Posts (7d)", filters.posts7dMin)) return false;
     if (!matchesMinimum(data, columnMap, "Posts (30d)", filters.posts30dMin)) return false;
-    const hasEmail = rowHasEmail(data, columnMap);
+    const emailCategories = getRowEmailCategories(data, columnMap);
     const emailSelections = mergeLegacyEmailSelection(filters);
     if (emailSelections.length > 0) {
-      if (hasEmail && !emailSelections.includes("has")) return false;
-      if (!hasEmail && !emailSelections.includes("none")) return false;
+      const matchesEmailSelection = emailSelections.some((selection) =>
+        selection === "none" ? emailCategories.size === 0 : emailCategories.has(selection),
+      );
+      if (!matchesEmailSelection) return false;
     }
     if (filters.keyword.trim() && !matchesKeyword(data, columnMap, filters.keyword)) return false;
     return true;
@@ -196,7 +206,11 @@ export function parseMetric(value: unknown): number | undefined {
 }
 
 export function rowHasEmail(data: CreatorRow, columnMap: ColumnMap): boolean {
-  return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(
+  return getRowEmailCategories(data, columnMap).size > 0;
+}
+
+export function getRowEmailCategories(data: CreatorRow, columnMap: ColumnMap): Set<EmailCategory> {
+  return classifyEmailText(
     `${getCell(data, columnMap, "Email")} ${getCell(data, columnMap, "Description")}`,
   );
 }
@@ -285,16 +299,17 @@ function mergeLegacySelection(legacyValue: string, values: string[]): string[] {
   return Array.from(new Set([legacyValue, ...values].filter(Boolean)));
 }
 
-function mergeLegacyEmailSelection(filters: FilterSettings): Array<"has" | "none"> {
-  return Array.from(
-    new Set(
-      [
-        ...filters.emailAvailabilitySelections,
-        filters.emailAvailability || undefined,
-        filters.hasEmail ? "has" : undefined,
-      ].filter((value): value is "has" | "none" => value === "has" || value === "none"),
-    ),
-  );
+function mergeLegacyEmailSelection(filters: FilterSettings): EmailAvailability[] {
+  const selections = new Set<EmailAvailability>(filters.emailAvailabilitySelections);
+  if (filters.emailAvailability === "personal" || filters.emailAvailability === "agency") {
+    selections.add(filters.emailAvailability);
+  }
+  if (filters.emailAvailability === "none") selections.add("none");
+  if (filters.emailAvailability === "has" || filters.hasEmail) {
+    selections.add("personal");
+    selections.add("agency");
+  }
+  return Array.from(selections);
 }
 
 function matchesDateAfter(

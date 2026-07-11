@@ -63,9 +63,9 @@ import {
   emptyFilters,
   filterCreators,
   getCell,
+  getRowEmailCategories,
   inferColumnMap,
   parseMetric,
-  rowHasEmail,
 } from "./filters";
 import {
   easyKolFields,
@@ -88,6 +88,13 @@ const followersRangeOptions = [
   { key: "followers-100k-1m", label: "100k-1m", min: "100000", max: "1000000" },
   { key: "followers-1m-plus", label: "> 1m", min: "1000000", max: "" },
 ] as const;
+const billyFollowersRangeOptions = [
+  { key: "billy-followers-1k-10k", label: "1k-10k", min: "1000", max: "10000" },
+  { key: "billy-followers-10k-50k", label: "10k-50k", min: "10000", max: "50000" },
+  { key: "billy-followers-50k-100k", label: "50k-100k", min: "50000", max: "100000" },
+  { key: "billy-followers-100k-1m", label: "100k-1M", min: "100000", max: "1000000" },
+  { key: "billy-followers-1m-plus", label: ">1M", min: "1000000", max: "" },
+] as const;
 const averageViewRangeOptions = [
   { key: "views-under-1k", label: "<1k", min: "", max: "1000" },
   { key: "views-1k-10k", label: "1k-10k", min: "1000", max: "10000" },
@@ -98,6 +105,7 @@ const emptyBillyFilters = {
   followersMin: "",
   followersMax: "",
   followerRanges: [],
+  emailAvailabilitySelections: [],
 } satisfies BillyFilterSettings;
 const filterSectionDefaults = {
   regions: false,
@@ -109,6 +117,7 @@ const filterSectionDefaults = {
 };
 const billyFilterSectionDefaults = {
   followers: false,
+  emailAvailability: false,
 };
 const billyExtensionMessageSource = "katlas-billy-extension";
 const billyExtensionImportStorageKey = "katlas-billy-extension-import-v1";
@@ -139,6 +148,7 @@ type BillyFilterSettings = {
   followersMin: string;
   followersMax: string;
   followerRanges: string[];
+  emailAvailabilitySelections: EmailAvailability[];
 };
 type BillyFilterChip = {
   key: string;
@@ -148,6 +158,11 @@ type BillyFilterChip = {
         type: "array";
         field: "followerRanges";
         value: string;
+      }
+    | {
+        type: "array";
+        field: "emailAvailabilitySelections";
+        value: EmailAvailability;
       }
     | {
         type: "fields";
@@ -177,6 +192,12 @@ type FilterChip = {
 type CountOption = {
   value: string;
   count: number;
+};
+type EmailAvailabilityCounts = {
+  all: number;
+  personal: number;
+  agency: number;
+  none: number;
 };
 type RangeOption = {
   key: string;
@@ -393,13 +414,10 @@ export function CreatorSourcingAssistant() {
     () => getMetricRangeCounts(creators, columnMap, "Avg. Views", averageViewRangeOptions),
     [creators, columnMap],
   );
-  const emailAvailabilityCounts = useMemo(() => {
-    const withEmail = creators.filter((creator) => rowHasEmail(creator.data, columnMap)).length;
-    return {
-      has: withEmail,
-      none: creators.length - withEmail,
-    };
-  }, [creators, columnMap]);
+  const emailAvailabilityCounts = useMemo(
+    () => getEmailAvailabilityCounts(creators, columnMap),
+    [creators, columnMap],
+  );
   const creatorsWithContact = previewRows.filter((row) => hasContactInfo(row.contactInfo)).length;
   const creatorsWithoutContact = previewRows.length - creatorsWithContact;
   const activeFilterChips = getActiveFilterChips(filters);
@@ -1008,7 +1026,15 @@ export function CreatorSourcingAssistant() {
     });
   }
 
-  function toggleEmailAvailability(value: EmailAvailability) {
+  function toggleEmailAvailability(value: EmailAvailability | "all") {
+    if (value === "all") {
+      updateFilterGroup({
+        emailAvailability: "",
+        emailAvailabilitySelections: [],
+        hasEmail: false,
+      });
+      return;
+    }
     const selected = filters.emailAvailabilitySelections;
     const next = selected.includes(value)
       ? selected.filter((item) => item !== value)
@@ -1738,15 +1764,19 @@ function BillyScraperSystem({
     ) ??
     activeProject?.templates[0];
   const template = useMemo(() => activeTemplate?.columns ?? [], [activeTemplate]);
-  const templateHasContacts = template.some((column) => column.blockType === "contacts");
+  const templateHasContacts = template.some(isBillyContactsColumn);
   const columnMap = useMemo(() => inferColumnMap(headers), [headers]);
   const filteredCreators = useMemo(
-    () => filterBillyCreators(creators, filters),
-    [creators, filters],
+    () => filterBillyCreators(creators, filters, columnMap),
+    [creators, filters, columnMap],
   );
   const followerRanges = useMemo(
-    () => getBillyMetricRangeCounts(creators, "Followers", followersRangeOptions),
+    () => getBillyMetricRangeCounts(creators, "Followers", billyFollowersRangeOptions),
     [creators],
+  );
+  const emailAvailabilityCounts = useMemo(
+    () => getEmailAvailabilityCounts(creators, columnMap),
+    [creators, columnMap],
   );
   const activeFilterChips = useMemo(() => getActiveBillyFilterChips(filters), [filters]);
   const previewHeaders = useMemo(
@@ -2087,7 +2117,11 @@ function BillyScraperSystem({
   }
 
   function toggleFilterSection(section: BillyFilterSectionKey) {
-    setOpenFilterSections((current) => ({ ...current, [section]: !current[section] }));
+    setOpenFilterSections((current) => ({
+      followers: false,
+      emailAvailability: false,
+      [section]: !current[section],
+    }));
   }
 
   function togglePresetRange(range: { key: string }) {
@@ -2100,16 +2134,35 @@ function BillyScraperSystem({
     });
   }
 
+  function toggleBillyEmailAvailability(value: EmailAvailability | "all") {
+    setFilters((current) => {
+      if (value === "all") return { ...current, emailAvailabilitySelections: [] };
+      const selected = current.emailAvailabilitySelections;
+      return {
+        ...current,
+        emailAvailabilitySelections: selected.includes(value)
+          ? selected.filter((item) => item !== value)
+          : [...selected, value],
+      };
+    });
+  }
+
   function clearBillyFilterChip(chip: BillyFilterChip) {
     setFilters((current) => {
       const next: BillyFilterSettings = {
         ...current,
         followerRanges: [...current.followerRanges],
+        emailAvailabilitySelections: [...current.emailAvailabilitySelections],
       };
 
       if (chip.action.type === "array") {
         if (chip.action.field === "followerRanges") {
           next.followerRanges = next.followerRanges.filter((item) => item !== chip.action.value);
+        }
+        if (chip.action.field === "emailAvailabilitySelections") {
+          next.emailAvailabilitySelections = next.emailAvailabilitySelections.filter(
+            (item) => item !== chip.action.value,
+          );
         }
         return next;
       }
@@ -2217,8 +2270,10 @@ function BillyScraperSystem({
               filters={filters}
               openSections={openFilterSections}
               followerRanges={followerRanges}
+              emailAvailabilityCounts={emailAvailabilityCounts}
               onToggleSection={toggleFilterSection}
               onPresetRange={togglePresetRange}
+              onEmailAvailability={toggleBillyEmailAvailability}
               onChange={setFilters}
               onReset={() => setFilters(createBillyFilters())}
             />
@@ -2402,16 +2457,20 @@ function BillyFilterControls({
   filters,
   openSections,
   followerRanges,
+  emailAvailabilityCounts,
   onToggleSection,
   onPresetRange,
+  onEmailAvailability,
   onChange,
   onReset,
 }: {
   filters: BillyFilterSettings;
   openSections: Record<BillyFilterSectionKey, boolean>;
   followerRanges: RangeOption[];
+  emailAvailabilityCounts: EmailAvailabilityCounts;
   onToggleSection: (section: BillyFilterSectionKey) => void;
   onPresetRange: (range: { key: string }) => void;
+  onEmailAvailability: (value: EmailAvailability | "all") => void;
   onChange: (filters: BillyFilterSettings) => void;
   onReset: () => void;
 }) {
@@ -2425,7 +2484,7 @@ function BillyFilterControls({
           filters.followerRanges,
           filters.followersMin,
           filters.followersMax,
-          followersRangeOptions,
+          billyFollowersRangeOptions,
           "Select Followers",
           "followers",
         )}
@@ -2446,6 +2505,14 @@ function BillyFilterControls({
           onMax={(followersMax) => onChange({ ...filters, followersMax })}
         />
       </FilterDropdown>
+
+      <EmailAvailabilityFilter
+        selections={filters.emailAvailabilitySelections}
+        counts={emailAvailabilityCounts}
+        open={openSections.emailAvailability}
+        onToggle={() => onToggleSection("emailAvailability")}
+        onSelect={onEmailAvailability}
+      />
 
       <button
         type="button"
@@ -2560,7 +2627,7 @@ function buildBillyPreviewRow({
   const values = template.map((column) => {
     if (column.blockType === "blank") return "";
     if (column.blockType === "custom") return column.customValue ?? "";
-    if (column.blockType === "contacts") return resolvedContactInfo.rawText ?? "";
+    if (isBillyContactsColumn(column)) return resolvedContactInfo.rawText ?? "";
     if (!column.fieldKey) return "";
     return getCell(data, columnMap, column.fieldKey);
   });
@@ -2633,9 +2700,13 @@ function getBillyTemplateValueDescription(column: TemplateColumn): string {
   if (column.blockType === "custom") {
     return column.customValue ? `Custom: ${column.customValue}` : "Custom value";
   }
-  if (column.blockType === "contacts") return "Enriched Contacts value";
+  if (isBillyContactsColumn(column)) return "Enriched Contacts value";
   if (column.blockType === "field" && column.fieldKey) return column.fieldKey;
   return "Empty cell";
+}
+
+function isBillyContactsColumn(column: TemplateColumn): boolean {
+  return column.blockType === "contacts" || normalizeFieldLookupValue(column.label) === "contacts";
 }
 
 function BillyExtensionSessionPanel({
@@ -2755,7 +2826,7 @@ function EasyKolFilters({
   platformCounts: CountOption[];
   followersRanges: RangeOption[];
   averageViewRanges: RangeOption[];
-  emailAvailabilityCounts: { has: number; none: number };
+  emailAvailabilityCounts: EmailAvailabilityCounts;
   customRanges: {
     followersMin: string;
     followersMax: string;
@@ -2776,7 +2847,7 @@ function EasyKolFilters({
     }>,
   ) => void;
   onApplyCustomRange: (kind: "followers" | "averageViews") => void;
-  onEmailAvailability: (value: "has" | "none") => void;
+  onEmailAvailability: (value: EmailAvailability | "all") => void;
 }) {
   return (
     <div className="space-y-3">
@@ -2886,43 +2957,64 @@ function EasyKolFilters({
         />
       </FilterDropdown>
 
-      <FilterDropdown
-        title="Email Availability"
-        summary={
-          filters.emailAvailabilitySelections.length > 0
-            ? getEmailSelectionSummary(filters.emailAvailabilitySelections)
-            : filters.emailAvailability === "has"
-              ? "Has Email"
-              : filters.emailAvailability === "none"
-                ? "No Email"
-                : "Select Email Availability"
-        }
+      <EmailAvailabilityFilter
+        selections={filters.emailAvailabilitySelections}
+        counts={emailAvailabilityCounts}
         open={openSections.emailAvailability}
         onToggle={() => onToggleSection("emailAvailability")}
-      >
-        <div className="space-y-1">
-          <FilterOptionButton
-            label="Has Email"
-            count={emailAvailabilityCounts.has}
-            selected={
-              filters.emailAvailabilitySelections.includes("has") ||
-              filters.emailAvailability === "has" ||
-              (!filters.emailAvailability && filters.hasEmail)
-            }
-            onClick={() => onEmailAvailability("has")}
-          />
-          <FilterOptionButton
-            label="No Email"
-            count={emailAvailabilityCounts.none}
-            selected={
-              filters.emailAvailabilitySelections.includes("none") ||
-              filters.emailAvailability === "none"
-            }
-            onClick={() => onEmailAvailability("none")}
-          />
-        </div>
-      </FilterDropdown>
+        onSelect={onEmailAvailability}
+      />
     </div>
+  );
+}
+
+function EmailAvailabilityFilter({
+  selections,
+  counts,
+  open,
+  onToggle,
+  onSelect,
+}: {
+  selections: EmailAvailability[];
+  counts: EmailAvailabilityCounts;
+  open: boolean;
+  onToggle: () => void;
+  onSelect: (value: EmailAvailability | "all") => void;
+}) {
+  return (
+    <FilterDropdown
+      title="Email Availability"
+      summary={getEmailSelectionSummary(selections)}
+      open={open}
+      onToggle={onToggle}
+    >
+      <div className="space-y-1">
+        <FilterOptionButton
+          label="All"
+          count={counts.all}
+          selected={selections.length === 0}
+          onClick={() => onSelect("all")}
+        />
+        <FilterOptionButton
+          label="Has Personal Email"
+          count={counts.personal}
+          selected={selections.includes("personal")}
+          onClick={() => onSelect("personal")}
+        />
+        <FilterOptionButton
+          label="Has Agency Email"
+          count={counts.agency}
+          selected={selections.includes("agency")}
+          onClick={() => onSelect("agency")}
+        />
+        <FilterOptionButton
+          label="No Email"
+          count={counts.none}
+          selected={selections.includes("none")}
+          onClick={() => onSelect("none")}
+        />
+      </div>
+    </FilterDropdown>
   );
 }
 
@@ -4070,12 +4162,14 @@ function createBillyFilters(): BillyFilterSettings {
   return {
     ...emptyBillyFilters,
     followerRanges: [],
+    emailAvailabilitySelections: [],
   };
 }
 
 function filterBillyCreators(
   creators: UploadedCreator[],
   filters: BillyFilterSettings,
+  columnMap: ReturnType<typeof inferColumnMap>,
 ): UploadedCreator[] {
   return creators.filter(({ data }) => {
     if (
@@ -4084,13 +4178,44 @@ function filterBillyCreators(
         filters.followerRanges,
         filters.followersMin,
         filters.followersMax,
-        followersRangeOptions,
+        billyFollowersRangeOptions,
       )
     ) {
       return false;
     }
+    if (!matchesEmailAvailability(data, columnMap, filters.emailAvailabilitySelections)) {
+      return false;
+    }
     return true;
   });
+}
+
+function getEmailAvailabilityCounts(
+  creators: UploadedCreator[],
+  columnMap: ReturnType<typeof inferColumnMap>,
+): EmailAvailabilityCounts {
+  return creators.reduce<EmailAvailabilityCounts>(
+    (counts, creator) => {
+      const categories = getRowEmailCategories(creator.data, columnMap);
+      if (categories.has("personal")) counts.personal += 1;
+      if (categories.has("agency")) counts.agency += 1;
+      if (categories.size === 0) counts.none += 1;
+      return counts;
+    },
+    { all: creators.length, personal: 0, agency: 0, none: 0 },
+  );
+}
+
+function matchesEmailAvailability(
+  data: UploadedCreator["data"],
+  columnMap: ReturnType<typeof inferColumnMap>,
+  selections: EmailAvailability[],
+): boolean {
+  if (selections.length === 0) return true;
+  const categories = getRowEmailCategories(data, columnMap);
+  return selections.some((selection) =>
+    selection === "none" ? categories.size === 0 : categories.has(selection),
+  );
 }
 
 function getBillyMetricRangeCounts(
@@ -4134,20 +4259,25 @@ function matchesBillyRange(value: unknown, min: string, max: string): boolean {
 }
 
 function hasBillyFilters(filters: BillyFilterSettings): boolean {
-  return filters.followerRanges.length > 0 || Boolean(filters.followersMin || filters.followersMax);
+  return (
+    filters.followerRanges.length > 0 ||
+    filters.emailAvailabilitySelections.length > 0 ||
+    Boolean(filters.followersMin || filters.followersMax)
+  );
 }
 
 function clearBillyFilterValue(filters: BillyFilterSettings, key: keyof BillyFilterSettings) {
   if (key === "followersMin") filters.followersMin = "";
   if (key === "followersMax") filters.followersMax = "";
   if (key === "followerRanges") filters.followerRanges = [];
+  if (key === "emailAvailabilitySelections") filters.emailAvailabilitySelections = [];
 }
 
 function getActiveBillyFilterChips(filters: BillyFilterSettings): BillyFilterChip[] {
   const chips: BillyFilterChip[] = [];
 
   filters.followerRanges.forEach((rangeKey) => {
-    const range = followersRangeOptions.find((option) => option.key === rangeKey);
+    const range = billyFollowersRangeOptions.find((option) => option.key === rangeKey);
     if (!range) return;
     chips.push({
       key: range.key,
@@ -4162,11 +4292,18 @@ function getActiveBillyFilterChips(filters: BillyFilterSettings): BillyFilterChi
         filters.followersMin,
         filters.followersMax,
         "Followers",
-        followersRangeOptions,
+        billyFollowersRangeOptions,
       ),
       action: { type: "fields", fields: ["followersMin", "followersMax"] },
     });
   }
+  filters.emailAvailabilitySelections.forEach((value) =>
+    chips.push({
+      key: `billy-email-${value}`,
+      label: getEmailAvailabilityLabel(value),
+      action: { type: "array", field: "emailAvailabilitySelections", value },
+    }),
+  );
   return chips;
 }
 
@@ -4312,8 +4449,15 @@ function getMetricFilterSummary(min: string, max: string, noun: string): string 
 }
 
 function getEmailSelectionSummary(values: EmailAvailability[]): string {
-  if (values.length === 2) return "Has Email, No Email";
-  return values[0] === "has" ? "Has Email" : "No Email";
+  if (values.length === 0) return "All";
+  if (values.length === 1) return getEmailAvailabilityLabel(values[0]);
+  return `${values.length} selected`;
+}
+
+function getEmailAvailabilityLabel(value: EmailAvailability): string {
+  if (value === "personal") return "Has Personal Email";
+  if (value === "agency") return "Has Agency Email";
+  return "No Email";
 }
 
 function getRangeChipLabel(
@@ -4439,7 +4583,7 @@ function getActiveFilterChips(filters: FilterSettings): FilterChip[] {
   filters.emailAvailabilitySelections.forEach((value) =>
     chips.push({
       key: `email-${value}`,
-      label: value === "has" ? "Has Email" : "No Email",
+      label: getEmailAvailabilityLabel(value),
       action: { type: "array", field: "emailAvailabilitySelections", value },
     }),
   );
@@ -4449,7 +4593,7 @@ function getActiveFilterChips(filters: FilterSettings): FilterChip[] {
   ) {
     chips.push({
       key: "hasEmail",
-      label: "Has Email",
+      label: "Has Personal Email or Agency Email",
       action: { type: "fields", fields: ["emailAvailability", "hasEmail"] },
     });
   }
@@ -4658,7 +4802,8 @@ function normalizeFilters(value: unknown): FilterSettings {
   const emailAvailability = normalizeEmailAvailability(filters.emailAvailability);
   const emailAvailabilitySelections = normalizeEmailAvailabilityArray(
     filters.emailAvailabilitySelections,
-    emailAvailability || (filters.hasEmail ? "has" : ""),
+    emailAvailability,
+    filters.emailAvailability === "has" || Boolean(filters.hasEmail),
   );
   return {
     followersMin: stringValue(filters.followersMin),
@@ -4767,17 +4912,30 @@ function normalizeStringArray(value: unknown, legacyValue = ""): string[] {
 }
 
 function normalizeEmailAvailability(value: unknown): "" | EmailAvailability {
-  return value === "has" || value === "none" ? value : "";
+  return value === "personal" || value === "agency" || value === "none" ? value : "";
 }
 
 function normalizeEmailAvailabilityArray(
   value: unknown,
   legacyValue: "" | EmailAvailability,
+  legacyHasEmail = false,
 ): EmailAvailability[] {
   const values = Array.isArray(value)
-    ? value.filter((item): item is EmailAvailability => item === "has" || item === "none")
+    ? value.flatMap((item): EmailAvailability[] => {
+        if (item === "has") return ["personal", "agency"];
+        if (item === "personal" || item === "agency" || item === "none") return [item];
+        return [];
+      })
     : [];
-  return Array.from(new Set([legacyValue, ...values].filter(Boolean))) as EmailAvailability[];
+  return Array.from(
+    new Set(
+      [
+        legacyValue,
+        ...(legacyHasEmail ? (["personal", "agency"] as EmailAvailability[]) : []),
+        ...values,
+      ].filter(Boolean),
+    ),
+  ) as EmailAvailability[];
 }
 
 type ContactFillMode = "email-then-bio" | "email-only" | "bio-only";
