@@ -6,6 +6,7 @@ import type {
   AgencyDatabaseRecord,
   AppSettingRecord,
   CampaignMemoryCardRecord,
+  CampaignProjectInfoRecord,
   CampaignPromptVaultRecord,
   CampaignProfileRecord,
   CentralAppDatabase,
@@ -1623,6 +1624,125 @@ export const deleteCampaignPromptVaultRecord = createServerFn({ method: "POST" }
       return {
         ok: false,
         records: [] as CampaignPromptVaultRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const listCampaignProjectInfoRecords = createServerFn({ method: "POST" }).handler(
+  async () => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      listCampaignProjectInfoInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as CampaignProjectInfoRecord[],
+          status,
+        };
+      }
+
+      const result = await listCampaignProjectInfoInGoogleSheets();
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CampaignProjectInfoRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  },
+);
+
+export const saveCampaignProjectInfoRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const {
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+      upsertCampaignProjectInfoInGoogleSheets,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as CampaignProjectInfoRecord[],
+          status,
+        };
+      }
+
+      const result = await upsertCampaignProjectInfoInGoogleSheets(
+        data.record as CampaignProjectInfoRecord,
+      );
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CampaignProjectInfoRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const deleteCampaignProjectInfoRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ infoId: z.string() }))
+  .handler(async ({ data }) => {
+    const {
+      deleteCampaignProjectInfoInGoogleSheets,
+      diagnosticsFromError,
+      getGoogleSheetsServerStatus,
+    } = await import("./googleSheets.server");
+
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) {
+        return {
+          ok: false,
+          records: [] as CampaignProjectInfoRecord[],
+          status,
+        };
+      }
+
+      const result = await deleteCampaignProjectInfoInGoogleSheets(data.infoId);
+      return {
+        ok: true,
+        records: result.records,
+        status,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CampaignProjectInfoRecord[],
         status: {
           source: "googleSheets" as const,
           shared: true,

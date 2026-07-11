@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, FileText, MessageSquareText, Search } from "lucide-react";
+import { BriefcaseBusiness, CalendarDays, FileText, MessageSquareText, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type WorkflowCard = {
@@ -45,5 +45,13 @@ export const workflowCards: WorkflowCard[] = [
     status: "ready",
     route: "/active-campaigns",
     icon: BriefcaseBusiness,
+  },
+  {
+    id: "event-assistant",
+    title: "Event Assistant",
+    description: "Route meetings across calendars, create blockers, and review outside bookings.",
+    status: "ready",
+    route: "/calendar",
+    icon: CalendarDays,
   },
 ];

@@ -11,6 +11,7 @@ import {
   type AgencyDatabaseRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
+  type CampaignProjectInfoRecord,
   type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
@@ -54,6 +55,11 @@ import {
   removeCampaignPromptVaultRecord,
   upsertCampaignPromptVaultRecord,
 } from "./campaignPromptVault";
+import {
+  cleanupCampaignProjectInfoRecords,
+  removeCampaignProjectInfoRecord,
+  upsertCampaignProjectInfoRecord,
+} from "./campaignProjectInfo";
 
 type GoogleSheetsConfig = {
   spreadsheetId: string;
@@ -96,6 +102,7 @@ const rowIdFields: Record<CentralWorksheetName, string> = {
   CreatorDatabase: "id",
   EmployeeProfiles: "profileId",
   CampaignPromptVault: "promptId",
+  CampaignProjectInfo: "infoId",
   AppSettings: "settingKey",
 };
 
@@ -1279,6 +1286,91 @@ export async function deleteCampaignPromptVaultInGoogleSheets(promptId: string) 
   };
 }
 
+export async function listCampaignProjectInfoInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const infoRows = await readWorksheetRecordsWithRowNumbers<CampaignProjectInfoRecord>(
+    spreadsheetId,
+    "CampaignProjectInfo",
+  );
+  const cleanup = cleanupCampaignProjectInfoRecords(infoRows.rows.map((row) => row.record));
+  logCampaignProjectInfoCleanupSummary("list-current-state", cleanup);
+
+  if (cleanup.removedCount > 0) {
+    await writeCurrentStateWorksheetRows(
+      spreadsheetId,
+      "CampaignProjectInfo",
+      infoRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("campaign-project-info-list-cleanup");
+  }
+
+  return {
+    records: cleanup.records,
+  };
+}
+
+export async function upsertCampaignProjectInfoInGoogleSheets(record: CampaignProjectInfoRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const infoRows = await readWorksheetRecordsWithRowNumbers<CampaignProjectInfoRecord>(
+    spreadsheetId,
+    "CampaignProjectInfo",
+  );
+  const cleanup = upsertCampaignProjectInfoRecord(
+    infoRows.rows.map((row) => row.record),
+    record,
+  );
+  logCampaignProjectInfoCleanupSummary("targeted-upsert", cleanup);
+
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignProjectInfo",
+    infoRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("campaign-project-info-targeted-write");
+
+  return {
+    records: cleanup.records,
+  };
+}
+
+export async function deleteCampaignProjectInfoInGoogleSheets(infoId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const infoRows = await readWorksheetRecordsWithRowNumbers<CampaignProjectInfoRecord>(
+    spreadsheetId,
+    "CampaignProjectInfo",
+  );
+  const cleanup = removeCampaignProjectInfoRecord(
+    infoRows.rows.map((row) => row.record),
+    infoId,
+  );
+  logCampaignProjectInfoCleanupSummary("targeted-delete", cleanup);
+
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignProjectInfo",
+    infoRows,
+    cleanup.records,
+  );
+
+  invalidateDatabaseReadCache("campaign-project-info-targeted-delete");
+
+  return {
+    records: cleanup.records,
+  };
+}
+
 export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets() {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
@@ -1343,6 +1435,7 @@ export async function mergeCentralDatabaseIntoGoogleSheets(localDatabase: Centra
     CreatorDatabase: 0,
     EmployeeProfiles: 0,
     CampaignPromptVault: 0,
+    CampaignProjectInfo: 0,
     AppSettings: 0,
     errors: [] as string[],
   };
@@ -1978,6 +2071,26 @@ function logCampaignPromptVaultCleanupSummary(
   });
 }
 
+function logCampaignProjectInfoCleanupSummary(
+  reason: string,
+  cleanup: {
+    removedCount: number;
+    duplicateIdCount: number;
+    duplicateCampaignCount: number;
+    emptyRecordCount: number;
+  },
+) {
+  if (cleanup.removedCount === 0) return;
+  console.info("[CampaignProjectInfoCleanup]", "delete-stale-current-state-rows", {
+    reason,
+    removedCount: cleanup.removedCount,
+    emptyRows: cleanup.emptyRecordCount,
+    duplicateIdRows: cleanup.duplicateIdCount,
+    duplicateCampaignRows: cleanup.duplicateCampaignCount,
+    at: new Date().toISOString(),
+  });
+}
+
 async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
   spreadsheetId: string,
   reason: string,
@@ -2530,6 +2643,20 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
           updatedAt: stringValue(row.updatedAt),
         })),
       ).records,
+      CampaignProjectInfo: cleanupCampaignProjectInfoRecords(
+        rowsBySheet.CampaignProjectInfo.map((row) => ({
+          infoId: stringValue(row.infoId),
+          campaignId: stringValue(row.campaignId),
+          projectBrief: stringValue(row.projectBrief),
+          productInformation: stringValue(row.productInformation),
+          creatorPersonas: stringValue(row.creatorPersonas),
+          sop: stringValue(row.sop),
+          scriptFilmingNotes: stringValue(row.scriptFilmingNotes),
+          postingFinalisationNotes: stringValue(row.postingFinalisationNotes),
+          createdAt: stringValue(row.createdAt),
+          updatedAt: stringValue(row.updatedAt),
+        })),
+      ).records,
       AppSettings: rowsBySheet.AppSettings.map((row) => ({
         settingKey: stringValue(row.settingKey),
         settingValue: stringValue(row.settingValue),
@@ -2575,6 +2702,10 @@ function getRowsForWorksheet(
   database: CentralAppDatabase,
   worksheetName: "CampaignPromptVault",
 ): CampaignPromptVaultRecord[];
+function getRowsForWorksheet(
+  database: CentralAppDatabase,
+  worksheetName: "CampaignProjectInfo",
+): CampaignProjectInfoRecord[];
 function getRowsForWorksheet(
   database: CentralAppDatabase,
   worksheetName: "AppSettings",

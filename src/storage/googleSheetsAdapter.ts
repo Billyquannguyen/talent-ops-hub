@@ -6,6 +6,7 @@ import {
   type AgencyDatabaseRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
+  type CampaignProjectInfoRecord,
   type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
@@ -29,6 +30,7 @@ import {
   deleteAgencyDatabaseRecord,
   deleteCampaignProfileRecord,
   deleteCampaignMemoryCardRecord,
+  deleteCampaignProjectInfoRecord,
   deleteCampaignPromptVaultRecord,
   deleteCreatorDatabaseRecord,
   deleteOutreachTemplateRecord,
@@ -38,6 +40,7 @@ import {
   listAppSettingRecords,
   listActiveCampaignCreatorRecords,
   listCampaignMemoryCardRecords,
+  listCampaignProjectInfoRecords,
   listCampaignPromptVaultRecords,
   listCampaignProfileRecords,
   listCreatorDatabaseRecords,
@@ -54,6 +57,7 @@ import {
   saveAgencyDatabaseRecord,
   saveAppSettingRecord,
   saveCampaignProfileRecord,
+  saveCampaignProjectInfoRecord,
   saveCampaignPromptVaultRecord,
   saveCreatorDatabaseRecord,
   saveEmployeeProfileRecord,
@@ -172,6 +176,12 @@ export type EmployeeProfilesResult = {
 export type CampaignPromptVaultResult = {
   ok: boolean;
   records: CampaignPromptVaultRecord[];
+  status: StorageStatus;
+};
+
+export type CampaignProjectInfoResult = {
+  ok: boolean;
+  records: CampaignProjectInfoRecord[];
   status: StorageStatus;
 };
 
@@ -445,6 +455,22 @@ export async function deleteCampaignPromptVaultFromGoogleSheets(
   promptId: string,
 ): Promise<CampaignPromptVaultResult> {
   return deleteCampaignPromptVaultRecord({ data: { promptId } });
+}
+
+export async function listCampaignProjectInfoFromGoogleSheets(): Promise<CampaignProjectInfoResult> {
+  return listCampaignProjectInfoRecords();
+}
+
+export async function saveCampaignProjectInfoToGoogleSheets(
+  record: CampaignProjectInfoRecord,
+): Promise<CampaignProjectInfoResult> {
+  return saveCampaignProjectInfoRecord({ data: { record } });
+}
+
+export async function deleteCampaignProjectInfoFromGoogleSheets(
+  infoId: string,
+): Promise<CampaignProjectInfoResult> {
+  return deleteCampaignProjectInfoRecord({ data: { infoId } });
 }
 
 export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets(): Promise<{

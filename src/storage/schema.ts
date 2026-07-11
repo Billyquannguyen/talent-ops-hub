@@ -10,6 +10,7 @@ export const centralWorksheetNames = [
   "CreatorDatabase",
   "EmployeeProfiles",
   "CampaignPromptVault",
+  "CampaignProjectInfo",
   "AppSettings",
 ] as const;
 
@@ -145,6 +146,19 @@ export type CampaignPromptVaultRecord = {
   updatedAt: string;
 };
 
+export type CampaignProjectInfoRecord = {
+  infoId: string;
+  campaignId: string;
+  projectBrief: string;
+  productInformation: string;
+  creatorPersonas: string;
+  sop: string;
+  scriptFilmingNotes: string;
+  postingFinalisationNotes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AppSettingRecord = {
   settingKey: string;
   settingValue: string;
@@ -163,6 +177,7 @@ export type CentralAppDatabase = {
     CreatorDatabase: CreatorDatabaseRecord[];
     EmployeeProfiles: EmployeeProfileRecord[];
     CampaignPromptVault: CampaignPromptVaultRecord[];
+    CampaignProjectInfo: CampaignProjectInfoRecord[];
     AppSettings: AppSettingRecord[];
   };
 };
@@ -296,6 +311,18 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "createdAt",
     "updatedAt",
   ],
+  CampaignProjectInfo: [
+    "infoId",
+    "campaignId",
+    "projectBrief",
+    "productInformation",
+    "creatorPersonas",
+    "sop",
+    "scriptFilmingNotes",
+    "postingFinalisationNotes",
+    "createdAt",
+    "updatedAt",
+  ],
   AppSettings: ["settingKey", "settingValue", "updatedAt"],
 };
 
@@ -328,6 +355,25 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   promptId: ["prompt id", "prompt_id", "id"],
   input: ["input", "prompt input", "source input", "attachment input", "context input"],
   files: ["files", "file links", "attachments", "attachment", "notes"],
+  infoId: ["info id", "info_id", "id"],
+  projectBrief: ["project brief", "brief", "project_brief"],
+  productInformation: ["product information", "product info", "product_information"],
+  creatorPersonas: ["creator personas", "creator persona", "personas", "creator_personas"],
+  sop: ["standard operating procedure", "sop"],
+  scriptFilmingNotes: [
+    "script and filming notes",
+    "script filming notes",
+    "script notes",
+    "filming notes",
+    "script_filming_notes",
+  ],
+  postingFinalisationNotes: [
+    "posting & campaign finalisation notes",
+    "posting and campaign finalisation notes",
+    "posting finalisation notes",
+    "posting finalization notes",
+    "posting_finalisation_notes",
+  ],
   displayName: ["display name", "name", "display_name"],
   avatarUrl: ["avatar url", "avatar", "avatar_url"],
   monthlySalary: ["monthly salary", "salary", "monthly_salary"],
@@ -348,6 +394,7 @@ export function createEmptyCentralDatabase(): CentralAppDatabase {
       CreatorDatabase: [],
       EmployeeProfiles: [],
       CampaignPromptVault: [],
+      CampaignProjectInfo: [],
       AppSettings: [],
     },
   };

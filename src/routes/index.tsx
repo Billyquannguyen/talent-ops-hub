@@ -37,7 +37,7 @@ function Dashboard() {
           </p>
         </section>
 
-        <section className="mt-10 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-10 grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {workflowCards.map((card) => {
             const Icon = card.icon;
             const body = (

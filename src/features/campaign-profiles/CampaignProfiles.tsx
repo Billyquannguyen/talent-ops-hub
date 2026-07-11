@@ -1,9 +1,27 @@
-import { BadgeDollarSign, CalendarDays, Pencil, Plus, TrendingUp, Trash2 } from "lucide-react";
+import {
+  BadgeDollarSign,
+  CalendarDays,
+  ClipboardList,
+  FileText,
+  Megaphone,
+  Package,
+  Pencil,
+  Plus,
+  Save,
+  TrendingUp,
+  Trash2,
+  Users,
+  Video,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { TopBar } from "@/components/TopBar";
-import { listEmployeeProfilesFromGoogleSheetsOnly } from "@/storage/appRepository";
+import {
+  listCampaignProjectInfoFromGoogleSheetsOnly,
+  listEmployeeProfilesFromGoogleSheetsOnly,
+  saveCampaignProjectInfoToGoogleSheetsOnly,
+} from "@/storage/appRepository";
 import {
   employeeProfileFromRecord,
   employeeProfileRecordId,
@@ -24,6 +42,7 @@ import {
   type CampaignMemoryCard,
   type CampaignMemoryLanguage,
 } from "@/lib/campaignRegistry";
+import type { CampaignProjectInfoRecord } from "@/storage/schema";
 
 type CampaignDraft = {
   id?: string;
@@ -40,10 +59,83 @@ const emptyDraft: CampaignDraft = {
   memoryCards: [createCampaignMemoryCard("Deliverables", "")],
 };
 
+type ProjectInfoTextKey =
+  | "projectBrief"
+  | "productInformation"
+  | "creatorPersonas"
+  | "sop"
+  | "scriptFilmingNotes"
+  | "postingFinalisationNotes";
+
+type ProjectInfoEditorState = {
+  campaign: GlobalCampaign;
+  record: CampaignProjectInfoRecord;
+};
+
+const projectInfoSections: Array<{
+  key: ProjectInfoTextKey;
+  title: string;
+  description: string;
+  placeholder: string;
+  icon: LucideIcon;
+}> = [
+  {
+    key: "projectBrief",
+    title: "Project brief",
+    description: "Client goal, market context, target audience, offer, and campaign objective.",
+    placeholder: "Paste the project brief, client goal, campaign context, and key constraints...",
+    icon: FileText,
+  },
+  {
+    key: "productInformation",
+    title: "Product information",
+    description: "Product details, core features, pricing, claims, links, and required wording.",
+    placeholder:
+      "Add product description, feature list, landing pages, pricing, and proof points...",
+    icon: Package,
+  },
+  {
+    key: "creatorPersonas",
+    title: "Creator personas",
+    description: "Ideal creator types, niches, exclusions, audience profile, and examples.",
+    placeholder: "Describe the creator profiles that fit this campaign and who to avoid...",
+    icon: Users,
+  },
+  {
+    key: "sop",
+    title: "SOP",
+    description: "The operating steps teammates should follow for this specific campaign.",
+    placeholder:
+      "Write the campaign workflow, checks, approvals, escalation paths, and deadlines...",
+    icon: ClipboardList,
+  },
+  {
+    key: "scriptFilmingNotes",
+    title: "Script and filming notes",
+    description: "Script rules, filming direction, talking-point order, and review notes.",
+    placeholder:
+      "Add hook guidance, required scenes, script warnings, filming notes, and revision rules...",
+    icon: Video,
+  },
+  {
+    key: "postingFinalisationNotes",
+    title: "Posting & campaign finalisation notes",
+    description: "Posting rules, live link checks, reporting, payment, and closing notes.",
+    placeholder:
+      "Add posting instructions, final checks, live link requirements, and campaign closing notes...",
+    icon: Megaphone,
+  },
+];
+
 export function CampaignProfiles() {
   const [loaded, setLoaded] = useState(false);
   const [registry, setRegistry] = useState<GlobalCampaignRegistry>(() => loadCampaignRegistry());
   const [editingDraft, setEditingDraft] = useState<CampaignDraft | null>(null);
+  const [editingProjectInfo, setEditingProjectInfo] = useState<ProjectInfoEditorState | null>(null);
+  const [projectInfoRecords, setProjectInfoRecords] = useState<CampaignProjectInfoRecord[]>([]);
+  const [projectInfoLoaded, setProjectInfoLoaded] = useState(false);
+  const [projectInfoSaving, setProjectInfoSaving] = useState(false);
+  const [projectInfoStatus, setProjectInfoStatus] = useState("");
   const [roiMonth, setRoiMonth] = useState(() => getCurrentMonthValue());
   const [profile, setProfile] = useState<EmployeeProfile>(() => loadEmployeeProfile());
   const [roiStatus, setRoiStatus] = useState("Loading ROI data...");
@@ -163,6 +255,63 @@ export function CampaignProfiles() {
     }));
   }
 
+  async function openProjectInfo(campaign: GlobalCampaign) {
+    let records = projectInfoRecords;
+    setProjectInfoStatus("");
+
+    if (!projectInfoLoaded) {
+      setProjectInfoStatus("Loading project info...");
+      try {
+        records = await listCampaignProjectInfoFromGoogleSheetsOnly();
+        setProjectInfoRecords(records);
+        setProjectInfoLoaded(true);
+        setProjectInfoStatus("");
+      } catch (error) {
+        setProjectInfoStatus(
+          error instanceof Error ? error.message : "Project info could not be loaded.",
+        );
+      }
+    }
+
+    setEditingProjectInfo({
+      campaign,
+      record:
+        records.find((record) => record.campaignId === campaign.id) ??
+        createEmptyProjectInfoRecord(campaign),
+    });
+  }
+
+  async function saveProjectInfo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingProjectInfo) return;
+
+    const now = new Date().toISOString();
+    const record: CampaignProjectInfoRecord = {
+      ...editingProjectInfo.record,
+      infoId:
+        editingProjectInfo.record.infoId || createProjectInfoId(editingProjectInfo.campaign.id),
+      campaignId: editingProjectInfo.campaign.id,
+      createdAt: editingProjectInfo.record.createdAt || now,
+      updatedAt: now,
+    };
+
+    setProjectInfoSaving(true);
+    setProjectInfoStatus("");
+    try {
+      const records = await saveCampaignProjectInfoToGoogleSheetsOnly(record);
+      setProjectInfoRecords(records);
+      setProjectInfoLoaded(true);
+      setProjectInfoStatus("Project info saved.");
+      setEditingProjectInfo(null);
+    } catch (error) {
+      setProjectInfoStatus(
+        error instanceof Error ? error.message : "Project info could not be saved.",
+      );
+    } finally {
+      setProjectInfoSaving(false);
+    }
+  }
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <TopBar />
@@ -252,6 +401,13 @@ export function CampaignProfiles() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => void openProjectInfo(campaign)}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition hover:bg-accent"
+                          >
+                            <FileText className="size-3.5" />
+                            Project Info
+                          </button>
                           <button
                             onClick={() => setEditingDraft(toDraft(campaign))}
                             className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition hover:bg-accent"
@@ -365,6 +521,116 @@ export function CampaignProfiles() {
           onSubmit={saveCampaign}
         />
       ) : null}
+
+      {editingProjectInfo ? (
+        <ProjectInfoModal
+          state={editingProjectInfo}
+          status={projectInfoStatus}
+          saving={projectInfoSaving}
+          onChange={(patch) =>
+            setEditingProjectInfo((current) =>
+              current ? { ...current, record: { ...current.record, ...patch } } : current,
+            )
+          }
+          onCancel={() => setEditingProjectInfo(null)}
+          onSubmit={saveProjectInfo}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ProjectInfoModal({
+  state,
+  status,
+  saving,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  state: ProjectInfoEditorState;
+  status: string;
+  saving: boolean;
+  onChange: (patch: Partial<CampaignProjectInfoRecord>) => void;
+  onCancel: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
+      <form
+        onSubmit={onSubmit}
+        className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl"
+      >
+        <div className="border-b border-border p-5">
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Campaign Profiles / Project Info
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold">{state.campaign.campaignName}</h2>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground">
+                  {state.campaign.campaignCode}
+                </span>
+                <span className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground">
+                  {state.record.updatedAt
+                    ? `Updated ${formatShortDate(state.record.updatedAt)}`
+                    : "Not saved yet"}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="inline-flex h-10 items-center rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:bg-accent"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Save className="size-4" />
+                {saving ? "Saving..." : "Save Info"}
+              </button>
+            </div>
+          </div>
+          {status ? <p className="mt-3 text-xs text-muted-foreground">{status}</p> : null}
+        </div>
+
+        <div className="grid gap-4 p-5 lg:grid-cols-2">
+          {projectInfoSections.map((section) => {
+            const Icon = section.icon;
+            return (
+              <section
+                key={section.key}
+                className="rounded-xl border border-border bg-background/70 p-4"
+              >
+                <div className="mb-3 flex items-start gap-3">
+                  <div className="katlas-panel-icon shrink-0">
+                    <Icon className="size-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold">{section.title}</h3>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {section.description}
+                    </p>
+                  </div>
+                </div>
+                <textarea
+                  value={state.record[section.key]}
+                  placeholder={section.placeholder}
+                  rows={8}
+                  onChange={(event) => onChange({ [section.key]: event.target.value })}
+                  className="min-h-[180px] w-full resize-y rounded-lg border border-input bg-card px-3 py-3 text-sm leading-6 outline-none ring-ring placeholder:text-muted-foreground/60 focus:ring-2"
+                />
+              </section>
+            );
+          })}
+        </div>
+      </form>
     </div>
   );
 }
@@ -635,6 +901,25 @@ function toDraft(campaign: GlobalCampaign): CampaignDraft {
   };
 }
 
+function createEmptyProjectInfoRecord(campaign: GlobalCampaign): CampaignProjectInfoRecord {
+  return {
+    infoId: createProjectInfoId(campaign.id),
+    campaignId: campaign.id,
+    projectBrief: "",
+    productInformation: "",
+    creatorPersonas: "",
+    sop: "",
+    scriptFilmingNotes: "",
+    postingFinalisationNotes: "",
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+function createProjectInfoId(campaignId: string) {
+  return `project-info-${campaignId}`;
+}
+
 function calculateMonthlyRoi(
   registry: GlobalCampaignRegistry,
   month: string,
@@ -684,4 +969,14 @@ function formatCurrency(value: number, currency: string) {
 
 function formatPercent(value: number) {
   return `${Math.round(value).toLocaleString()}%`;
+}
+
+function formatShortDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
