@@ -25,6 +25,7 @@ import {
 import {
   cleanupSourcingTemplateRecords,
   isActiveSourcingTemplateRecord,
+  migrateSourcingTemplateContactsRecords,
   removeSourcingTemplateRecord,
   upsertSourcingTemplateRecord,
 } from "./sourcingTemplates";
@@ -617,9 +618,10 @@ export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTempl
     spreadsheetId,
     "SourcingTemplates",
   );
+  const canonicalRecord = migrateSourcingTemplateContactsRecords([record]).records[0] ?? record;
   const sourcingCleanup = upsertSourcingTemplateRecord(
     sourcingRows.rows.map((row) => row.record),
-    record,
+    canonicalRecord,
   );
   logSourcingTemplateCleanupSummary("targeted-upsert", sourcingCleanup);
   await writeCurrentStateWorksheetRows(
@@ -632,8 +634,8 @@ export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTempl
   const appSettingRows = await readAppSettingsRecordsWithRowNumbers(spreadsheetId);
   const appSettings = upsertAppSettingRecord(
     appSettingRows.rows.map((row) => row.record),
-    `sourcing.activeTemplate.${record.campaignId}`,
-    record.id,
+    `sourcing.activeTemplate.${canonicalRecord.campaignId}`,
+    canonicalRecord.id,
   );
   await writeChangedWorksheetRows(spreadsheetId, "AppSettings", appSettingRows, appSettings);
 
@@ -2117,21 +2119,35 @@ async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
     readAppSettingsRecordsWithRowNumbers(spreadsheetId),
   ]);
   const cleanup = cleanupSourcingTemplateRecords(sourcingRows.rows.map((row) => row.record));
+  const contactsMigration = migrateSourcingTemplateContactsRecords(cleanup.records);
 
-  if (cleanup.removedCount > 0) {
-    logSourcingTemplateCleanupSummary("creator-sourcing-load", cleanup);
+  if (cleanup.removedCount > 0 || contactsMigration.changedTemplateCount > 0) {
+    if (cleanup.removedCount > 0) {
+      logSourcingTemplateCleanupSummary("creator-sourcing-load", cleanup);
+    }
+    if (contactsMigration.changedTemplateCount > 0) {
+      console.info("[SourcingTemplatesMigration]", "merge-email-into-contacts", {
+        changedTemplates: contactsMigration.changedTemplateCount,
+        convertedColumns: contactsMigration.convertedColumnCount,
+        templatesWithBothEmailAndContacts: contactsMigration.templatesWithBothEmailAndContacts,
+        invalidColumnsJsonTemplateIds: contactsMigration.invalidColumnsJsonTemplateIds,
+        at: new Date().toISOString(),
+      });
+    }
     await writeCurrentStateWorksheetRows(
       spreadsheetId,
       "SourcingTemplates",
       sourcingRows,
-      cleanup.records,
+      contactsMigration.records,
     );
-    invalidateDatabaseReadCache("sourcing-template-load-cleanup");
+    invalidateDatabaseReadCache("sourcing-template-load-normalization");
   }
 
   const database = createEmptyCentralDatabase();
   database.worksheets.CampaignProfiles = campaignProfiles;
-  database.worksheets.SourcingTemplates = cleanup.records.filter(isActiveSourcingTemplateRecord);
+  database.worksheets.SourcingTemplates = contactsMigration.records.filter(
+    isActiveSourcingTemplateRecord,
+  );
   database.worksheets.AppSettings = appSettingRows.rows.map((row) => row.record);
 
   creatorSourcingReadCache = {

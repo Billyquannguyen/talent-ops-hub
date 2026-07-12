@@ -9,6 +9,14 @@ export type SourcingTemplateCleanupResult = {
   inactiveCount: number;
 };
 
+export type SourcingTemplateContactsMigrationResult = {
+  records: SourcingTemplateRecord[];
+  changedTemplateCount: number;
+  convertedColumnCount: number;
+  templatesWithBothEmailAndContacts: string[];
+  invalidColumnsJsonTemplateIds: string[];
+};
+
 export function isActiveSourcingTemplateRecord(record: SourcingTemplateRecord): boolean {
   return normalizeActiveFlag(record.isActive);
 }
@@ -99,6 +107,89 @@ export function removeSourcingTemplateRecord(
     (record) => record.id !== templateId,
   );
   return cleanupSourcingTemplateRecords(nextRecords);
+}
+
+export function migrateSourcingTemplateContactsRecords(
+  records: SourcingTemplateRecord[],
+): SourcingTemplateContactsMigrationResult {
+  let changedTemplateCount = 0;
+  let convertedColumnCount = 0;
+  const templatesWithBothEmailAndContacts: string[] = [];
+  const invalidColumnsJsonTemplateIds: string[] = [];
+
+  const nextRecords = records.map((record) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(record.columnsJson || "[]");
+    } catch {
+      invalidColumnsJsonTemplateIds.push(record.id);
+      return record;
+    }
+    if (!Array.isArray(parsed)) {
+      invalidColumnsJsonTemplateIds.push(record.id);
+      return record;
+    }
+
+    const hasEmailColumn = parsed.some(isLegacyEmailTemplateColumn);
+    const hasContactsColumn = parsed.some(isContactsTemplateColumnRecord);
+    if (hasEmailColumn && hasContactsColumn) {
+      templatesWithBothEmailAndContacts.push(record.id);
+    }
+
+    let changed = false;
+    const columns = parsed.map((value) => {
+      if (!isRecord(value) || !isLegacyEmailTemplateColumn(value)) return value;
+      changed = true;
+      convertedColumnCount += 1;
+      const nextColumn = { ...value, blockType: "contacts" };
+      delete nextColumn.fieldKey;
+      delete nextColumn.sourceField;
+      delete nextColumn.sourceEasyKolField;
+      return nextColumn;
+    });
+
+    if (!changed) return record;
+    changedTemplateCount += 1;
+    return {
+      ...record,
+      columnsJson: JSON.stringify(columns),
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  return {
+    records: nextRecords,
+    changedTemplateCount,
+    convertedColumnCount,
+    templatesWithBothEmailAndContacts,
+    invalidColumnsJsonTemplateIds,
+  };
+}
+
+function isLegacyEmailTemplateColumn(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const source =
+    value.fieldKey ?? value.sourceField ?? value.sourceEasyKolField ?? value.sourceBlock;
+  return normalizeTemplateValue(source) === "email";
+}
+
+function isContactsTemplateColumnRecord(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    normalizeTemplateValue(value.blockType ?? value.type ?? value.sourceType) === "contacts" ||
+    normalizeTemplateValue(value.label ?? value.outputColumnName ?? value.outputName) === "contacts"
+  );
+}
+
+function normalizeTemplateValue(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function groupRecordIndexes(

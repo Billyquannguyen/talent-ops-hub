@@ -210,9 +210,10 @@ export function rowHasEmail(data: CreatorRow, columnMap: ColumnMap): boolean {
 }
 
 export function getRowEmailCategories(data: CreatorRow, columnMap: ColumnMap): Set<EmailCategory> {
-  return classifyEmailText(
-    `${getCell(data, columnMap, "Email")} ${getCell(data, columnMap, "Description")}`,
-  );
+  const contactsValue = Object.entries(data).find(
+    ([key]) => normalizeHeader(key) === normalizeHeader("Contacts"),
+  )?.[1];
+  return classifyEmailText(`${stringifyCell(contactsValue)} ${getCell(data, columnMap, "Email")}`);
 }
 
 function matchesMetric(

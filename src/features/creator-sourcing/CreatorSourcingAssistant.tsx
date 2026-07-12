@@ -15,7 +15,6 @@ import {
   Filter,
   Hash,
   Loader2,
-  Mail,
   Pencil,
   Plus,
   RotateCcw,
@@ -67,6 +66,7 @@ import {
   inferColumnMap,
   parseMetric,
 } from "./filters";
+import { classifyEmailAddress, extractEmailAddresses } from "./emailClassification";
 import {
   easyKolFields,
   type EmailAvailability,
@@ -105,7 +105,6 @@ const emptyBillyFilters = {
   followersMin: "",
   followersMax: "",
   followerRanges: [],
-  emailAvailabilitySelections: [],
 } satisfies BillyFilterSettings;
 const filterSectionDefaults = {
   regions: false,
@@ -117,7 +116,6 @@ const filterSectionDefaults = {
 };
 const billyFilterSectionDefaults = {
   followers: false,
-  emailAvailability: false,
 };
 const billyExtensionMessageSource = "katlas-billy-extension";
 const billyExtensionImportStorageKey = "katlas-billy-extension-import-v1";
@@ -148,7 +146,6 @@ type BillyFilterSettings = {
   followersMin: string;
   followersMax: string;
   followerRanges: string[];
-  emailAvailabilitySelections: EmailAvailability[];
 };
 type BillyFilterChip = {
   key: string;
@@ -158,11 +155,6 @@ type BillyFilterChip = {
         type: "array";
         field: "followerRanges";
         value: string;
-      }
-    | {
-        type: "array";
-        field: "emailAvailabilitySelections";
-        value: EmailAvailability;
       }
     | {
         type: "fields";
@@ -309,7 +301,7 @@ export function CreatorSourcingAssistant() {
   const activeProject = projects.find((project) => project.campaignId === activeProjectId);
   const activeTemplateId = activeProject?.activeTemplateId ?? "";
   const template = useMemo(() => draftTemplate, [draftTemplate]);
-  const templateHasContacts = template.some((column) => column.blockType === "contacts");
+  const templateHasContacts = template.some(isContactsTemplateColumn);
   const templateHasUnsavedChanges = activeProject
     ? !templatesEqual(draftTemplate, activeProject.template) ||
       draftTemplateName.trim() !== activeProject.templateName
@@ -850,7 +842,7 @@ export function CreatorSourcingAssistant() {
     try {
       for (const message of [
         "Finding rows without Contacts values...",
-        "Filling EasyKOL emails first, then full bios for the remaining blanks...",
+        "Copying full EasyKOL bios into the remaining blank Contacts cells...",
         "Updating Contacts cells...",
       ]) {
         setStatusMessage(message);
@@ -862,7 +854,7 @@ export function CreatorSourcingAssistant() {
         targetCreatorIds: new Set(filteredCreators.map((creator) => creator.id)),
         headers,
         columnMap,
-        mode: "email-then-bio",
+        mode: "bio-only",
       });
       setHeaders(result.headers);
       setCreators(result.creators);
@@ -876,7 +868,7 @@ export function CreatorSourcingAssistant() {
         ),
       );
       setStatusMessage(
-        `Done. Filled ${result.emailCount.toLocaleString()} EasyKOL emails and copied ${result.bioCount.toLocaleString()} full bios into blank Contacts cells. No AI call used.`,
+        `Done. Copied ${result.bioCount.toLocaleString()} full bios into blank Contacts cells. Existing Contacts values were preserved. No AI call used.`,
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
@@ -1774,10 +1766,6 @@ function BillyScraperSystem({
     () => getBillyMetricRangeCounts(creators, "Followers", billyFollowersRangeOptions),
     [creators],
   );
-  const emailAvailabilityCounts = useMemo(
-    () => getEmailAvailabilityCounts(creators, columnMap),
-    [creators, columnMap],
-  );
   const activeFilterChips = useMemo(() => getActiveBillyFilterChips(filters), [filters]);
   const previewHeaders = useMemo(
     () => template.map((column, index) => column.label.trim() || `Column ${index + 1}`),
@@ -1956,7 +1944,7 @@ function BillyScraperSystem({
     onExtensionImportHandled();
   }, [importExtensionPayload, onExtensionImportHandled, pendingExtensionImport]);
 
-  async function enrichBillyContacts(mode: "email-only" | "bio-only") {
+  async function enrichBillyContacts(mode: "personal-emails" | "all-emails" | "bio-only") {
     setIsEnrichmentMenuOpen(false);
     if (!activeProject) {
       setErrorMessage("Select a campaign first.");
@@ -1977,17 +1965,23 @@ function BillyScraperSystem({
 
     try {
       const progressMessages =
-        mode === "email-only"
+        mode === "personal-emails"
           ? [
               "Finding rows without Contacts values...",
-              "Extracting public emails from collected bios...",
+              "Extracting personal-provider emails from collected profile data...",
               "Updating Contacts cells...",
             ]
-          : [
-              "Finding rows without Contacts values...",
-              "Copying complete collected bios without rewriting them...",
-              "Updating Contacts cells...",
-            ];
+          : mode === "all-emails"
+            ? [
+                "Finding rows without Contacts values...",
+                "Extracting all public emails from collected profile data...",
+                "Updating Contacts cells...",
+              ]
+            : [
+                "Finding rows without Contacts values...",
+                "Copying complete collected bios without rewriting them...",
+                "Updating Contacts cells...",
+              ];
 
       for (const message of progressMessages) {
         setStatusMessage(message);
@@ -2000,16 +1994,17 @@ function BillyScraperSystem({
         headers,
         columnMap,
         mode,
-        findEmailInBio: mode === "email-only",
       });
 
       setHeaders(result.headers);
       setCreators(result.creators);
       setContactInfoByCreatorId(result.contactInfoByCreatorId);
       setStatusMessage(
-        mode === "email-only"
-          ? `Done. Extracted ${result.emailCount.toLocaleString()} public emails from collected profile data into blank Contacts cells. No AI call used.`
-          : `Done. Copied ${result.bioCount.toLocaleString()} full bios into blank Contacts cells. No AI call used.`,
+        mode === "personal-emails"
+          ? `Done. Added personal-provider emails to ${result.emailCount.toLocaleString()} blank Contacts cells. Existing Contacts values were preserved. No AI call used.`
+          : mode === "all-emails"
+            ? `Done. Added public emails to ${result.emailCount.toLocaleString()} blank Contacts cells. Existing Contacts values were preserved. No AI call used.`
+            : `Done. Copied ${result.bioCount.toLocaleString()} full bios into blank Contacts cells. No AI call used.`,
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
@@ -2119,7 +2114,6 @@ function BillyScraperSystem({
   function toggleFilterSection(section: BillyFilterSectionKey) {
     setOpenFilterSections((current) => ({
       followers: false,
-      emailAvailability: false,
       [section]: !current[section],
     }));
   }
@@ -2134,35 +2128,16 @@ function BillyScraperSystem({
     });
   }
 
-  function toggleBillyEmailAvailability(value: EmailAvailability | "all") {
-    setFilters((current) => {
-      if (value === "all") return { ...current, emailAvailabilitySelections: [] };
-      const selected = current.emailAvailabilitySelections;
-      return {
-        ...current,
-        emailAvailabilitySelections: selected.includes(value)
-          ? selected.filter((item) => item !== value)
-          : [...selected, value],
-      };
-    });
-  }
-
   function clearBillyFilterChip(chip: BillyFilterChip) {
     setFilters((current) => {
       const next: BillyFilterSettings = {
         ...current,
         followerRanges: [...current.followerRanges],
-        emailAvailabilitySelections: [...current.emailAvailabilitySelections],
       };
 
       if (chip.action.type === "array") {
         if (chip.action.field === "followerRanges") {
           next.followerRanges = next.followerRanges.filter((item) => item !== chip.action.value);
-        }
-        if (chip.action.field === "emailAvailabilitySelections") {
-          next.emailAvailabilitySelections = next.emailAvailabilitySelections.filter(
-            (item) => item !== chip.action.value,
-          );
         }
         return next;
       }
@@ -2270,10 +2245,8 @@ function BillyScraperSystem({
               filters={filters}
               openSections={openFilterSections}
               followerRanges={followerRanges}
-              emailAvailabilityCounts={emailAvailabilityCounts}
               onToggleSection={toggleFilterSection}
               onPresetRange={togglePresetRange}
-              onEmailAvailability={toggleBillyEmailAvailability}
               onChange={setFilters}
               onReset={() => setFilters(createBillyFilters())}
             />
@@ -2308,7 +2281,7 @@ function BillyScraperSystem({
                   <ContactEnrichmentTooltip
                     content={
                       templateHasContacts
-                        ? "Choose whether Billy extracts standard public emails from collected bios or copies complete bios into blank Contacts cells. No AI or external API is used."
+                        ? "Choose whether Billy fills blank Contacts with personal-provider emails, all public emails, or the complete collected bio. Existing Contacts values are never overwritten. No AI or external API is used."
                         : disabledEnrichmentTooltip
                     }
                   >
@@ -2343,14 +2316,28 @@ function BillyScraperSystem({
                       <button
                         type="button"
                         role="menuitem"
-                        onClick={() => void enrichBillyContacts("email-only")}
+                        onClick={() => void enrichBillyContacts("personal-emails")}
                         className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition hover:bg-accent"
                       >
-                        <Mail className="mt-0.5 size-4 shrink-0 text-cyan-300" />
+                        <FileText className="mt-0.5 size-4 shrink-0 text-cyan-300" />
                         <span>
-                          <span className="block text-sm font-medium">Extract Emails</span>
+                          <span className="block text-sm font-medium">Personal Emails</span>
                           <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                            Find standard public emails in collected bios.
+                            Copy Gmail, Outlook, Hotmail, and other personal-provider emails.
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void enrichBillyContacts("all-emails")}
+                        className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition hover:bg-accent"
+                      >
+                        <FileText className="mt-0.5 size-4 shrink-0 text-violet-300" />
+                        <span>
+                          <span className="block text-sm font-medium">All Emails</span>
+                          <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                            Copy all public emails, including agency and custom-domain addresses.
                           </span>
                         </span>
                       </button>
@@ -2457,20 +2444,16 @@ function BillyFilterControls({
   filters,
   openSections,
   followerRanges,
-  emailAvailabilityCounts,
   onToggleSection,
   onPresetRange,
-  onEmailAvailability,
   onChange,
   onReset,
 }: {
   filters: BillyFilterSettings;
   openSections: Record<BillyFilterSectionKey, boolean>;
   followerRanges: RangeOption[];
-  emailAvailabilityCounts: EmailAvailabilityCounts;
   onToggleSection: (section: BillyFilterSectionKey) => void;
   onPresetRange: (range: { key: string }) => void;
-  onEmailAvailability: (value: EmailAvailability | "all") => void;
   onChange: (filters: BillyFilterSettings) => void;
   onReset: () => void;
 }) {
@@ -2505,14 +2488,6 @@ function BillyFilterControls({
           onMax={(followersMax) => onChange({ ...filters, followersMax })}
         />
       </FilterDropdown>
-
-      <EmailAvailabilityFilter
-        selections={filters.emailAvailabilitySelections}
-        counts={emailAvailabilityCounts}
-        open={openSections.emailAvailability}
-        onToggle={() => onToggleSection("emailAvailability")}
-        onSelect={onEmailAvailability}
-      />
 
       <button
         type="button"
@@ -2706,7 +2681,7 @@ function getBillyTemplateValueDescription(column: TemplateColumn): string {
 }
 
 function isBillyContactsColumn(column: TemplateColumn): boolean {
-  return column.blockType === "contacts" || normalizeFieldLookupValue(column.label) === "contacts";
+  return isContactsTemplateColumn(column);
 }
 
 function BillyExtensionSessionPanel({
@@ -3731,11 +3706,13 @@ function TemplateBuilder({
                 className="h-9 w-full rounded-md border border-input bg-card px-2 text-xs outline-none ring-ring focus:ring-2"
               >
                 <optgroup label="EasyKOL fields">
-                  {easyKolFields.map((field) => (
-                    <option key={field} value={`field:${field}`}>
-                      {field}
-                    </option>
-                  ))}
+                  {easyKolFields
+                    .filter((field) => field !== "Email")
+                    .map((field) => (
+                      <option key={field} value={`field:${field}`}>
+                        {field}
+                      </option>
+                    ))}
                 </optgroup>
                 <optgroup label="Utility blocks">
                   <option value="contacts">Contacts</option>
@@ -4081,7 +4058,7 @@ function getTemplateBlockValue(column: TemplateColumn): string {
 }
 
 function getBlockDescription(column: TemplateColumn): string {
-  if (column.blockType === "contacts") return "EasyKOL email or full creator bio";
+  if (column.blockType === "contacts") return "Contacts from EasyKOL email or enrichment";
   if (column.blockType === "blank") return "Outputs empty cells";
   if (column.blockType === "field") return column.fieldKey ?? "Choose an EasyKOL field";
   return "Fixed value";
@@ -4162,7 +4139,6 @@ function createBillyFilters(): BillyFilterSettings {
   return {
     ...emptyBillyFilters,
     followerRanges: [],
-    emailAvailabilitySelections: [],
   };
 }
 
@@ -4181,9 +4157,6 @@ function filterBillyCreators(
         billyFollowersRangeOptions,
       )
     ) {
-      return false;
-    }
-    if (!matchesEmailAvailability(data, columnMap, filters.emailAvailabilitySelections)) {
       return false;
     }
     return true;
@@ -4259,18 +4232,13 @@ function matchesBillyRange(value: unknown, min: string, max: string): boolean {
 }
 
 function hasBillyFilters(filters: BillyFilterSettings): boolean {
-  return (
-    filters.followerRanges.length > 0 ||
-    filters.emailAvailabilitySelections.length > 0 ||
-    Boolean(filters.followersMin || filters.followersMax)
-  );
+  return filters.followerRanges.length > 0 || Boolean(filters.followersMin || filters.followersMax);
 }
 
 function clearBillyFilterValue(filters: BillyFilterSettings, key: keyof BillyFilterSettings) {
   if (key === "followersMin") filters.followersMin = "";
   if (key === "followersMax") filters.followersMax = "";
   if (key === "followerRanges") filters.followerRanges = [];
-  if (key === "emailAvailabilitySelections") filters.emailAvailabilitySelections = [];
 }
 
 function getActiveBillyFilterChips(filters: BillyFilterSettings): BillyFilterChip[] {
@@ -4297,13 +4265,6 @@ function getActiveBillyFilterChips(filters: BillyFilterSettings): BillyFilterChi
       action: { type: "fields", fields: ["followersMin", "followersMax"] },
     });
   }
-  filters.emailAvailabilitySelections.forEach((value) =>
-    chips.push({
-      key: `billy-email-${value}`,
-      label: getEmailAvailabilityLabel(value),
-      action: { type: "array", field: "emailAvailabilitySelections", value },
-    }),
-  );
   return chips;
 }
 
@@ -4840,21 +4801,28 @@ function normalizeTemplate(value: unknown): TemplateColumn[] {
       const fieldKey = normalizeEasyKolFieldKey(
         column.fieldKey ?? column.sourceField ?? column.sourceEasyKolField ?? column.sourceBlock,
       );
-      const blockType = normalizeBlockType(
+      const candidateBlockType = normalizeBlockType(
         column.blockType ?? column.type ?? column.sourceType ?? column.sourceBlock,
         fieldKey,
       );
+      const label =
+        stringValue(column.label) ||
+        stringValue(column.outputColumnName) ||
+        stringValue(column.outputName) ||
+        stringValue(column.name) ||
+        `Column ${index + 1}`;
+      const blockType =
+        fieldKey === "Email" ||
+        candidateBlockType === "contacts" ||
+        normalizeFieldLookupValue(label) === "contacts"
+          ? "contacts"
+          : candidateBlockType;
 
       return {
         id: String(column.id || createId("column")),
-        label:
-          stringValue(column.label) ||
-          stringValue(column.outputColumnName) ||
-          stringValue(column.outputName) ||
-          stringValue(column.name) ||
-          `Column ${index + 1}`,
+        label,
         blockType: blockType === "field" && !fieldKey ? "blank" : blockType,
-        fieldKey,
+        fieldKey: blockType === "contacts" ? undefined : fieldKey,
         customValue: stringValue(column.customValue) || stringValue(column.value),
       };
     });
@@ -4938,7 +4906,7 @@ function normalizeEmailAvailabilityArray(
   ) as EmailAvailability[];
 }
 
-type ContactFillMode = "email-then-bio" | "email-only" | "bio-only";
+type ContactFillMode = "personal-emails" | "all-emails" | "bio-only";
 
 function initializeEasyKolContacts(headers: string[], rows: Array<UploadedCreator["data"]>) {
   const initialized = ensureContactsColumn(headers, rows);
@@ -4990,14 +4958,12 @@ function fillBlankContacts({
   headers,
   columnMap,
   mode,
-  findEmailInBio = false,
 }: {
   creators: UploadedCreator[];
   targetCreatorIds: Set<string>;
   headers: string[];
   columnMap: ReturnType<typeof inferColumnMap>;
   mode: ContactFillMode;
-  findEmailInBio?: boolean;
 }) {
   const initialized = ensureContactsColumn(
     headers,
@@ -5015,25 +4981,25 @@ function fillBlankContacts({
 
     const emailColumnValue = getCell(data, columnMap, "Email");
     const bio = getCell(data, columnMap, "Description");
-    const email =
+    const discoveredEmails =
       mode === "bio-only"
-        ? ""
-        : findEmailInBio
-          ? extractFirstEmail(`${emailColumnValue} ${bio}`)
-          : extractFirstEmail(emailColumnValue) || emailColumnValue.trim();
+        ? []
+        : extractEmailAddresses(`${emailColumnValue} ${bio}`).filter(
+            (email) => mode === "all-emails" || classifyEmailAddress(email) === "personal",
+          );
 
-    if (email) {
+    if (discoveredEmails.length > 0) {
       emailCount += 1;
       return {
         ...creator,
         data: {
           ...data,
-          [initialized.contactsHeader]: formatEmailContact(email),
+          [initialized.contactsHeader]: discoveredEmails.map(formatEmailContact).join("\n"),
         },
       };
     }
 
-    if (mode !== "email-only" && bio.trim()) {
+    if (mode === "bio-only" && bio.trim()) {
       bioCount += 1;
       return {
         ...creator,
@@ -5102,6 +5068,14 @@ function formatEmailContact(value: string): string {
   const email = value.trim();
   if (!email) return "";
   return /^email\s*:/i.test(email) ? email : `Email: ${email}`;
+}
+
+function isContactsTemplateColumn(column: TemplateColumn): boolean {
+  return (
+    column.blockType === "contacts" ||
+    (column.blockType === "field" && column.fieldKey === "Email") ||
+    normalizeFieldLookupValue(column.label) === "contacts"
+  );
 }
 
 function cloneTemplate(template: TemplateColumn[]): TemplateColumn[] {
