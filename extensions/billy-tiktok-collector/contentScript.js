@@ -7,7 +7,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message !== "object") return false;
 
   if (message.type === "START_BILLY_SESSION") {
-    if (!isTikTokPage()) {
+    if (!isTikTokCollectionPage()) {
       sendResponse({ ok: false, error: "Open a TikTok hashtag or sound page first." });
       return false;
     }
@@ -147,7 +147,7 @@ function collectTikTokCards() {
 }
 
 function collectTikTokCardsInto(creatorsByUsername, videoLinks) {
-  const videoAnchors = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+  const videoAnchors = getCurrentSourceVideoAnchors();
 
   videoAnchors.forEach((anchor) => {
     const parsed = parseTikTokVideoUrl(anchor.href);
@@ -173,6 +173,63 @@ function collectTikTokCardsInto(creatorsByUsername, videoLinks) {
     creatorsByUsername.set(parsed.username, creator);
     videoLinks.add(parsed.videoUrl);
   });
+}
+
+function getCurrentSourceVideoAnchors() {
+  const root = document.querySelector("main") ?? document.body;
+  if (!root) return [];
+
+  return Array.from(root.querySelectorAll('a[href*="/video/"]')).filter(
+    isCollectableVideoAnchor,
+  );
+}
+
+function isCollectableVideoAnchor(anchor) {
+  if (!anchor?.href || !parseTikTokVideoUrl(anchor.href)) return false;
+  if (isInsideTikTokChrome(anchor)) return false;
+  if (!isElementVisible(anchor)) return false;
+
+  const rect = anchor.getBoundingClientRect();
+  if (rect.width < 90 || rect.height < 120) return false;
+
+  const scanMargin = Math.max(window.innerHeight * 2, 1200);
+  if (rect.bottom < -scanMargin || rect.top > window.innerHeight + scanMargin) {
+    return false;
+  }
+
+  return true;
+}
+
+function isInsideTikTokChrome(element) {
+  return Boolean(
+    element.closest(
+      [
+        "nav",
+        "aside",
+        "header",
+        "footer",
+        '[role="navigation"]',
+        '[role="dialog"]',
+        '[data-e2e="search_top-item-list"]',
+      ].join(","),
+    ),
+  );
+}
+
+function isElementVisible(element) {
+  let current = element;
+  while (current && current !== document.body) {
+    const style = window.getComputedStyle(current);
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      Number(style.opacity) === 0
+    ) {
+      return false;
+    }
+    current = current.parentElement;
+  }
+  return true;
 }
 
 function getBillySessionPayload() {
@@ -239,6 +296,12 @@ function isKatlasPage() {
 
 function isTikTokPage() {
   return window.location.hostname.includes("tiktok.com");
+}
+
+function isTikTokCollectionPage() {
+  if (!isTikTokPage()) return false;
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  return parts[0] === "tag" || parts[0] === "music";
 }
 
 function sendBillyImportToKatlasPage(payload, importId) {

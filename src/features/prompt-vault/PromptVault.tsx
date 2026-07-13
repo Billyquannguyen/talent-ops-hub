@@ -3,6 +3,7 @@ import { Copy, Eye, FileText, Pencil, Plus, Search, Trash2, X } from "lucide-rea
 import type { LucideIcon } from "lucide-react";
 
 import { TopBar } from "@/components/TopBar";
+import { filterVisibleCampaignProfiles } from "@/lib/campaignVisibility";
 import {
   deleteCampaignPromptVaultFromGoogleSheetsOnly,
   loadPromptVaultBundleFromGoogleSheetsOnly,
@@ -82,14 +83,12 @@ export function PromptVault() {
     value: string;
   } | null>(null);
 
-  const activeCampaigns = useMemo(() => campaigns.filter(isActiveCampaign), [campaigns]);
   const campaignOptions = useMemo(() => {
-    const sourceCampaigns = activeCampaigns.length ? activeCampaigns : campaigns;
     return [
       generalPromptCampaign,
-      ...sourceCampaigns.filter((campaign) => campaign.campaignId !== generalPromptCampaignId),
+      ...campaigns.filter((campaign) => campaign.campaignId !== generalPromptCampaignId),
     ];
-  }, [activeCampaigns, campaigns]);
+  }, [campaigns]);
   const categories = useMemo(
     () =>
       Array.from(
@@ -134,8 +133,16 @@ export function PromptVault() {
       .then((bundle) => {
         if (cancelled) return;
 
-        setCampaigns(bundle.campaignProfiles);
-        setPrompts(bundle.campaignPromptVault);
+        const visibleCampaigns = filterVisibleCampaignProfiles(bundle.campaignProfiles);
+        const visibleCampaignIds = new Set(visibleCampaigns.map((campaign) => campaign.campaignId));
+        setCampaigns(visibleCampaigns);
+        setPrompts(
+          bundle.campaignPromptVault.filter(
+            (prompt) =>
+              prompt.campaignId === generalPromptCampaignId ||
+              visibleCampaignIds.has(prompt.campaignId),
+          ),
+        );
 
         const categoriesSetting = bundle.appSettings.find(
           (setting) => setting.settingKey === promptVaultCategoriesSettingKey,
@@ -1132,11 +1139,6 @@ function normalizeCategories(values: unknown[]) {
         .filter((value) => value.toLowerCase() !== "custom"),
     ),
   ).sort((first, second) => first.localeCompare(second));
-}
-
-function isActiveCampaign(campaign: CampaignProfileRecord) {
-  const status = campaign.status.trim().toLowerCase();
-  return !["archived", "deleted", "inactive", "cancelled", "canceled"].includes(status);
 }
 
 function createSnippet(content: string, maxLength = 220) {

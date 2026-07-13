@@ -17,6 +17,11 @@ import type {
   CampaignMemoryCardRecord,
   CentralAppDatabase,
 } from "@/storage/schema";
+import {
+  campaignActiveStatus,
+  filterVisibleCampaignProfiles,
+  isCampaignHiddenStatus,
+} from "@/lib/campaignVisibility";
 
 export const selectedCreatorStatuses = [
   "Contract signed",
@@ -50,6 +55,7 @@ export type GlobalCampaign = {
   id: string;
   campaignName: string;
   campaignCode: string;
+  status: string;
   preferredLanguages: CampaignMemoryLanguage[];
   memoryCards: CampaignMemoryCard[];
   createdAt: string;
@@ -101,21 +107,25 @@ export type CreatorFinancials = {
 
 const legacyActiveCampaignsStorageKey = "katlas-active-campaigns-v1";
 
-export function loadCampaignRegistry(): GlobalCampaignRegistry {
+export function loadCampaignRegistry(
+  options: { includeHidden?: boolean } = {},
+): GlobalCampaignRegistry {
   if (typeof window === "undefined") return { campaigns: [], creatorRecords: [] };
 
   try {
     const database = loadAppDatabase();
-    const registry = databaseToCampaignRegistry(database);
+    const registry = databaseToCampaignRegistry(database, options);
 
-    if (!registry.campaigns.length) return loadLegacyCampaignRegistry() ?? registry;
+    if (!registry.campaigns.length) return loadLegacyCampaignRegistry(options) ?? registry;
     return registry;
   } catch {
-    return loadLegacyCampaignRegistry() ?? { campaigns: [], creatorRecords: [] };
+    return loadLegacyCampaignRegistry(options) ?? { campaigns: [], creatorRecords: [] };
   }
 }
 
-export async function loadCampaignRegistryFromGoogleSheetsOnly(options: { reason?: string } = {}) {
+export async function loadCampaignRegistryFromGoogleSheetsOnly(
+  options: { reason?: string; includeHidden?: boolean } = {},
+) {
   console.info("[CampaignRegistry]", "load-targeted", {
     reason: options.reason ?? "loadCampaignRegistryFromGoogleSheetsOnly",
     at: new Date().toISOString(),
@@ -129,11 +139,11 @@ export async function loadCampaignRegistryFromGoogleSheetsOnly(options: { reason
   database.worksheets.CampaignProfiles = campaignProfiles;
   database.worksheets.CampaignMemoryCards = memoryResult.records;
   database.worksheets.ActiveCampaignCreators = creatorResult.records;
-  return databaseToCampaignRegistry(database);
+  return databaseToCampaignRegistry(database, { includeHidden: options.includeHidden });
 }
 
 export async function loadActiveCampaignRegistryFromGoogleSheetsOnly(
-  options: { reason?: string } = {},
+  options: { reason?: string; includeHidden?: boolean } = {},
 ) {
   console.info("[CampaignRegistry]", "load-active-campaigns-bundle", {
     reason: options.reason ?? "loadActiveCampaignRegistryFromGoogleSheetsOnly",
@@ -143,7 +153,7 @@ export async function loadActiveCampaignRegistryFromGoogleSheetsOnly(
   const database = loadAppDatabase();
   database.worksheets.CampaignProfiles = bundle.campaignProfiles;
   database.worksheets.ActiveCampaignCreators = bundle.activeCampaignCreators;
-  return databaseToCampaignRegistry(database);
+  return databaseToCampaignRegistry(database, { includeHidden: options.includeHidden });
 }
 
 export async function saveCampaignMemoryForCampaign(
@@ -187,7 +197,7 @@ export function saveCampaignRegistry(registry: GlobalCampaignRegistry) {
     campaignCode: campaign.campaignCode,
     country: existingProfiles.get(campaign.id)?.country ?? "",
     preferredLanguages: campaign.preferredLanguages.join(", "),
-    status: existingProfiles.get(campaign.id)?.status ?? "Active",
+    status: campaign.status || existingProfiles.get(campaign.id)?.status || campaignActiveStatus,
     createdAt: campaign.createdAt,
     updatedAt: campaign.updatedAt,
   }));
@@ -338,8 +348,14 @@ function activeCampaignCreatorRecordsToSelectedCreatorRecords(
   );
 }
 
-function databaseToCampaignRegistry(database: CentralAppDatabase): GlobalCampaignRegistry {
-  const campaigns = database.worksheets.CampaignProfiles.map((campaign) =>
+function databaseToCampaignRegistry(
+  database: CentralAppDatabase,
+  options: { includeHidden?: boolean } = {},
+): GlobalCampaignRegistry {
+  const campaignProfiles = options.includeHidden
+    ? database.worksheets.CampaignProfiles
+    : filterVisibleCampaignProfiles(database.worksheets.CampaignProfiles);
+  const campaigns = campaignProfiles.map((campaign) =>
     normalizeCampaign({
       id: campaign.campaignId,
       campaignName: campaign.campaignName,
@@ -387,6 +403,7 @@ export function createCampaign(campaignName: string, campaignCode: string): Glob
     id: createId("campaign"),
     campaignName: campaignName.trim(),
     campaignCode: campaignCode.trim().toUpperCase(),
+    status: campaignActiveStatus,
     preferredLanguages: inferPreferredLanguages(campaignName),
     memoryCards: createDefaultMemoryCards(),
     createdAt: now,
@@ -485,6 +502,7 @@ function createDefaultCampaignRegistry(): GlobalCampaignRegistry {
         id: createId("campaign"),
         campaignName: "Dola Thailand",
         campaignCode: "DOLA-TH",
+        status: campaignActiveStatus,
         preferredLanguages: ["Thai", "English"],
         memoryCards: createDefaultMemoryCards(),
         createdAt: now,
@@ -494,6 +512,7 @@ function createDefaultCampaignRegistry(): GlobalCampaignRegistry {
         id: createId("campaign"),
         campaignName: "Dola Philippines",
         campaignCode: "DOLA-PH",
+        status: campaignActiveStatus,
         preferredLanguages: ["Filipino", "English"],
         memoryCards: createDefaultMemoryCards(),
         createdAt: now,
@@ -503,6 +522,7 @@ function createDefaultCampaignRegistry(): GlobalCampaignRegistry {
         id: createId("campaign"),
         campaignName: "Dola UK",
         campaignCode: "DOLA-UK",
+        status: campaignActiveStatus,
         preferredLanguages: ["English"],
         memoryCards: createDefaultMemoryCards(),
         createdAt: now,
@@ -513,7 +533,9 @@ function createDefaultCampaignRegistry(): GlobalCampaignRegistry {
   };
 }
 
-function loadLegacyCampaignRegistry(): GlobalCampaignRegistry | null {
+function loadLegacyCampaignRegistry(
+  options: { includeHidden?: boolean } = {},
+): GlobalCampaignRegistry | null {
   if (typeof window === "undefined") return null;
 
   try {
@@ -523,8 +545,7 @@ function loadLegacyCampaignRegistry(): GlobalCampaignRegistry | null {
     if (!Array.isArray(parsed) || parsed.length === 0) return null;
     const now = new Date().toISOString();
 
-    return {
-      campaigns: parsed.map((value) => {
+    const campaigns = parsed.map((value) => {
         const campaign = isRecord(value) ? value : {};
         const name =
           stringValue(campaign.name) || stringValue(campaign.campaignName) || "Untitled Campaign";
@@ -536,6 +557,7 @@ function loadLegacyCampaignRegistry(): GlobalCampaignRegistry | null {
             stringValue(campaign.campaignCode) ||
             stringValue(campaign.campaignId) ||
             createCampaignCode(name),
+          status: normalizeCampaignStatus(campaign.status),
           preferredLanguages: normalizePreferredLanguages(
             campaign.preferredLanguages,
             inferPreferredLanguages(name),
@@ -544,7 +566,12 @@ function loadLegacyCampaignRegistry(): GlobalCampaignRegistry | null {
           createdAt: stringValue(campaign.createdAt) || now,
           updatedAt: stringValue(campaign.updatedAt) || now,
         };
-      }),
+      });
+
+    return {
+      campaigns: options.includeHidden
+        ? campaigns
+        : campaigns.filter((campaign) => !isCampaignHiddenStatus(campaign.status)),
       creatorRecords: [],
     };
   } catch {
@@ -586,6 +613,7 @@ function normalizeCampaign(value: unknown): GlobalCampaign {
     id: stringValue(campaign.id) || createId("campaign"),
     campaignName: name,
     campaignCode: code.toUpperCase(),
+    status: normalizeCampaignStatus(campaign.status),
     preferredLanguages: normalizePreferredLanguages(
       campaign.preferredLanguages,
       inferPreferredLanguages(name),
@@ -594,6 +622,12 @@ function normalizeCampaign(value: unknown): GlobalCampaign {
     createdAt,
     updatedAt: stringValue(campaign.updatedAt) || createdAt,
   };
+}
+
+function normalizeCampaignStatus(value: unknown): string {
+  const status = stringValue(value);
+  if (!status) return campaignActiveStatus;
+  return isCampaignHiddenStatus(status) ? "Hidden" : campaignActiveStatus;
 }
 
 function normalizeCreatorRecord(value: unknown): SelectedCreatorRecord {

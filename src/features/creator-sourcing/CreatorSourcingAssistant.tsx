@@ -36,6 +36,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { filterVisibleCampaignProfiles } from "@/lib/campaignVisibility";
 import { formatCountryLabel, matchesCountryQuery } from "@/lib/countries";
 import {
   deleteSourcingTemplateFromGoogleSheetsOnly,
@@ -4599,7 +4600,7 @@ function loadProjects(database: {
   };
 }): SourcingProject[] {
   if (typeof window === "undefined") return [];
-  const campaigns = database.worksheets.CampaignProfiles;
+  const campaigns = filterVisibleCampaignProfiles(database.worksheets.CampaignProfiles);
   const settings = new Map(
     database.worksheets.AppSettings.map((setting) => [setting.settingKey, setting.settingValue]),
   );
@@ -5065,9 +5066,7 @@ function extractFirstEmail(value: string): string {
 }
 
 function formatEmailContact(value: string): string {
-  const email = value.trim();
-  if (!email) return "";
-  return /^email\s*:/i.test(email) ? email : `Email: ${email}`;
+  return value.trim().replace(/^email\s*:\s*/i, "");
 }
 
 function isContactsTemplateColumn(column: TemplateColumn): boolean {

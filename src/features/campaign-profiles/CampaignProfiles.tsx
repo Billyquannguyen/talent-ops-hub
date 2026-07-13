@@ -1,17 +1,23 @@
 import {
   BadgeDollarSign,
   CalendarDays,
+  Check,
   ClipboardList,
+  Copy,
   FileText,
+  Maximize2,
   Megaphone,
   Package,
   Pencil,
   Plus,
+  RotateCcw,
   Save,
   TrendingUp,
   Trash2,
   Users,
   Video,
+  X,
+  EyeOff,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -43,6 +49,11 @@ import {
   type CampaignMemoryLanguage,
 } from "@/lib/campaignRegistry";
 import type { CampaignProjectInfoRecord } from "@/storage/schema";
+import {
+  campaignActiveStatus,
+  campaignHiddenStatus,
+  isCampaignHiddenStatus,
+} from "@/lib/campaignVisibility";
 
 type CampaignDraft = {
   id?: string;
@@ -143,7 +154,7 @@ export function CampaignProfiles() {
 
   useEffect(() => {
     skipNextRegistrySave.current = true;
-    setRegistry(loadCampaignRegistry());
+    setRegistry(loadCampaignRegistry({ includeHidden: true }));
     setLoaded(true);
   }, []);
 
@@ -153,7 +164,10 @@ export function CampaignProfiles() {
     async function loadSharedRoiData() {
       try {
         const [nextRegistry, profileRecords] = await Promise.all([
-          loadActiveCampaignRegistryFromGoogleSheetsOnly({ reason: "campaign-profiles:roi" }),
+          loadActiveCampaignRegistryFromGoogleSheetsOnly({
+            reason: "campaign-profiles:roi",
+            includeHidden: true,
+          }),
           listEmployeeProfilesFromGoogleSheetsOnly(),
         ]);
         if (cancelled) return;
@@ -196,7 +210,20 @@ export function CampaignProfiles() {
     saveCampaignRegistry(registry);
   }, [loaded, registry]);
 
-  const monthlyRoi = calculateMonthlyRoi(registry, roiMonth, profile);
+  const activeCampaigns = registry.campaigns.filter(
+    (campaign) => !isCampaignHiddenStatus(campaign.status),
+  );
+  const hiddenCampaigns = registry.campaigns.filter((campaign) =>
+    isCampaignHiddenStatus(campaign.status),
+  );
+  const activeCampaignIds = new Set(activeCampaigns.map((campaign) => campaign.id));
+  const visibleRegistry: GlobalCampaignRegistry = {
+    campaigns: activeCampaigns,
+    creatorRecords: registry.creatorRecords.filter((record) =>
+      activeCampaignIds.has(record.campaignRegistryId),
+    ),
+  };
+  const monthlyRoi = calculateMonthlyRoi(visibleRegistry, roiMonth, profile);
 
   function saveCampaign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -251,6 +278,26 @@ export function CampaignProfiles() {
       campaigns: current.campaigns.filter((item) => item.id !== campaignId),
       creatorRecords: current.creatorRecords.filter(
         (record) => record.campaignRegistryId !== campaignId,
+      ),
+    }));
+  }
+
+  function toggleCampaignHidden(campaignId: string, hidden: boolean) {
+    const campaign = registry.campaigns.find((item) => item.id === campaignId);
+    const nextStatus = hidden ? campaignHiddenStatus : campaignActiveStatus;
+    const confirmed =
+      !hidden ||
+      typeof window === "undefined" ||
+      window.confirm(
+        `Hide ${campaign?.campaignName ?? "this campaign"}? It will disappear from Sourcing, Outreach, Prompt Vault, and Active Campaigns until you restore it here.`,
+      );
+    if (!confirmed) return;
+
+    const now = new Date().toISOString();
+    setRegistry((current) => ({
+      ...current,
+      campaigns: current.campaigns.map((item) =>
+        item.id === campaignId ? { ...item, status: nextStatus, updatedAt: now } : item,
       ),
     }));
   }
@@ -332,11 +379,12 @@ export function CampaignProfiles() {
                 reference these profiles.
               </p>
             </div>
-            <div className="grid w-full gap-0 border-y border-border py-4 sm:grid-cols-2 lg:max-w-sm">
-              <Metric label="Campaigns" value={registry.campaigns.length.toLocaleString()} />
+            <div className="grid w-full gap-0 border-y border-border py-4 sm:grid-cols-3 lg:max-w-lg">
+              <Metric label="Active Projects" value={activeCampaigns.length.toLocaleString()} />
+              <Metric label="Hidden" value={hiddenCampaigns.length.toLocaleString()} />
               <Metric
                 label="Creator Records"
-                value={registry.creatorRecords.length.toLocaleString()}
+                value={visibleRegistry.creatorRecords.length.toLocaleString()}
               />
             </div>
           </div>
@@ -347,7 +395,7 @@ export function CampaignProfiles() {
             <div>
               <p className="text-sm font-medium">Campaign profiles</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                This is the only place to create, edit, or delete campaigns.
+                This is the only place to create, edit, hide, restore, or delete campaigns.
               </p>
             </div>
             <button
@@ -365,6 +413,7 @@ export function CampaignProfiles() {
                 <tr>
                   <TableHeader>Campaign Name</TableHeader>
                   <TableHeader>Campaign ID</TableHeader>
+                  <TableHeader>Status</TableHeader>
                   <TableHeader>Preferred Languages</TableHeader>
                   <TableHeader>Memory Cards</TableHeader>
                   <TableHeader>Actions</TableHeader>
@@ -373,13 +422,29 @@ export function CampaignProfiles() {
               <tbody>
                 {registry.campaigns.length ? (
                   registry.campaigns.map((campaign) => (
-                    <tr key={campaign.id} className="border-t border-border">
+                    <tr
+                      key={campaign.id}
+                      className={`border-t border-border ${
+                        isCampaignHiddenStatus(campaign.status) ? "bg-muted/20 opacity-70" : ""
+                      }`}
+                    >
                       <TableCell>
                         <span className="font-medium">{campaign.campaignName}</span>
                       </TableCell>
                       <TableCell>
                         <span className="rounded-full border border-border bg-background px-2 py-1 text-xs">
                           {campaign.campaignCode}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`rounded-full border px-2 py-1 text-xs ${
+                            isCampaignHiddenStatus(campaign.status)
+                              ? "border-amber-400/40 bg-amber-400/10 text-amber-100"
+                              : "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+                          }`}
+                        >
+                          {isCampaignHiddenStatus(campaign.status) ? "Hidden" : "Active"}
                         </span>
                       </TableCell>
                       <TableCell>
@@ -415,6 +480,23 @@ export function CampaignProfiles() {
                             <Pencil className="size-3.5" />
                             Edit
                           </button>
+                          {isCampaignHiddenStatus(campaign.status) ? (
+                            <button
+                              onClick={() => toggleCampaignHidden(campaign.id, false)}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition hover:bg-accent"
+                            >
+                              <RotateCcw className="size-3.5" />
+                              Restore
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => toggleCampaignHidden(campaign.id, true)}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition hover:bg-accent"
+                            >
+                              <EyeOff className="size-3.5" />
+                              Hide
+                            </button>
+                          )}
                           <button
                             onClick={() => deleteCampaign(campaign.id)}
                             className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition hover:bg-accent"
@@ -429,7 +511,7 @@ export function CampaignProfiles() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="px-4 py-10 text-center text-sm text-muted-foreground"
                     >
                       No campaign profiles yet. Add one before tracking selected creators.
@@ -555,11 +637,31 @@ function ProjectInfoModal({
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const [expandedSectionKey, setExpandedSectionKey] = useState<ProjectInfoTextKey | null>(null);
+  const [copiedSectionKey, setCopiedSectionKey] = useState<ProjectInfoTextKey | null>(null);
+  const expandedSection =
+    projectInfoSections.find((section) => section.key === expandedSectionKey) ?? null;
+
+  async function copyProjectInfoSection(section: (typeof projectInfoSections)[number]) {
+    const value = state.record[section.key].trim();
+    if (!value) return;
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedSectionKey(section.key);
+      window.setTimeout(() => {
+        setCopiedSectionKey((current) => (current === section.key ? null : current));
+      }, 1400);
+    } catch {
+      setCopiedSectionKey(null);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
       <form
         onSubmit={onSubmit}
-        className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl"
+        className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl"
       >
         <div className="border-b border-border p-5">
           <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
@@ -600,36 +702,126 @@ function ProjectInfoModal({
           {status ? <p className="mt-3 text-xs text-muted-foreground">{status}</p> : null}
         </div>
 
-        <div className="grid gap-4 p-5 lg:grid-cols-2">
+        <div className="grid gap-4 p-5 xl:grid-cols-2">
           {projectInfoSections.map((section) => {
             const Icon = section.icon;
+            const value = state.record[section.key];
+            const hasValue = value.trim().length > 0;
+            const copied = copiedSectionKey === section.key;
             return (
               <section
                 key={section.key}
-                className="rounded-xl border border-border bg-background/70 p-4"
+                className="flex min-h-[310px] flex-col rounded-xl border border-border bg-background/70 p-4 shadow-sm shadow-black/10"
               >
-                <div className="mb-3 flex items-start gap-3">
-                  <div className="katlas-panel-icon shrink-0">
-                    <Icon className="size-4" />
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="katlas-panel-icon shrink-0">
+                      <Icon className="size-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold">{section.title}</h3>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {section.description}
+                      </p>
+                      <p className="mt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/75">
+                        {value.length.toLocaleString()} chars
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-semibold">{section.title}</h3>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {section.description}
-                    </p>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      disabled={!hasValue}
+                      onClick={() => copyProjectInfoSection(section)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedSectionKey(section.key)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent"
+                    >
+                      <Maximize2 className="size-3.5" />
+                      View full
+                    </button>
                   </div>
                 </div>
                 <textarea
-                  value={state.record[section.key]}
+                  value={value}
                   placeholder={section.placeholder}
-                  rows={8}
+                  rows={7}
                   onChange={(event) => onChange({ [section.key]: event.target.value })}
-                  className="min-h-[180px] w-full resize-y rounded-lg border border-input bg-card px-3 py-3 text-sm leading-6 outline-none ring-ring placeholder:text-muted-foreground/60 focus:ring-2"
+                  className="min-h-[170px] flex-1 resize-y rounded-lg border border-input bg-card px-3 py-3 text-sm leading-6 outline-none ring-ring placeholder:text-muted-foreground/60 focus:ring-2"
                 />
               </section>
             );
           })}
         </div>
+
+        {expandedSection ? (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/85 px-4 backdrop-blur-md">
+            <section className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-border p-5">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Project Info / Full View
+                  </p>
+                  <h3 className="mt-2 text-xl font-semibold">{expandedSection.title}</h3>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {expandedSection.description}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpandedSectionKey(null)}
+                  className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-background transition hover:bg-accent"
+                  aria-label="Close full view"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 p-5">
+                <textarea
+                  value={state.record[expandedSection.key]}
+                  placeholder={expandedSection.placeholder}
+                  onChange={(event) => onChange({ [expandedSection.key]: event.target.value })}
+                  className="h-[56vh] min-h-[360px] w-full resize-none rounded-xl border border-input bg-background px-4 py-4 text-sm leading-6 outline-none ring-ring placeholder:text-muted-foreground/60 focus:ring-2"
+                />
+              </div>
+
+              <div className="flex flex-col gap-3 border-t border-border p-5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {state.record[expandedSection.key].length.toLocaleString()} characters
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={!state.record[expandedSection.key].trim()}
+                    onClick={() => copyProjectInfoSection(expandedSection)}
+                    className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {copiedSectionKey === expandedSection.key ? (
+                      <Check className="size-4" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )}
+                    {copiedSectionKey === expandedSection.key ? "Copied" : "Copy"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSectionKey(null)}
+                    className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
       </form>
     </div>
   );

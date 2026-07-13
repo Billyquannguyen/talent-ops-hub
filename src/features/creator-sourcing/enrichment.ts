@@ -177,7 +177,7 @@ export function formatContacts(contactInfo: ContactInfo): string {
 
   const lines: string[] = [];
   if (contactInfo.email) {
-    lines.push(`Email: ${contactInfo.email}`);
+    lines.push(contactInfo.email);
   }
   if (contactInfo.line) {
     lines.push(`Line: ${formatHandle(contactInfo.line)}`);

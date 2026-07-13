@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Billy TikTok Collector",
   "description": "Collect loaded TikTok hashtag or sound page creators and send them to Billy's Scraper System.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Billy TikTok Collector"

@@ -28,6 +28,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { TopBar } from "@/components/TopBar";
+import { filterVisibleCampaignProfiles } from "@/lib/campaignVisibility";
 import {
   campaignMemoryLanguages,
   loadCampaignRegistry,
@@ -140,9 +141,16 @@ export function CreatorOutreachAssistant() {
   const [templateDraft, setTemplateDraft] = useState<OutreachTemplate | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
   const [translationStatus, setTranslationStatus] = useState("");
+  const [isDetectingLanguage, setIsDetectingLanguage] = useState(false);
+  const [isTranslatingCreatorMessage, setIsTranslatingCreatorMessage] = useState(false);
+  const [isTranslatingReply, setIsTranslatingReply] = useState(false);
+  const [isPolishingReply, setIsPolishingReply] = useState(false);
   const replyEditorTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const translatedReplyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedTemplateIdRef = useRef("");
+  const languageDetectionRequestRef = useRef(0);
+  const creatorTranslationRequestRef = useRef(0);
+  const replyTranslationRequestRef = useRef(0);
   const activeTextTargetRef = useRef<{
     id: TextInsertTarget;
     element: HTMLTextAreaElement;
@@ -160,9 +168,6 @@ export function CreatorOutreachAssistant() {
   const replyTemplateOptions = sourceCompatibleTemplates.length
     ? sourceCompatibleTemplates
     : templates;
-  const selectedTemplate =
-    replyTemplateOptions.find((template) => template.id === selectedTemplateId) ??
-    replyTemplateOptions[0];
   const defaultTargetLanguage = getLanguageLabel(settings.defaultTargetLanguage ?? "english");
 
   useEffect(() => {
@@ -180,7 +185,7 @@ export function CreatorOutreachAssistant() {
           : currentSelectedTemplateId &&
               nextTemplates.some((template) => template.id === currentSelectedTemplateId)
             ? currentSelectedTemplateId
-            : nextTemplates[0]?.id) ?? "";
+            : "") ?? "";
 
       selectedTemplateIdRef.current = nextSelectedTemplateId;
       setDatabase((current) => ({
@@ -199,7 +204,7 @@ export function CreatorOutreachAssistant() {
     let cancelled = false;
     const loadedDatabase = loadKatlasBuddyDatabase();
     const loadedRegistry = loadCampaignRegistry();
-    const loadedTemplateId = loadedDatabase.worksheets.Templates[0]?.id ?? "";
+    const loadedTemplateId = "";
     setDatabase(loadedDatabase);
     setCampaignRegistry(loadedRegistry);
     selectedTemplateIdRef.current = loadedTemplateId;
@@ -240,107 +245,42 @@ export function CreatorOutreachAssistant() {
   }, [database, loaded]);
 
   useEffect(() => {
-    if (!replyTemplateOptions.length) return;
-    if (
-      selectedTemplateId &&
-      replyTemplateOptions.some((template) => template.id === selectedTemplateId)
-    ) {
-      return;
-    }
-    setSelectedTemplateId(replyTemplateOptions[0].id);
-  }, [replyTemplateOptions, selectedTemplateId]);
-
-  useEffect(() => {
-    let cancelled = false;
+    const requestId = ++languageDetectionRequestRef.current;
 
     if (!creatorMessage.trim()) {
       setDetectedLanguage("English");
       setEnglishTranslation("");
       setTranslationStatus("");
+      setIsDetectingLanguage(false);
       return;
     }
 
     const timeout = window.setTimeout(() => {
       void (async () => {
         try {
+          setIsDetectingLanguage(true);
           setTranslationStatus("Detecting language...");
           const language = await detectLanguage(creatorMessage);
-          if (cancelled) return;
+          if (requestId !== languageDetectionRequestRef.current) return;
 
           setDetectedLanguage(language);
-          setTargetLanguage(resolveReplyTargetLanguage(language, defaultTargetLanguage));
-          setTranslationStatus("Translating creator message...");
-
-          const translation = await translateText({
-            text: creatorMessage,
-            sourceLanguage: language,
-            targetLanguage: "English",
-          });
-
-          if (!cancelled) {
-            setEnglishTranslation(translation);
-            setTranslationStatus("");
-          }
+          changeTargetLanguage(resolveReplyTargetLanguage(language, defaultTargetLanguage));
+          setTranslationStatus("");
         } catch (error) {
-          if (!cancelled) {
-            setEnglishTranslation("");
-            setTranslationStatus(getTranslationErrorMessage(error));
+          if (requestId !== languageDetectionRequestRef.current) return;
+          setTranslationStatus(getTranslationErrorMessage(error));
+        } finally {
+          if (requestId === languageDetectionRequestRef.current) {
+            setIsDetectingLanguage(false);
           }
         }
       })();
     }, 350);
 
     return () => {
-      cancelled = true;
       window.clearTimeout(timeout);
     };
   }, [creatorMessage, defaultTargetLanguage]);
-
-  useEffect(() => {
-    if (!selectedTemplate) {
-      setReplyEditor("");
-      return;
-    }
-
-    setReplyEditor(selectedTemplate.body);
-  }, [selectedTemplate]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!replyEditor.trim()) {
-      setTranslatedReply("");
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      void (async () => {
-        try {
-          setTranslationStatus("Translating reply...");
-          const translation = await translateText({
-            text: replyEditor,
-            sourceLanguage: "english",
-            targetLanguage,
-          });
-
-          if (!cancelled) {
-            setTranslatedReply(translation);
-            setTranslationStatus("");
-          }
-        } catch (error) {
-          if (!cancelled) {
-            setTranslatedReply("");
-            setTranslationStatus(getTranslationErrorMessage(error));
-          }
-        }
-      })();
-    }, 350);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-    };
-  }, [replyEditor, targetLanguage]);
 
   function updateSettings(patch: Partial<KatlasBuddyDatabase["worksheets"]["Settings"]>) {
     const now = new Date().toISOString();
@@ -359,15 +299,50 @@ export function CreatorOutreachAssistant() {
 
   function changeCreatorSource(source: CreatorMessageSource) {
     updateSettings({ defaultSource: source });
-    setTargetLanguage(resolveReplyTargetLanguage(detectedLanguage, defaultTargetLanguage));
+    changeTargetLanguage(resolveReplyTargetLanguage(detectedLanguage, defaultTargetLanguage));
 
     const currentTemplate = templates.find((template) => template.id === selectedTemplateId);
     if (currentTemplate && isTemplateCompatibleWithSource(currentTemplate, source)) return;
 
-    const nextTemplate = templates.find((template) =>
-      isTemplateCompatibleWithSource(template, source),
-    );
-    if (nextTemplate) setSelectedTemplateId(nextTemplate.id);
+    setSelectedTemplateId("");
+  }
+
+  function changeCreatorMessage(value: string) {
+    creatorTranslationRequestRef.current += 1;
+    setCreatorMessage(value);
+    setEnglishTranslation("");
+    setIsTranslatingCreatorMessage(false);
+  }
+
+  function changeReplyEditor(value: string) {
+    replyTranslationRequestRef.current += 1;
+    setReplyEditor(value);
+    setTranslatedReply("");
+    setIsTranslatingReply(false);
+  }
+
+  function selectReplyTemplate(templateId: string) {
+    setSelectedTemplateId(templateId);
+    const template = replyTemplateOptions.find((item) => item.id === templateId);
+    if (!template) return;
+    replyTranslationRequestRef.current += 1;
+    setReplyEditor(template.body);
+    setTranslatedReply("");
+    setIsTranslatingReply(false);
+    setCopyStatus(`Loaded ${template.templateName}.`);
+  }
+
+  function changeTargetLanguage(language: string) {
+    replyTranslationRequestRef.current += 1;
+    setTargetLanguage(language);
+    setTranslatedReply("");
+    setIsTranslatingReply(false);
+  }
+
+  function changeTranslatedReply(value: string) {
+    replyTranslationRequestRef.current += 1;
+    setTranslatedReply(value);
+    setIsTranslatingReply(false);
   }
 
   function openNewTemplateModal() {
@@ -480,15 +455,74 @@ export function CreatorOutreachAssistant() {
     }
   }
 
+  async function translateCreatorMessageToEnglish() {
+    const text = creatorMessage.trim();
+    if (!text) return;
+    const requestId = ++creatorTranslationRequestRef.current;
+    setIsTranslatingCreatorMessage(true);
+    setTranslationStatus("Translating creator message...");
+    try {
+      const translation = await translateText({
+        text,
+        sourceLanguage: detectedLanguage,
+        targetLanguage: "English",
+      });
+      if (requestId !== creatorTranslationRequestRef.current) return;
+      setEnglishTranslation(translation);
+      setTranslationStatus("");
+    } catch (error) {
+      if (requestId !== creatorTranslationRequestRef.current) return;
+      setTranslationStatus(getTranslationErrorMessage(error));
+    } finally {
+      if (requestId === creatorTranslationRequestRef.current) {
+        setIsTranslatingCreatorMessage(false);
+      }
+    }
+  }
+
+  async function translateCurrentReply() {
+    const text = replyEditor.trim();
+    if (!text) return;
+    const requestId = ++replyTranslationRequestRef.current;
+    setIsTranslatingReply(true);
+    setTranslationStatus(`Translating reply to ${targetLanguage}...`);
+    try {
+      const translation = await translateText({
+        text,
+        sourceLanguage: "English",
+        targetLanguage,
+      });
+      if (requestId !== replyTranslationRequestRef.current) return;
+      setTranslatedReply(translation);
+      setTranslationStatus("");
+    } catch (error) {
+      if (requestId !== replyTranslationRequestRef.current) return;
+      setTranslationStatus(getTranslationErrorMessage(error));
+    } finally {
+      if (requestId === replyTranslationRequestRef.current) {
+        setIsTranslatingReply(false);
+      }
+    }
+  }
+
   async function polishCurrentReply() {
     if (!replyEditor.trim()) return;
+    const requestId = ++replyTranslationRequestRef.current;
+    setIsPolishingReply(true);
     setTranslationStatus("Polishing reply...");
     try {
       const polished = await polishReply(replyEditor, "English");
+      if (requestId !== replyTranslationRequestRef.current) return;
       setReplyEditor(polished);
+      setTranslatedReply("");
       setTranslationStatus("");
     } catch (error) {
+      if (requestId !== replyTranslationRequestRef.current) return;
       setTranslationStatus(getTranslationErrorMessage(error));
+    } finally {
+      if (requestId === replyTranslationRequestRef.current) {
+        setIsPolishingReply(false);
+      }
     }
   }
 
@@ -752,11 +786,15 @@ export function CreatorOutreachAssistant() {
       !target.element.isConnected ||
       (target.id === "templateBody" && !templateDraft)
     ) {
-      setReplyEditor((current) => (current.trim() ? `${current}\n\n${content}` : content));
+      replyTranslationRequestRef.current += 1;
+      setReplyEditor((current) => insertSmartFieldIntoText(current, content));
+      setTranslatedReply("");
       return;
     }
 
-    insertTextIntoTarget(target.id, content, target.element, target.start, target.end);
+    insertTextIntoTarget(target.id, content, target.element, target.start, target.end, {
+      replacePlaceholder: true,
+    });
   }
 
   function insertTextIntoTarget(
@@ -765,13 +803,20 @@ export function CreatorOutreachAssistant() {
     textarea: HTMLTextAreaElement,
     start = textarea.selectionStart,
     end = textarea.selectionEnd,
-    options: { blockInsert?: boolean } = {},
+    options: { blockInsert?: boolean; replacePlaceholder?: boolean } = {},
   ) {
     const blockInsert = options.blockInsert ?? true;
     let nextPosition = start + content.length;
     const applyInsert = (current: string) => {
-      const safeStart = Math.min(Math.max(start, 0), current.length);
-      const safeEnd = Math.min(Math.max(end, safeStart), current.length);
+      let safeStart = Math.min(Math.max(start, 0), current.length);
+      let safeEnd = Math.min(Math.max(end, safeStart), current.length);
+      if (options.replacePlaceholder) {
+        const placeholderRange = findPlaceholderRange(current, safeStart, safeEnd);
+        if (placeholderRange) {
+          safeStart = placeholderRange.start;
+          safeEnd = placeholderRange.end;
+        }
+      }
       const spacer =
         blockInsert && current && safeStart === current.length && !current.endsWith("\n")
           ? "\n\n"
@@ -780,19 +825,31 @@ export function CreatorOutreachAssistant() {
       return `${current.slice(0, safeStart)}${spacer}${content}${current.slice(safeEnd)}`;
     };
 
-    if (id === "creatorMessage") setCreatorMessage(applyInsert);
-    if (id === "replyEditor") setReplyEditor(applyInsert);
-    if (id === "translatedReply") setTranslatedReply(applyInsert);
+    if (id === "creatorMessage") {
+      creatorTranslationRequestRef.current += 1;
+      setCreatorMessage(applyInsert);
+      setEnglishTranslation("");
+    }
+    if (id === "replyEditor") {
+      replyTranslationRequestRef.current += 1;
+      setReplyEditor(applyInsert);
+      setTranslatedReply("");
+    }
+    if (id === "translatedReply") {
+      replyTranslationRequestRef.current += 1;
+      setTranslatedReply(applyInsert);
+      setIsTranslatingReply(false);
+    }
     if (id === "templateBody") {
-      setTemplateDraft((current) =>
-        current
-          ? {
-              ...current,
-              body: applyInsert(current.body),
-              fields: extractTemplateFields(applyInsert(current.body)),
-            }
-          : current,
-      );
+      setTemplateDraft((current) => {
+        if (!current) return current;
+        const nextBody = applyInsert(current.body);
+        return {
+          ...current,
+          body: nextBody,
+          fields: extractTemplateFields(nextBody),
+        };
+      });
     }
 
     activeTextTargetRef.current = { id, element: textarea, start: nextPosition, end: nextPosition };
@@ -818,7 +875,9 @@ export function CreatorOutreachAssistant() {
     event.preventDefault();
     const textarea = event.currentTarget;
     textarea.focus();
-    insertTextIntoTarget(id, content, textarea, textarea.selectionStart, textarea.selectionEnd);
+    insertTextIntoTarget(id, content, textarea, textarea.selectionStart, textarea.selectionEnd, {
+      replacePlaceholder: true,
+    });
   }
 
   function insertEmoji(emoji: string) {
@@ -900,8 +959,8 @@ export function CreatorOutreachAssistant() {
             <div className="grid min-h-[122px] gap-3 rounded-lg border border-border/75 bg-background/65 p-3 md:grid-cols-2 md:items-end">
               <ControlBlock
                 label="Auto Detect Language"
-                value={getLanguageBadge(detectedLanguage)}
-                helper="Paste a creator message to translate it into English."
+                value={isDetectingLanguage ? "Detecting..." : getLanguageBadge(detectedLanguage)}
+                helper="Language detection is automatic. Translation runs only when you choose it."
               />
               <ControlBlock
                 label="Output"
@@ -914,7 +973,7 @@ export function CreatorOutreachAssistant() {
               <EditorField label="Message Input Box">
                 <textarea
                   value={creatorMessage}
-                  onChange={(event) => setCreatorMessage(event.target.value)}
+                  onChange={(event) => changeCreatorMessage(event.target.value)}
                   onFocus={(event) => rememberTextTarget("creatorMessage", event.currentTarget)}
                   onClick={(event) => rememberTextTarget("creatorMessage", event.currentTarget)}
                   onKeyUp={(event) => rememberTextTarget("creatorMessage", event.currentTarget)}
@@ -934,8 +993,20 @@ export function CreatorOutreachAssistant() {
               </EditorField>
             </div>
 
-            <div className="mt-3 flex min-h-10 items-center justify-end border-t border-border pt-3">
+            <div className="mt-3 flex min-h-10 flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
               <button
+                type="button"
+                onClick={() => void translateCreatorMessageToEnglish()}
+                disabled={
+                  !creatorMessage.trim() || isDetectingLanguage || isTranslatingCreatorMessage
+                }
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Languages className="size-4" />
+                {isTranslatingCreatorMessage ? "Translating..." : "Translate to English"}
+              </button>
+              <button
+                type="button"
                 onClick={() => copyText(englishTranslation, "Translation")}
                 disabled={!englishTranslation.trim()}
                 className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
@@ -947,7 +1018,7 @@ export function CreatorOutreachAssistant() {
           </Panel>
 
           <Panel title="Reply Builder" icon={FileInput}>
-            <div className="grid min-h-[122px] gap-3 rounded-lg border border-border/75 bg-background/65 p-3 xl:grid-cols-[150px_minmax(0,1fr)_124px_176px] xl:items-end">
+            <div className="grid min-h-[122px] gap-3 rounded-lg border border-border/75 bg-background/65 p-3 xl:grid-cols-[150px_minmax(0,1fr)_176px] xl:items-end">
               <ReplyTypeField value={creatorSource} onChange={changeCreatorSource} />
               <div className="flex items-end gap-2">
                 <div className="min-w-0 flex-1">
@@ -955,9 +1026,12 @@ export function CreatorOutreachAssistant() {
                     <select
                       aria-label="Template"
                       value={selectedTemplateId}
-                      onChange={(event) => setSelectedTemplateId(event.target.value)}
+                      onChange={(event) => selectReplyTemplate(event.target.value)}
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
                     >
+                      <option value="" disabled>
+                        Select a template
+                      </option>
                       {replyTemplateOptions.map((template) => (
                         <option key={template.id} value={template.id}>
                           {template.templateName}
@@ -976,39 +1050,41 @@ export function CreatorOutreachAssistant() {
                   <Settings2 className="size-4" />
                 </button>
               </div>
-              <div className="relative">
-                <span className="mb-1 block text-xs font-medium text-muted-foreground">Tools</span>
-                <button
-                  type="button"
-                  onClick={() => setIsEmojiPickerOpen((current) => !current)}
-                  title="Insert emoji"
-                  aria-label="Insert emoji"
-                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                >
-                  <SmilePlus className="size-4" />
-                  Emoji
-                </button>
-                {isEmojiPickerOpen ? (
-                  <EmojiPicker
-                    emojis={outreachEmojis}
-                    onSelect={(emoji) => {
-                      insertEmoji(emoji);
-                      setIsEmojiPickerOpen(false);
-                    }}
-                  />
-                ) : null}
-              </div>
               <FieldLabel label="Language">
-                <LanguageSelect value={targetLanguage} onChange={setTargetLanguage} />
+                <LanguageSelect value={targetLanguage} onChange={changeTargetLanguage} />
               </FieldLabel>
             </div>
 
             <div className="mt-3 grid min-h-0 flex-1 gap-3 md:grid-cols-2">
-              <EditorField label="Original Reply">
+              <EditorField
+                label="Original Reply"
+                action={
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsEmojiPickerOpen((current) => !current)}
+                      title="Insert emoji"
+                      aria-label="Insert emoji"
+                      className="inline-flex size-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                    >
+                      <SmilePlus className="size-3.5" />
+                    </button>
+                    {isEmojiPickerOpen ? (
+                      <EmojiPicker
+                        emojis={outreachEmojis}
+                        onSelect={(emoji) => {
+                          insertEmoji(emoji);
+                          setIsEmojiPickerOpen(false);
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                }
+              >
                 <textarea
                   ref={replyEditorTextareaRef}
                   value={replyEditor}
-                  onChange={(event) => setReplyEditor(event.target.value)}
+                  onChange={(event) => changeReplyEditor(event.target.value)}
                   onFocus={(event) => rememberTextTarget("replyEditor", event.currentTarget)}
                   onClick={(event) => rememberTextTarget("replyEditor", event.currentTarget)}
                   onKeyUp={(event) => rememberTextTarget("replyEditor", event.currentTarget)}
@@ -1023,13 +1099,14 @@ export function CreatorOutreachAssistant() {
                 <textarea
                   ref={translatedReplyTextareaRef}
                   value={translatedReply}
-                  onChange={(event) => setTranslatedReply(event.target.value)}
+                  onChange={(event) => changeTranslatedReply(event.target.value)}
                   onFocus={(event) => rememberTextTarget("translatedReply", event.currentTarget)}
                   onClick={(event) => rememberTextTarget("translatedReply", event.currentTarget)}
                   onKeyUp={(event) => rememberTextTarget("translatedReply", event.currentTarget)}
                   onSelect={(event) => rememberTextTarget("translatedReply", event.currentTarget)}
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event) => handleSmartFieldDrop("translatedReply", event)}
+                  placeholder={`Click Translate Reply to create the ${targetLanguage} version.`}
                   className="min-h-[420px] flex-1 resize-none rounded-md border border-input bg-background px-3 py-3 text-sm leading-6 outline-none ring-ring focus:ring-2 lg:min-h-0"
                 />
               </EditorField>
@@ -1038,11 +1115,20 @@ export function CreatorOutreachAssistant() {
             <div className="mt-3 flex min-h-10 flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
               <button
                 onClick={polishCurrentReply}
-                disabled={!replyEditor.trim()}
+                disabled={!replyEditor.trim() || isPolishingReply || isTranslatingReply}
                 className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Sparkles className="size-4" />
-                Polish Reply
+                {isPolishingReply ? "Polishing..." : "Polish Reply"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void translateCurrentReply()}
+                disabled={!replyEditor.trim() || isTranslatingReply || isPolishingReply}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Languages className="size-4" />
+                {isTranslatingReply ? `Translating...` : `Translate Reply`}
               </button>
               <button
                 onClick={() => copyText(replyEditor, "Original reply")}
@@ -1139,7 +1225,7 @@ export function CreatorOutreachAssistant() {
         <OutreachTemplateManagerModal
           templates={templates}
           selectedTemplateId={selectedTemplateId}
-          onSelectTemplate={setSelectedTemplateId}
+          onSelectTemplate={selectReplyTemplate}
           onNewTemplate={openNewTemplateModal}
           onEditTemplate={openEditTemplateModal}
           onDuplicateTemplate={duplicateTemplate}
@@ -1717,7 +1803,12 @@ function CampaignMemoryWidget({
             </FieldLabel>
 
             <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Smart Field Cards</p>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-xs font-medium text-muted-foreground">Smart Field Cards</p>
+                <span className="text-[11px] text-muted-foreground">
+                  Drag onto a {"{{field}}"} placeholder
+                </span>
+              </div>
               <div className="space-y-2">
                 {selectedCampaign?.memoryCards.length ? (
                   selectedCampaign.memoryCards.map((card) => (
@@ -1729,6 +1820,15 @@ function CampaignMemoryWidget({
                         event.dataTransfer.effectAllowed = "copy";
                       }}
                       onClick={() => onInsert(card.content)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onInsert(card.content);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      title="Drag onto a placeholder to replace it, or click to insert at the cursor"
                       className="cursor-grab rounded-lg border border-border bg-background/80 p-3 transition hover:border-cyan-300/40 hover:bg-accent/40 active:cursor-grabbing"
                     >
                       <p className="whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
@@ -1771,6 +1871,30 @@ function addGenericField(template: OutreachTemplate): OutreachTemplate {
     body,
     fields: extractTemplateFields(body),
   };
+}
+
+function findPlaceholderRange(value: string, start: number, end: number) {
+  const placeholderPattern = /\{\{\s*[^{}]+?\s*\}\}/g;
+  for (const match of value.matchAll(placeholderPattern)) {
+    const matchStart = match.index;
+    const matchEnd = matchStart + match[0].length;
+    const cursorInside = start === end && start >= matchStart && start <= matchEnd;
+    const selectionTouchesPlaceholder = start < matchEnd && end > matchStart;
+    if (cursorInside || selectionTouchesPlaceholder) {
+      return { start: matchStart, end: matchEnd };
+    }
+  }
+  return null;
+}
+
+function insertSmartFieldIntoText(value: string, content: string) {
+  const firstPlaceholder = value.match(/\{\{\s*[^{}]+?\s*\}\}/);
+  if (firstPlaceholder?.index !== undefined) {
+    return `${value.slice(0, firstPlaceholder.index)}${content}${value.slice(
+      firstPlaceholder.index + firstPlaceholder[0].length,
+    )}`;
+  }
+  return value.trim() ? `${value}\n\n${content}` : content;
 }
 
 function normalizeSmartFieldDrafts(cards: CampaignMemoryCard[]) {
@@ -1930,12 +2054,23 @@ function ControlBlock({ label, value, helper }: { label: string; value: string; 
   );
 }
 
-function EditorField({ label, children }: { label: string; children: ReactNode }) {
+function EditorField({
+  label,
+  action,
+  children,
+}: {
+  label: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <label className="flex min-h-0 flex-col">
-      <span className="mb-1 block shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
+    <div className="flex min-h-0 flex-col">
+      <div className="mb-1 flex min-h-7 shrink-0 items-center justify-between gap-2">
+        <span className="block text-xs font-medium text-muted-foreground">{label}</span>
+        {action}
+      </div>
       {children}
-    </label>
+    </div>
   );
 }
 
@@ -1960,11 +2095,13 @@ function createOutreachRegistryFromBundle(
   campaignProfiles: CampaignProfileRecord[],
   memoryCards: CampaignMemoryCardRecord[],
 ): GlobalCampaignRegistry {
+  const visibleCampaignProfiles = filterVisibleCampaignProfiles(campaignProfiles);
   return {
-    campaigns: campaignProfiles.map((campaign) => ({
+    campaigns: visibleCampaignProfiles.map((campaign) => ({
       id: campaign.campaignId,
       campaignName: campaign.campaignName,
       campaignCode: campaign.campaignCode,
+      status: campaign.status,
       preferredLanguages: parseCampaignMemoryLanguages(campaign.preferredLanguages),
       memoryCards: memoryCards
         .filter((card) => card.campaignId === campaign.campaignId)
