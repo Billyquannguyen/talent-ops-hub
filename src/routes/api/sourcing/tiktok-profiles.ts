@@ -12,6 +12,8 @@ const tiktokProfileImportSchema = z.object({
         profileUrl: z.string().max(1000).optional(),
         sampleVideoUrl: z.string().max(1000).optional(),
         videoDescription: z.string().max(5000).optional(),
+        profileBio: z.string().max(5000).optional(),
+        bioLink: z.string().max(1000).optional(),
         sourceLink: z.string().max(1000).optional(),
         videos: z.array(z.string().max(1000)).optional(),
       }),
@@ -28,6 +30,7 @@ type TikTokCreatorRow = {
   nickname: string;
   username: string;
   description: string;
+  bioLink: string;
   platform: "TikTok";
   followers: number | "";
   avgViews: number | "";
@@ -43,6 +46,7 @@ const outputHeaders = [
   "Nickname",
   "@Username",
   "Description",
+  "Bio Link",
   "Platform",
   "Followers",
   "Avg. Views",
@@ -181,7 +185,9 @@ function parseTikTokProfilePage(
   const nickname =
     structuredProfile?.nickname || extractNickname(description, username) || username;
   const followers = structuredProfile?.followers || extractFollowerCount(description);
-  const bio = structuredProfile?.bio || extractBio(description, creator.videoDescription ?? "");
+  const bio =
+    structuredProfile?.bio || creator.profileBio || extractBio(description, creator.videoDescription ?? "");
+  const bioLink = structuredProfile?.bioLink || normalizeDirectBioLink(creator.bioLink);
   const sampleVideoUrl = getSampleVideoUrl(creator);
   const sourceLink = creator.sourceLink || fallbackSourceLink;
 
@@ -189,6 +195,7 @@ function parseTikTokProfilePage(
     nickname,
     username: `@${username}`,
     description: bio,
+    bioLink,
     platform: "TikTok",
     followers,
     avgViews: "",
@@ -203,7 +210,7 @@ function parseTikTokProfilePage(
 
 function parseTikTokStructuredProfile(
   html: string,
-): { nickname: string; bio: string; followers: number | "" } | undefined {
+): { nickname: string; bio: string; bioLink: string; followers: number | "" } | undefined {
   const root = extractJsonScript(html, "__UNIVERSAL_DATA_FOR_REHYDRATION__");
   const defaultScope = readRecord(root)?.["__DEFAULT_SCOPE__"];
   const userDetail = readRecord(defaultScope)?.["webapp.user-detail"];
@@ -212,13 +219,22 @@ function parseTikTokStructuredProfile(
   const stats = readRecord(userInfo)?.statsV2 ?? readRecord(userInfo)?.stats;
   const nickname = pickString(user, "nickname");
   const bio = pickString(user, "signature");
+  const bioLinkRecord = readRecord(readRecord(user)?.bioLink);
+  const bioLink = normalizeDirectBioLink(
+    typeof bioLinkRecord?.link === "string"
+      ? bioLinkRecord.link
+      : typeof bioLinkRecord?.url === "string"
+        ? bioLinkRecord.url
+        : "",
+  );
   const followers = pickNumber(stats, "followerCount") ?? "";
 
-  if (!nickname && !bio && followers === "") return undefined;
+  if (!nickname && !bio && !bioLink && followers === "") return undefined;
 
   return {
     nickname,
     bio,
+    bioLink,
     followers,
   };
 }
@@ -242,11 +258,12 @@ function createFallbackCreatorRow(
   fallbackSourceLink: string,
 ): TikTokCreatorRow {
   const username = cleanUsername(creator.username);
-  const description = creator.videoDescription ?? "";
+  const description = creator.profileBio || creator.videoDescription || "";
   return {
     nickname: username,
     username: `@${username}`,
     description,
+    bioLink: normalizeDirectBioLink(creator.bioLink),
     platform: "TikTok",
     followers: "",
     avgViews: "",
@@ -264,6 +281,7 @@ function toCreatorRow(row: TikTokCreatorRow): CreatorRow {
     Nickname: row.nickname,
     "@Username": row.username,
     Description: row.description,
+    "Bio Link": row.bioLink,
     Platform: row.platform,
     Followers: row.followers,
     "Avg. Views": row.avgViews,
@@ -296,6 +314,8 @@ function dedupeImportedCreators(creators: ImportedTikTokCreator[]): ImportedTikT
       ...existing,
       sampleVideoUrl: existing.sampleVideoUrl || creator.sampleVideoUrl,
       videoDescription: existing.videoDescription || creator.videoDescription,
+      profileBio: existing.profileBio || creator.profileBio,
+      bioLink: existing.bioLink || creator.bioLink,
       sourceLink: existing.sourceLink || creator.sourceLink,
       videos: Array.from(new Set([...(existing.videos ?? []), ...(creator.videos ?? [])])),
     });
@@ -341,6 +361,21 @@ function extractBio(description: string, fallbackDescription: string): string {
 
 function getSampleVideoUrl(creator: ImportedTikTokCreator): string {
   return creator.sampleVideoUrl || creator.videos?.[0] || "";
+}
+
+function normalizeDirectBioLink(value: string | undefined): string {
+  const candidate = value?.trim();
+  if (!candidate) return "";
+
+  try {
+    const url = new URL(candidate);
+    if (!/^https?:$/.test(url.protocol)) return "";
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (hostname === "tiktok.com" || hostname.endsWith(".tiktok.com")) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
 }
 
 function readRecord(value: unknown): Record<string, unknown> | undefined {

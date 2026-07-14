@@ -1,15 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "Billy TikTok Collector",
-  "description": "Collect loaded TikTok hashtag or sound page creators and send them to Billy's Scraper System.",
-  "version": "0.2.3",
+  "name": "Billy Creator Collector",
+  "description": "Collect loaded TikTok, Instagram, or YouTube source page creators and send them to Billy's Scraper System.",
+  "version": "0.4.1",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Billy TikTok Collector"
+    "default_title": "Billy Creator Collector"
   },
   "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "host_permissions": [
     "https://www.tiktok.com/*",
+    "https://www.instagram.com/*",
+    "https://www.youtube.com/*",
+    "https://youtube.com/*",
+    "https://m.youtube.com/*",
     "http://127.0.0.1:8080/*",
     "http://localhost:8080/*",
     "http://127.0.0.1:5173/*",
@@ -18,7 +22,13 @@
   ],
   "content_scripts": [
     {
-      "matches": ["https://www.tiktok.com/*"],
+      "matches": [
+        "https://www.tiktok.com/*",
+        "https://www.instagram.com/*",
+        "https://www.youtube.com/*",
+        "https://youtube.com/*",
+        "https://m.youtube.com/*"
+      ],
       "js": ["contentScript.js"],
       "run_at": "document_idle"
     },

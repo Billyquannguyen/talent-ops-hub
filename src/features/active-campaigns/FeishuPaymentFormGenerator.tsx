@@ -15,21 +15,17 @@ import {
 import { useMemo, useState, type FormEvent } from "react";
 
 import type { GlobalCampaign, SelectedCreatorRecord } from "@/lib/campaignRegistry";
+import type { CampaignBatchRecord } from "@/storage/schema";
 
 type PaymentStatus = "Pending Payment" | "Paid";
 type UrgencyLevel = "Normal" | "Urgent" | "Extremely Urgent";
 type PaymentType = "Deposit" | "Final Payment" | "Full Payment" | "Other / Additional Payment";
-type RecordTitleDescription =
-  | "Up-front payment"
-  | "Balance payment"
-  | "Final payment"
-  | "Full payment"
-  | "Other";
 type PlatformCode = "TT" | "IG" | "YT" | "Other";
 
 type FeishuPaymentFormGeneratorProps = {
   record: SelectedCreatorRecord;
   campaign: GlobalCampaign;
+  campaignBatches: CampaignBatchRecord[];
   onClose: () => void;
 };
 
@@ -90,6 +86,7 @@ const tagStyles: Record<FeishuTagValue, { background: string; color: string }> =
 export function FeishuPaymentFormGenerator({
   record,
   campaign,
+  campaignBatches,
   onClose,
 }: FeishuPaymentFormGeneratorProps) {
   const detectedPlatform = detectPlatform(record.creatorLink || record.liveLink);
@@ -98,15 +95,20 @@ export function FeishuPaymentFormGenerator({
   const [urgencyLevel, setUrgencyLevel] = useState<UrgencyLevel>("Normal");
   const [creatorPublishedLink, setCreatorPublishedLink] = useState(record.liveLink);
   const [paymentType, setPaymentType] = useState<PaymentType>("Full Payment");
-  const [recordTitleDescription, setRecordTitleDescription] =
-    useState<RecordTitleDescription>("Full payment");
-  const [customRecordTitleDescription, setCustomRecordTitleDescription] = useState("");
+  const [customPaymentDescription, setCustomPaymentDescription] = useState("");
   const [paymentPercentage, setPaymentPercentage] = useState("");
   const [platform, setPlatform] = useState<PlatformCode>(detectedPlatform);
   const [clientQuote, setClientQuote] = useState(formatNumberForInput(record.externalQuote));
   const [amountUsd, setAmountUsd] = useState(formatNumberForInput(record.internalQuote));
   const [quoteCurrency, setQuoteCurrency] = useState("USD");
-  const [projectCode, setProjectCode] = useState(campaign.campaignCode);
+  const matchedBatch =
+    campaignBatches.find((batch) => batch.batchId === record.batchId) ??
+    campaignBatches.find((batch) => batch.projectCode === record.projectCode) ??
+    campaignBatches.find((batch) => batch.isDefault === "TRUE") ??
+    campaignBatches[0];
+  const [projectCode, setProjectCode] = useState(
+    record.projectCode || matchedBatch?.projectCode || campaign.campaignCode,
+  );
   const [copiedKey, setCopiedKey] = useState("");
   const usesPaymentPercentage = paymentType === "Deposit" || paymentType === "Final Payment";
 
@@ -114,16 +116,17 @@ export function FeishuPaymentFormGenerator({
     () => calculateAmountUsd({ amountUsd, paymentPercentage, paymentType }),
     [amountUsd, paymentPercentage, paymentType],
   );
-  const normalizedProjectCode = projectCode.trim() || campaign.campaignCode.trim();
+  const normalizedProjectCode = projectCode.trim().toUpperCase();
   const normalizedCurrency = quoteCurrency.trim().toUpperCase() || "USD";
-  const finalRecordTitleDescription =
-    recordTitleDescription === "Other"
-      ? customRecordTitleDescription.trim() || "Other payment"
-      : recordTitleDescription;
-  const paymentLabel = buildPaymentLabel(paymentType, paymentPercentage);
+  const paymentDescription = buildPaymentDescription({
+    paymentType,
+    paymentPercentage,
+    customPaymentDescription,
+  });
+  const paymentInformation = `${paymentDescription} ${formatUsdAmount(amountForOutput)} USD`;
   const formTitle = `${normalizedProjectCode || "PROJECT-CODE"}-${campaign.campaignName} b1 ${platform} Influencer ${
     record.creatorName || "Creator"
-  }\n${finalRecordTitleDescription}, ${paymentLabel} ${formatUsdAmount(amountForOutput)} USD`;
+  }\n${paymentInformation}`;
 
   const rows: OutputRow[] = [
     {
@@ -148,8 +151,8 @@ export function FeishuPaymentFormGenerator({
       icon: Text,
       chineseTitle: "付款信息",
       englishMeaning: "Payment Information",
-      value: `${finalRecordTitleDescription}, ${paymentLabel} ${formatUsdAmount(amountForOutput)} USD`,
-      copyValue: `${finalRecordTitleDescription}, ${paymentLabel} ${formatUsdAmount(amountForOutput)} USD`,
+      value: paymentInformation,
+      copyValue: paymentInformation,
     },
     {
       key: "payment-status",
@@ -284,7 +287,7 @@ export function FeishuPaymentFormGenerator({
               {record.creatorName || "Creator payment form"}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {campaign.campaignName} | {campaign.campaignCode || "No project code"}
+              {campaign.campaignName} | {normalizedProjectCode || "No project code"}
             </p>
           </div>
           <button
@@ -318,23 +321,12 @@ export function FeishuPaymentFormGenerator({
                 onChange={(value) => setPaymentType(value as PaymentType)}
                 options={["Deposit", "Final Payment", "Full Payment", "Other / Additional Payment"]}
               />
-              <SelectField
-                label="Record Title Description"
-                value={recordTitleDescription}
-                onChange={(value) => setRecordTitleDescription(value as RecordTitleDescription)}
-                options={[
-                  "Up-front payment",
-                  "Balance payment",
-                  "Final payment",
-                  "Full payment",
-                  "Other",
-                ]}
-              />
-              {recordTitleDescription === "Other" ? (
+              {paymentType === "Other / Additional Payment" ? (
                 <TextField
-                  label="Custom Record Title Description"
-                  value={customRecordTitleDescription}
-                  onChange={setCustomRecordTitleDescription}
+                  label="Additional Payment Description"
+                  value={customPaymentDescription}
+                  onChange={setCustomPaymentDescription}
+                  placeholder="Travel reimbursement"
                   required
                 />
               ) : null}
@@ -376,14 +368,21 @@ export function FeishuPaymentFormGenerator({
                 value={quoteCurrency}
                 onChange={(value) => setQuoteCurrency(value.toUpperCase())}
               />
-              {!campaign.campaignCode.trim() ? (
+              {campaignBatches.length ? (
+                <SelectField
+                  label="Project Code / Batch"
+                  value={normalizedProjectCode}
+                  onChange={setProjectCode}
+                  options={campaignBatches.map((batch) => batch.projectCode)}
+                />
+              ) : (
                 <TextField
                   label="Project Code"
                   value={projectCode}
-                  onChange={setProjectCode}
+                  onChange={(value) => setProjectCode(value.toUpperCase())}
                   required
                 />
-              ) : null}
+              )}
             </div>
 
             <div className="mt-5 rounded-lg border border-border bg-background/70 p-4">
@@ -618,19 +617,31 @@ function detectPlatform(value: string): PlatformCode {
   return "Other";
 }
 
-function buildPaymentLabel(paymentType: PaymentType, paymentPercentage: string): string {
+function buildPaymentDescription({
+  paymentType,
+  paymentPercentage,
+  customPaymentDescription,
+}: {
+  paymentType: PaymentType;
+  paymentPercentage: string;
+  customPaymentDescription: string;
+}): string {
   if (paymentType === "Full Payment") return "Full payment";
-  if (paymentType === "Other / Additional Payment") return "additional payment";
+  if (paymentType === "Other / Additional Payment") {
+    return customPaymentDescription.trim() || "Additional payment";
+  }
+
   const percentage = paymentPercentage.trim();
   if (!percentage) {
-    if (paymentType === "Deposit") return "deposit payment";
-    if (paymentType === "Final Payment") return "balance payment";
+    if (paymentType === "Deposit") return "Up-front payment";
+    if (paymentType === "Final Payment") return "Balance payment";
   }
+
   if (paymentType === "Deposit") return `${percentage}% up-front payment`;
   if (paymentType === "Final Payment") {
     return `${percentage}% balance of cooperation payment`;
   }
-  return "additional payment";
+  return "Additional payment";
 }
 
 function calculateAmountUsd({

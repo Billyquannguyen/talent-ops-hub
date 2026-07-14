@@ -6,10 +6,12 @@ import type {
   AgencyDatabaseRecord,
   AppSettingRecord,
   CampaignMemoryCardRecord,
+  CampaignBatchRecord,
   CampaignProjectInfoRecord,
   CampaignPromptVaultRecord,
   CampaignProfileRecord,
   CentralAppDatabase,
+  CreatorDatabaseRecord,
   EmployeeProfileRecord,
   OutreachTemplateRecord,
   SourcingTemplateRecord,
@@ -156,6 +158,7 @@ export const loadActiveCampaignsBundle = createServerFn({ method: "POST" }).hand
       return {
         ok: false,
         campaignProfiles: [] as CampaignProfileRecord[],
+        campaignBatches: [] as CampaignBatchRecord[],
         activeCampaignCreators: [] as ActiveCampaignCreatorRecord[],
         status,
       };
@@ -171,6 +174,7 @@ export const loadActiveCampaignsBundle = createServerFn({ method: "POST" }).hand
     return {
       ok: false,
       campaignProfiles: [] as CampaignProfileRecord[],
+      campaignBatches: [] as CampaignBatchRecord[],
       activeCampaignCreators: [] as ActiveCampaignCreatorRecord[],
       status: {
         source: "googleSheets" as const,
@@ -327,6 +331,76 @@ export const deleteCampaignProfileRecord = createServerFn({ method: "POST" })
       return {
         ok: false,
         records: [] as CampaignProfileRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const listCampaignBatchRecords = createServerFn({ method: "POST" }).handler(async () => {
+  const { diagnosticsFromError, getGoogleSheetsServerStatus, listCampaignBatchesInGoogleSheets } =
+    await import("./googleSheets.server");
+  try {
+    const status = getGoogleSheetsServerStatus();
+    if (!status.configured) return { ok: false, records: [] as CampaignBatchRecord[], status };
+    const result = await listCampaignBatchesInGoogleSheets();
+    return { ok: true, records: result.records, status };
+  } catch (error) {
+    return {
+      ok: false,
+      records: [] as CampaignBatchRecord[],
+      status: {
+        source: "googleSheets" as const,
+        shared: true,
+        configured: true,
+        diagnostics: diagnosticsFromError(error),
+      },
+    };
+  }
+});
+
+export const saveCampaignBatchRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ record: z.any() }))
+  .handler(async ({ data }) => {
+    const { diagnosticsFromError, getGoogleSheetsServerStatus, upsertCampaignBatchInGoogleSheets } =
+      await import("./googleSheets.server");
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) return { ok: false, records: [] as CampaignBatchRecord[], status };
+      const result = await upsertCampaignBatchInGoogleSheets(data.record as CampaignBatchRecord);
+      return { ok: true, records: result.records, status };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CampaignBatchRecord[],
+        status: {
+          source: "googleSheets" as const,
+          shared: true,
+          configured: true,
+          diagnostics: diagnosticsFromError(error),
+        },
+      };
+    }
+  });
+
+export const deleteCampaignBatchRecord = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ batchId: z.string() }))
+  .handler(async ({ data }) => {
+    const { deleteCampaignBatchInGoogleSheets, diagnosticsFromError, getGoogleSheetsServerStatus } =
+      await import("./googleSheets.server");
+    try {
+      const status = getGoogleSheetsServerStatus();
+      if (!status.configured) return { ok: false, records: [] as CampaignBatchRecord[], status };
+      const result = await deleteCampaignBatchInGoogleSheets(data.batchId);
+      return { ok: true, records: result.records, status };
+    } catch (error) {
+      return {
+        ok: false,
+        records: [] as CampaignBatchRecord[],
         status: {
           source: "googleSheets" as const,
           shared: true,

@@ -6,6 +6,7 @@ import {
   type AgencyDatabaseRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
+  type CampaignBatchRecord,
   type CampaignProjectInfoRecord,
   type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
@@ -29,6 +30,7 @@ import {
   deleteActiveCampaignCreatorRecord,
   deleteAgencyDatabaseRecord,
   deleteCampaignProfileRecord,
+  deleteCampaignBatchRecord,
   deleteCampaignMemoryCardRecord,
   deleteCampaignProjectInfoRecord,
   deleteCampaignPromptVaultRecord,
@@ -40,6 +42,7 @@ import {
   listAppSettingRecords,
   listActiveCampaignCreatorRecords,
   listCampaignMemoryCardRecords,
+  listCampaignBatchRecords,
   listCampaignProjectInfoRecords,
   listCampaignPromptVaultRecords,
   listCampaignProfileRecords,
@@ -57,6 +60,7 @@ import {
   saveAgencyDatabaseRecord,
   saveAppSettingRecord,
   saveCampaignProfileRecord,
+  saveCampaignBatchRecord,
   saveCampaignProjectInfoRecord,
   saveCampaignPromptVaultRecord,
   saveCreatorDatabaseRecord,
@@ -167,6 +171,12 @@ export type CampaignProfilesResult = {
   status: StorageStatus;
 };
 
+export type CampaignBatchesResult = {
+  ok: boolean;
+  records: CampaignBatchRecord[];
+  status: StorageStatus;
+};
+
 export type EmployeeProfilesResult = {
   ok: boolean;
   records: EmployeeProfileRecord[];
@@ -196,6 +206,7 @@ export type CreatorOutreachBundleResult = {
 export type ActiveCampaignsBundleResult = {
   ok: boolean;
   campaignProfiles: CampaignProfileRecord[];
+  campaignBatches: CampaignBatchRecord[];
   activeCampaignCreators: ActiveCampaignCreatorRecord[];
   status: StorageStatus;
 };
@@ -266,6 +277,22 @@ export async function deleteCampaignProfileFromGoogleSheets(
   campaignId: string,
 ): Promise<CampaignProfilesResult> {
   return deleteCampaignProfileRecord({ data: { campaignId } });
+}
+
+export async function listCampaignBatchesFromGoogleSheets(): Promise<CampaignBatchesResult> {
+  return listCampaignBatchRecords();
+}
+
+export async function saveCampaignBatchToGoogleSheets(
+  record: CampaignBatchRecord,
+): Promise<CampaignBatchesResult> {
+  return saveCampaignBatchRecord({ data: { record } });
+}
+
+export async function deleteCampaignBatchFromGoogleSheets(
+  batchId: string,
+): Promise<CampaignBatchesResult> {
+  return deleteCampaignBatchRecord({ data: { batchId } });
 }
 
 export async function listAgencyDatabaseFromGoogleSheets(): Promise<AgencyDatabaseResult> {

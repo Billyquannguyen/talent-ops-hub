@@ -19,6 +19,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Upload,
@@ -68,6 +69,8 @@ import {
   parseMetric,
 } from "./filters";
 import { classifyEmailAddress, extractEmailAddresses } from "./emailClassification";
+import { formatCurrentDate } from "./dateFormatting";
+import { formatSourcingFieldValue } from "./numberFormatting";
 import {
   easyKolFields,
   type EmailAvailability,
@@ -123,13 +126,14 @@ const billyExtensionImportStorageKey = "katlas-billy-extension-import-v1";
 const billyExtensionImportAckStorageKey = "katlas-billy-extension-import-ack-v1";
 const contactsColumnName = "Contacts";
 const enabledEnrichmentTooltip =
-  "EasyKOL emails are imported into Contacts on upload. Enrich copies the full EasyKOL bio/description into Contacts only for rows that still have blank Contacts, without AI.";
+  "EasyKOL emails are imported into Contacts on upload. Full Bio copies the complete bio and its direct profile link into blank Contacts cells, without opening that link or using AI.";
 const disabledEnrichmentTooltip =
   "Add a Contacts column to the active template before enriching contacts.";
 const billyImportHeaders = [
   "Nickname",
   "@Username",
   "Description",
+  "Bio Link",
   "Platform",
   "Followers",
   "Avg. Views",
@@ -232,14 +236,20 @@ type HashtagScrapeResponse =
       error: string;
     };
 type BillyExtensionCreator = {
+  platform?: BillyExtensionPlatform;
   username: string;
   profileUrl?: string;
   sampleVideoUrl?: string;
   videoDescription?: string;
+  profileBio?: string;
+  bioLink?: string;
   sourceLink?: string;
+  followers?: number | "";
   videos?: string[];
 };
+type BillyExtensionPlatform = "TikTok" | "Instagram" | "YouTube";
 type BillyExtensionPayload = {
+  platform: BillyExtensionPlatform;
   collectedAt?: string;
   sourceLabel: string;
   sourceUrl: string;
@@ -936,7 +946,11 @@ export function CreatorSourcingAssistant() {
   }
 
   async function downloadPreview() {
-    if (previewRows.length === 0) return;
+    await downloadPreviewRows(previewRows);
+  }
+
+  async function downloadPreviewRows(rows: PreviewRow[]) {
+    if (rows.length === 0) return;
     const baseName =
       activeProject?.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "katlas-creators";
 
@@ -944,7 +958,7 @@ export function CreatorSourcingAssistant() {
       await exportPreviewSpreadsheet({
         fileName: `${baseName}-preview.xlsx`,
         headers: previewHeaders,
-        rows: previewRows.map((row) => row.values),
+        rows: rows.map((row) => row.values),
       });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Excel export failed.");
@@ -1191,6 +1205,7 @@ export function CreatorSourcingAssistant() {
       contacts: "Contacts",
       blank: "Blank",
       custom: "Custom",
+      currentDate: "Current Date",
     };
 
     updateTemplateColumn(column.id, {
@@ -1249,7 +1264,7 @@ export function CreatorSourcingAssistant() {
               <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
                 {assistantPage === "easykol"
                   ? "Upload the EasyKOL export, filter the creators, generate contacts, then preview the exact columns you want to paste into a sourcing sheet."
-                  : "Scrape a TikTok hashtag on its own page, dedupe creators, filter the list, then export rows without touching the EasyKOL upload flow."}
+                  : "Scrape a TikTok, Instagram, or YouTube source page, dedupe creators, filter the list, then export rows without touching the EasyKOL upload flow."}
               </p>
             </div>
           </div>
@@ -1612,9 +1627,9 @@ export function CreatorSourcingAssistant() {
           selectedRowIds={selectedRowIds}
           onToggleRow={toggleRow}
           onToggleAll={toggleAllPreviewRows}
-          onCopyAll={() => copyRows(previewRows, "All rows")}
-          onCopySelected={() => copyRows(selectedPreviewRows, "Selected rows")}
-          onDownload={downloadPreview}
+          onCopyAll={(rows) => copyRows(rows, "All rows")}
+          onCopySelected={(rows) => copyRows(rows, "Selected rows")}
+          onDownload={downloadPreviewRows}
           onClose={() => setIsPreviewModalOpen(false)}
         />
       ) : null}
@@ -1879,7 +1894,7 @@ function BillyScraperSystem({
     async (rawPayload: unknown) => {
       const payload = parseBillyExtensionPayload(rawPayload);
       if (!payload || payload.creators.length === 0) {
-        setErrorMessage("Billy did not receive any TikTok creators from the extension.");
+        setErrorMessage("Billy did not receive any creators from the extension.");
         return;
       }
 
@@ -1892,6 +1907,23 @@ function BillyScraperSystem({
       setScrapeReport(null);
 
       try {
+        if (payload.platform !== "TikTok") {
+          const fallbackRows = createBillyRowsFromExtensionPayload(payload);
+          loadBillyRows({
+            headers: billyImportHeaders,
+            rows: fallbackRows,
+            sourceLabel: payload.sourceLabel,
+            sourceUrl: payload.sourceUrl,
+            videosFound: payload.videosFound,
+            duplicatesRemoved: Math.max(payload.creators.length - fallbackRows.length, 0),
+            warnings: [
+              `${payload.platform} imports use the zero-cost browser collector. Followers appear when the platform exposes them during the session; missing followers stay blank.`,
+            ],
+            verb: "Imported",
+          });
+          return;
+        }
+
         const response = await fetch("/api/sourcing/tiktok-profiles", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1952,7 +1984,7 @@ function BillyScraperSystem({
       return;
     }
     if (!creators.length) {
-      setErrorMessage("Import a TikTok session from Billy's extension first.");
+      setErrorMessage("Import a Billy extension session first.");
       return;
     }
     if (!templateHasContacts) {
@@ -1980,7 +2012,7 @@ function BillyScraperSystem({
               ]
             : [
                 "Finding rows without Contacts values...",
-                "Copying complete collected bios without rewriting them...",
+                "Copying complete collected bios and direct profile links without opening them...",
                 "Updating Contacts cells...",
               ];
 
@@ -2005,7 +2037,7 @@ function BillyScraperSystem({
           ? `Done. Added personal-provider emails to ${result.emailCount.toLocaleString()} blank Contacts cells. Existing Contacts values were preserved. No AI call used.`
           : mode === "all-emails"
             ? `Done. Added public emails to ${result.emailCount.toLocaleString()} blank Contacts cells. Existing Contacts values were preserved. No AI call used.`
-            : `Done. Copied ${result.bioCount.toLocaleString()} full bios into blank Contacts cells. No AI call used.`,
+            : `Done. Copied ${result.bioCount.toLocaleString()} full bios and available direct profile links into blank Contacts cells. No AI call used.`,
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
@@ -2021,7 +2053,7 @@ function BillyScraperSystem({
       return;
     }
     if (!creators.length) {
-      setErrorMessage("Import a TikTok session from Billy's extension first.");
+      setErrorMessage("Import a Billy extension session first.");
       return;
     }
     if (!template.length) {
@@ -2068,7 +2100,11 @@ function BillyScraperSystem({
   }
 
   async function downloadPreview() {
-    if (!previewRows.length) return;
+    await downloadPreviewRows(previewRows);
+  }
+
+  async function downloadPreviewRows(rows: PreviewRow[]) {
+    if (!rows.length) return;
     const baseName =
       activeProject?.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "billy-scraper";
 
@@ -2076,7 +2112,7 @@ function BillyScraperSystem({
       await exportPreviewSpreadsheet({
         fileName: `${baseName}-billy-scraper-preview.xlsx`,
         headers: previewHeaders,
-        rows: previewRows.map((row) => row.values),
+        rows: rows.map((row) => row.values),
       });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Excel export failed.");
@@ -2230,7 +2266,7 @@ function BillyScraperSystem({
             )}
           </Panel>
 
-          <Panel title="TikTok Session" icon={Hash}>
+          <Panel title="Source Session" icon={Hash}>
             <BillyExtensionSessionPanel
               report={scrapeReport}
               isImporting={isScraping}
@@ -2352,7 +2388,7 @@ function BillyScraperSystem({
                         <span>
                           <span className="block text-sm font-medium">Copy Full Bios</span>
                           <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                            Preserve the complete bio for manual contact review.
+                            Preserve the complete bio and the single direct link shown beneath it.
                           </span>
                         </span>
                       </button>
@@ -2409,7 +2445,7 @@ function BillyScraperSystem({
 
             {!previewReady ? (
               <div className="mt-4 rounded-md border border-dashed border-border bg-background px-4 py-4 text-sm text-muted-foreground">
-                Import a TikTok session from Billy's extension, filter the creators, then prepare
+                Import a source session from Billy's extension, filter the creators, then prepare
                 Billy's preview.
               </div>
             ) : null}
@@ -2424,9 +2460,9 @@ function BillyScraperSystem({
           selectedRowIds={selectedRowIds}
           onToggleRow={toggleRow}
           onToggleAll={toggleAllPreviewRows}
-          onCopyAll={() => copyRows(previewRows, "Billy rows")}
-          onCopySelected={() => copyRows(selectedPreviewRows, "Selected Billy rows")}
-          onDownload={downloadPreview}
+          onCopyAll={(rows) => copyRows(rows, "Billy rows")}
+          onCopySelected={(rows) => copyRows(rows, "Selected Billy rows")}
+          onDownload={downloadPreviewRows}
           onClose={() => setIsPreviewModalOpen(false)}
         />
       ) : null}
@@ -2603,9 +2639,13 @@ function buildBillyPreviewRow({
   const values = template.map((column) => {
     if (column.blockType === "blank") return "";
     if (column.blockType === "custom") return column.customValue ?? "";
+    if (column.blockType === "currentDate") return formatCurrentDate();
     if (isBillyContactsColumn(column)) return resolvedContactInfo.rawText ?? "";
     if (!column.fieldKey) return "";
-    return getCell(data, columnMap, column.fieldKey);
+    return formatSourcingFieldValue(
+      column.fieldKey,
+      getCell(data, columnMap, column.fieldKey),
+    );
   });
 
   return { id, values, contactInfo: resolvedContactInfo };
@@ -2676,6 +2716,7 @@ function getBillyTemplateValueDescription(column: TemplateColumn): string {
   if (column.blockType === "custom") {
     return column.customValue ? `Custom: ${column.customValue}` : "Custom value";
   }
+  if (column.blockType === "currentDate") return `Current date: ${formatCurrentDate()}`;
   if (isBillyContactsColumn(column)) return "Enriched Contacts value";
   if (column.blockType === "field" && column.fieldKey) return column.fieldKey;
   return "Empty cell";
@@ -2703,15 +2744,15 @@ function BillyExtensionSessionPanel({
           <div>
             <p className="text-sm font-medium">
               {isImporting
-                ? "Importing TikTok session..."
+                ? "Importing source session..."
                 : report
-                  ? "TikTok session imported"
+                  ? "Source session imported"
                   : "Waiting for Billy extension"}
             </p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               {report
                 ? "This data stays temporary on this Billy page until you switch pages, reload, or clear the session."
-                : "Open a TikTok hashtag or sound page, run Billy's Chrome extension, then send the session here."}
+                : "Open a TikTok, Instagram, or YouTube source page, run Billy's Chrome extension, then send the session here."}
             </p>
           </div>
           {isImporting ? (
@@ -3250,11 +3291,21 @@ function PreviewModal({
   selectedRowIds: string[];
   onToggleRow: (rowId: string) => void;
   onToggleAll: () => void;
-  onCopyAll: () => void;
-  onCopySelected: () => void;
-  onDownload: () => void;
+  onCopyAll: (rows: PreviewRow[]) => void;
+  onCopySelected: (rows: PreviewRow[]) => void;
+  onDownload: (rows: PreviewRow[]) => void;
   onClose: () => void;
 }) {
+  const [isSmartSorted, setIsSmartSorted] = useState(false);
+  const displayedRows = useMemo(
+    () => (isSmartSorted ? smartSortPreviewRows(rows) : rows),
+    [isSmartSorted, rows],
+  );
+  const selectedRows = useMemo(
+    () => displayedRows.filter((row) => selectedRowIds.includes(row.id)),
+    [displayedRows, selectedRowIds],
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
       <div className="flex max-h-[92vh] w-full max-w-[96vw] flex-col rounded-xl border border-border bg-card shadow-2xl">
@@ -3271,8 +3322,30 @@ function PreviewModal({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setIsSmartSorted((current) => !current)}
+                    aria-pressed={isSmartSorted}
+                    className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-medium transition ${
+                      isSmartSorted
+                        ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200"
+                        : "border-border bg-background hover:bg-accent"
+                    }`}
+                  >
+                    <SlidersHorizontal className="size-4" />
+                    {isSmartSorted ? "Smart Sorted" : "Smart Sorting"}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Sort Contacts by email, then links in bio, then other values.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <button
-              onClick={onCopyAll}
+              onClick={() => onCopyAll(displayedRows)}
               disabled={rows.length === 0}
               className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -3280,7 +3353,7 @@ function PreviewModal({
               Copy All Rows
             </button>
             <button
-              onClick={onCopySelected}
+              onClick={() => onCopySelected(selectedRows)}
               disabled={selectedRowIds.length === 0}
               className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -3288,7 +3361,7 @@ function PreviewModal({
               Copy Selected Rows
             </button>
             <button
-              onClick={onDownload}
+              onClick={() => onDownload(displayedRows)}
               disabled={rows.length === 0}
               className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -3307,7 +3380,7 @@ function PreviewModal({
         <div className="min-h-0 flex-1 overflow-hidden px-5 py-4">
           <PreviewTable
             headers={headers}
-            rows={rows}
+            rows={displayedRows}
             selectedRowIds={selectedRowIds}
             onToggleRow={onToggleRow}
             onToggleAll={onToggleAll}
@@ -3316,6 +3389,20 @@ function PreviewModal({
       </div>
     </div>
   );
+}
+
+function smartSortPreviewRows(rows: PreviewRow[]): PreviewRow[] {
+  return rows
+    .map((row, index) => ({ row, index, priority: getContactSortPriority(row.contactInfo) }))
+    .sort((first, second) => first.priority - second.priority || first.index - second.index)
+    .map(({ row }) => row);
+}
+
+function getContactSortPriority(contactInfo: ContactInfo): number {
+  const contactText = contactInfo.rawText?.trim() ?? "";
+  if (contactInfo.email || extractFirstEmail(contactText)) return 0;
+  if (/https?:\/\/\S+|www\.\S+/i.test(contactText)) return 1;
+  return 2;
 }
 
 function LeaveProjectModal({
@@ -3719,6 +3806,7 @@ function TemplateBuilder({
                   <option value="contacts">Contacts</option>
                   <option value="blank">Blank</option>
                   <option value="custom">Custom</option>
+                  <option value="currentDate">Current Date</option>
                 </optgroup>
               </select>
               {column.blockType === "custom" ? (
@@ -4061,6 +4149,7 @@ function getTemplateBlockValue(column: TemplateColumn): string {
 function getBlockDescription(column: TemplateColumn): string {
   if (column.blockType === "contacts") return "Contacts from EasyKOL email or enrichment";
   if (column.blockType === "blank") return "Outputs empty cells";
+  if (column.blockType === "currentDate") return `Outputs today's date: ${formatCurrentDate()}`;
   if (column.blockType === "field") return column.fieldKey ?? "Choose an EasyKOL field";
   return "Fixed value";
 }
@@ -4271,21 +4360,23 @@ function getActiveBillyFilterChips(filters: BillyFilterSettings): BillyFilterChi
 
 function parseBillyExtensionPayload(value: unknown): BillyExtensionPayload | undefined {
   if (!isRecord(value)) return undefined;
+  const platform = parseBillyExtensionPlatform(value.platform);
   const rawCreators = Array.isArray(value.creators) ? value.creators : [];
   const creators = rawCreators
-    .map(parseBillyExtensionCreator)
+    .map((creator) => parseBillyExtensionCreator(creator, platform))
     .filter((creator): creator is BillyExtensionCreator => Boolean(creator));
   const sourceUrl = typeof value.sourceUrl === "string" ? value.sourceUrl : "";
   const sourceLabel =
     typeof value.sourceLabel === "string" && value.sourceLabel.trim()
       ? value.sourceLabel.trim()
-      : "TikTok extension import";
+      : `${platform} extension import`;
   const videosFound =
     typeof value.videosFound === "number" && Number.isFinite(value.videosFound)
       ? value.videosFound
       : creators.reduce((count, creator) => count + (creator.videos?.length || 1), 0);
 
   return {
+    platform,
     collectedAt: typeof value.collectedAt === "string" ? value.collectedAt : undefined,
     sourceLabel,
     sourceUrl,
@@ -4294,26 +4385,34 @@ function parseBillyExtensionPayload(value: unknown): BillyExtensionPayload | und
   };
 }
 
-function parseBillyExtensionCreator(value: unknown): BillyExtensionCreator | undefined {
+function parseBillyExtensionCreator(
+  value: unknown,
+  defaultPlatform: BillyExtensionPlatform,
+): BillyExtensionCreator | undefined {
   if (!isRecord(value)) return undefined;
+  const platform = parseBillyExtensionPlatform(value.platform, defaultPlatform);
   const username = cleanBillyUsername(stringValue(value.username));
   if (!username) return undefined;
   const videos = Array.isArray(value.videos)
     ? value.videos.filter((item): item is string => typeof item === "string" && item.trim())
     : undefined;
   return {
+    platform,
     username,
     profileUrl:
       typeof value.profileUrl === "string" && value.profileUrl.trim()
         ? value.profileUrl.trim()
-        : `https://www.tiktok.com/@${username}`,
+        : getBillyDefaultProfileUrl(platform, username),
     sampleVideoUrl:
       typeof value.sampleVideoUrl === "string" && value.sampleVideoUrl.trim()
         ? value.sampleVideoUrl.trim()
         : videos?.[0],
     videoDescription:
       typeof value.videoDescription === "string" ? value.videoDescription.trim() : undefined,
+    profileBio: typeof value.profileBio === "string" ? value.profileBio.trim() : undefined,
+    bioLink: typeof value.bioLink === "string" ? value.bioLink.trim() : undefined,
     sourceLink: typeof value.sourceLink === "string" ? value.sourceLink.trim() : undefined,
+    followers: parseBillyExtensionFollowers(value.followers),
     videos,
   };
 }
@@ -4324,22 +4423,27 @@ function dedupeBillyExtensionCreators(creators: BillyExtensionCreator[]): BillyE
   creators.forEach((creator) => {
     const key = cleanBillyUsername(creator.username).toLowerCase();
     if (!key) return;
-    const existing = creatorsByUsername.get(key);
+    const platformKey = `${creator.platform ?? "TikTok"}:${key}`;
+    const existing = creatorsByUsername.get(platformKey);
     if (!existing) {
-      creatorsByUsername.set(key, {
+      creatorsByUsername.set(platformKey, {
         ...creator,
+        platform: creator.platform ?? "TikTok",
         username: cleanBillyUsername(creator.username),
         videos: [...(creator.videos ?? [])],
       });
       return;
     }
 
-    creatorsByUsername.set(key, {
+    creatorsByUsername.set(platformKey, {
       ...existing,
       profileUrl: existing.profileUrl || creator.profileUrl,
       sampleVideoUrl: existing.sampleVideoUrl || creator.sampleVideoUrl,
       videoDescription: existing.videoDescription || creator.videoDescription,
+      profileBio: existing.profileBio || creator.profileBio,
+      bioLink: existing.bioLink || creator.bioLink,
       sourceLink: existing.sourceLink || creator.sourceLink,
+      followers: existing.followers || creator.followers || "",
       videos: Array.from(new Set([...(existing.videos ?? []), ...(creator.videos ?? [])])),
     });
   });
@@ -4352,22 +4456,51 @@ function createBillyRowsFromExtensionPayload(
 ): Array<Record<string, string | number | boolean | null | undefined>> {
   return payload.creators.map((creator) => {
     const username = cleanBillyUsername(creator.username);
-    const description = creator.videoDescription ?? "";
+    const description = creator.profileBio || creator.videoDescription || "";
+    const platform = creator.platform ?? payload.platform ?? "TikTok";
     return {
       Nickname: username,
       "@Username": `@${username}`,
       Description: description,
-      Platform: "TikTok",
-      Followers: "",
+      "Bio Link": creator.bioLink ?? "",
+      Platform: platform,
+      Followers: creator.followers ?? "",
       "Avg. Views": "",
       "Avg. Likes": "",
       Email: "",
       "Last Post": "",
-      URL: creator.profileUrl || `https://www.tiktok.com/@${username}`,
+      URL: creator.profileUrl || getBillyDefaultProfileUrl(platform, username),
       "Sample Video URL": creator.sampleVideoUrl || creator.videos?.[0] || "",
       "Source Link": creator.sourceLink || payload.sourceUrl,
     };
   });
+}
+
+function parseBillyExtensionPlatform(
+  value: unknown,
+  fallback: BillyExtensionPlatform = "TikTok",
+): BillyExtensionPlatform {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "instagram") return "Instagram";
+  if (normalized === "youtube") return "YouTube";
+  if (normalized === "tiktok") return "TikTok";
+  return fallback;
+}
+
+function parseBillyExtensionFollowers(value: unknown): number | "" {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return "";
+  return parseMetric(value) ?? "";
+}
+
+function getBillyDefaultProfileUrl(platform: BillyExtensionPlatform, username: string): string {
+  if (platform === "Instagram") return `https://www.instagram.com/${username}/`;
+  if (platform === "YouTube") {
+    return username.startsWith("UC")
+      ? `https://www.youtube.com/channel/${username}`
+      : `https://www.youtube.com/@${username}`;
+  }
+  return `https://www.tiktok.com/@${username}`;
 }
 
 function cleanBillyUsername(value: string): string {
@@ -4836,6 +4969,14 @@ function normalizeBlockType(value: unknown, fieldKey?: EasyKolField): TemplateBl
   if (normalized === "contacts" || normalized === "contact") return "contacts";
   if (normalized === "blank" || normalized === "empty") return "blank";
   if (normalized === "custom" || normalized === "fixed") return "custom";
+  if (
+    normalized === "currentdate" ||
+    normalized === "current date" ||
+    normalized === "current-date" ||
+    normalized === "today"
+  ) {
+    return "currentDate";
+  }
   return "blank";
 }
 
@@ -4982,6 +5123,7 @@ function fillBlankContacts({
 
     const emailColumnValue = getCell(data, columnMap, "Email");
     const bio = getCell(data, columnMap, "Description");
+    const bioLink = getDirectBioLink(data);
     const discoveredEmails =
       mode === "bio-only"
         ? []
@@ -5000,13 +5142,13 @@ function fillBlankContacts({
       };
     }
 
-    if (mode === "bio-only" && bio.trim()) {
+    if (mode === "bio-only" && (bio.trim() || bioLink)) {
       bioCount += 1;
       return {
         ...creator,
         data: {
           ...data,
-          [initialized.contactsHeader]: bio,
+          [initialized.contactsHeader]: [bio.trim(), bioLink].filter(Boolean).join("\n"),
         },
       };
     }
@@ -5021,6 +5163,24 @@ function fillBlankContacts({
     emailCount,
     bioCount,
   };
+}
+
+function getDirectBioLink(data: UploadedCreator["data"]): string {
+  const acceptedHeaders = new Set([
+    "bio link",
+    "link in bio",
+    "external link",
+    "external url",
+    "website link",
+  ]);
+
+  for (const [header, value] of Object.entries(data)) {
+    if (!acceptedHeaders.has(normalizeFieldLookupValue(header))) continue;
+    const candidate = stringValue(value).trim();
+    if (/^https?:\/\/\S+$/i.test(candidate)) return candidate;
+  }
+
+  return "";
 }
 
 function createContactInfoMap(creators: UploadedCreator[], contactsHeader: string) {

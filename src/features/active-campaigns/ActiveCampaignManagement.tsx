@@ -19,10 +19,20 @@ import {
   type SelectedCreatorRecord,
   type SelectedCreatorStatus,
 } from "@/lib/campaignRegistry";
+import { readCampaignBatches } from "@/storage/appRepository";
+import type { CampaignBatchRecord } from "@/storage/schema";
 
 import { FeishuPaymentFormGenerator } from "./FeishuPaymentFormGenerator";
 
 const allCampaignsSelectionId = "all-campaigns";
+
+const statusSelectStyles: Record<SelectedCreatorStatus, string> = {
+  "Contract signed": "border-sky-400/40 bg-sky-400/10 text-sky-200",
+  Script: "border-violet-400/40 bg-violet-400/10 text-violet-200",
+  Draft: "border-amber-400/40 bg-amber-400/10 text-amber-200",
+  Posted: "border-cyan-400/40 bg-cyan-400/10 text-cyan-100",
+  "Fully paid": "border-emerald-400/40 bg-emerald-400/10 text-emerald-200",
+};
 
 export function ActiveCampaignManagement({
   initialCampaignId = "",
@@ -30,6 +40,9 @@ export function ActiveCampaignManagement({
   initialCampaignId?: string;
 }) {
   const [registry, setRegistry] = useState<GlobalCampaignRegistry>(() => loadCampaignRegistry());
+  const [campaignBatches, setCampaignBatches] = useState<CampaignBatchRecord[]>(() =>
+    readCampaignBatches(),
+  );
   const [selectedCampaignId, setSelectedCampaignId] = useState(
     initialCampaignId || allCampaignsSelectionId,
   );
@@ -62,6 +75,7 @@ export function ActiveCampaignManagement({
         });
         if (cancelled) return;
         setRegistry(googleRegistry);
+        setCampaignBatches(readCampaignBatches());
         setSelectedCampaignId((current) => {
           const requestedSelection = initialCampaignId || current || allCampaignsSelectionId;
           if (requestedSelection === allCampaignsSelectionId) return allCampaignsSelectionId;
@@ -107,19 +121,49 @@ export function ActiveCampaignManagement({
     [visibleCreatorRecords],
   );
   const modalCampaign = editingRecord ? campaignById.get(editingRecord.campaignRegistryId) : null;
+  const batchesByCampaignId = useMemo(() => {
+    const grouped = new Map<string, CampaignBatchRecord[]>();
+    campaignBatches.forEach((batch) => {
+      const records = grouped.get(batch.campaignId) ?? [];
+      records.push(batch);
+      grouped.set(batch.campaignId, records);
+    });
+    grouped.forEach((records) =>
+      records.sort(
+        (left, right) => Number(right.isDefault === "TRUE") - Number(left.isDefault === "TRUE"),
+      ),
+    );
+    return grouped;
+  }, [campaignBatches]);
 
   function openNewCreator() {
     if (!selectedCampaign) return;
-    setEditingRecord(createSelectedCreatorRecord(selectedCampaign.id));
+    const batches = batchesByCampaignId.get(selectedCampaign.id) ?? [];
+    const defaultBatch = batches.find((batch) => batch.isDefault === "TRUE") ?? batches[0];
+    setEditingRecord(
+      createSelectedCreatorRecord(selectedCampaign.id, {
+        batchId: defaultBatch?.batchId ?? "",
+        projectCode: defaultBatch?.projectCode ?? selectedCampaign.campaignCode,
+      }),
+    );
   }
 
   async function saveCreatorRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingRecord || !editingRecord.creatorName.trim()) return;
-    if (!campaignById.has(editingRecord.campaignRegistryId)) return;
+    const campaign = campaignById.get(editingRecord.campaignRegistryId);
+    if (!campaign) return;
+    const availableBatches = batchesByCampaignId.get(editingRecord.campaignRegistryId) ?? [];
+    const selectedBatch =
+      availableBatches.find((batch) => batch.batchId === editingRecord.batchId) ??
+      availableBatches.find((batch) => batch.projectCode === editingRecord.projectCode) ??
+      availableBatches.find((batch) => batch.isDefault === "TRUE") ??
+      availableBatches[0];
     const now = new Date().toISOString();
     const savedRecord = {
       ...editingRecord,
+      batchId: selectedBatch?.batchId ?? editingRecord.batchId,
+      projectCode: selectedBatch?.projectCode ?? editingRecord.projectCode ?? campaign.campaignCode,
       draftLink: "",
       updatedAt: now,
     };
@@ -302,6 +346,7 @@ export function ActiveCampaignManagement({
               <CreatorRecordsTable
                 records={visibleCreatorRecords}
                 campaignById={campaignById}
+                batchesByCampaignId={batchesByCampaignId}
                 showCampaignColumn={isAllCampaignsView}
                 onEdit={setEditingRecord}
                 onStatusChange={requestStatusChange}
@@ -324,6 +369,7 @@ export function ActiveCampaignManagement({
           record={editingRecord}
           campaignName={modalCampaign.campaignName}
           campaignCode={modalCampaign.campaignCode}
+          campaignBatches={batchesByCampaignId.get(modalCampaign.id) ?? []}
           onChange={setEditingRecord}
           onCancel={() => setEditingRecord(null)}
           onSubmit={saveCreatorRecord}
@@ -349,6 +395,7 @@ export function ActiveCampaignManagement({
         <FeishuPaymentFormGenerator
           record={paymentFormContext.record}
           campaign={paymentFormContext.campaign}
+          campaignBatches={batchesByCampaignId.get(paymentFormContext.campaign.id) ?? []}
           onClose={() => setPaymentFormContext(null)}
         />
       ) : null}
@@ -367,6 +414,7 @@ function filterCreatorRecordsByCampaigns(
 function CreatorRecordsTable({
   records,
   campaignById,
+  batchesByCampaignId,
   showCampaignColumn,
   onEdit,
   onStatusChange,
@@ -374,6 +422,7 @@ function CreatorRecordsTable({
 }: {
   records: SelectedCreatorRecord[];
   campaignById: Map<string, GlobalCampaign>;
+  batchesByCampaignId: Map<string, CampaignBatchRecord[]>;
   showCampaignColumn: boolean;
   onEdit: (record: SelectedCreatorRecord) => void;
   onStatusChange: (record: SelectedCreatorRecord, status: SelectedCreatorStatus) => void;
@@ -386,6 +435,7 @@ function CreatorRecordsTable({
           <tr>
             <TableHeader>Creator</TableHeader>
             {showCampaignColumn ? <TableHeader>Campaign</TableHeader> : null}
+            <TableHeader>Project Code</TableHeader>
             <TableHeader>Creator Link</TableHeader>
             <TableHeader>Avg Views</TableHeader>
             <TableHeader>Internal Quote</TableHeader>
@@ -405,6 +455,9 @@ function CreatorRecordsTable({
             records.map((record) => {
               const financials = calculateCreatorFinancials(record);
               const campaign = campaignById.get(record.campaignRegistryId);
+              const currentBatch = (batchesByCampaignId.get(record.campaignRegistryId) ?? []).find(
+                (batch) => batch.batchId === record.batchId,
+              );
               return (
                 <tr key={record.id} className="border-t border-border">
                   <TableCell>
@@ -413,11 +466,16 @@ function CreatorRecordsTable({
                   {showCampaignColumn ? (
                     <TableCell>
                       <p className="font-medium">{campaign?.campaignName ?? "Unknown Campaign"}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {campaign?.campaignCode ?? "No campaign ID"}
-                      </p>
                     </TableCell>
                   ) : null}
+                  <TableCell>
+                    <span className="inline-flex rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium">
+                      {currentBatch?.projectCode ||
+                        record.projectCode ||
+                        campaign?.campaignCode ||
+                        "No project code"}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <InlineLink href={record.creatorLink} label="Creator Link" />
                   </TableCell>
@@ -466,7 +524,7 @@ function CreatorRecordsTable({
           ) : (
             <tr>
               <td
-                colSpan={showCampaignColumn ? 14 : 13}
+                colSpan={showCampaignColumn ? 15 : 14}
                 className="px-4 py-10 text-center text-sm text-muted-foreground"
               >
                 No selected creators for this view yet.
@@ -483,6 +541,7 @@ function CreatorRecordModal({
   record,
   campaignName,
   campaignCode,
+  campaignBatches,
   onChange,
   onCancel,
   onSubmit,
@@ -492,6 +551,7 @@ function CreatorRecordModal({
   record: SelectedCreatorRecord;
   campaignName: string;
   campaignCode: string;
+  campaignBatches: CampaignBatchRecord[];
   onChange: (record: SelectedCreatorRecord) => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -499,6 +559,13 @@ function CreatorRecordModal({
   onDelete: (recordId: string) => void;
 }) {
   const financials = calculateCreatorFinancials(record);
+  const selectedBatch =
+    campaignBatches.find((batch) => batch.batchId === record.batchId) ??
+    campaignBatches.find((batch) => batch.projectCode === record.projectCode) ??
+    campaignBatches.find((batch) => batch.isDefault === "TRUE") ??
+    campaignBatches[0];
+  const selectedBatchValue =
+    selectedBatch?.batchId || `legacy:${record.projectCode || campaignCode}`;
 
   function patchRecord(patch: Partial<SelectedCreatorRecord>) {
     onChange({ ...record, ...patch });
@@ -515,7 +582,7 @@ function CreatorRecordModal({
             <p className="text-xs font-semibold uppercase text-muted-foreground">Creator Record</p>
             <h2 className="mt-2 text-xl font-semibold">{record.creatorName || campaignName}</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Campaign is locked to {campaignName} | {campaignCode}
+              Campaign is locked to {campaignName}
             </p>
           </div>
           <button
@@ -528,6 +595,35 @@ function CreatorRecordModal({
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <FieldLabel label="Project Code / Batch">
+            <select
+              value={selectedBatchValue}
+              onChange={(event) => {
+                const batch = campaignBatches.find(
+                  (candidate) => candidate.batchId === event.target.value,
+                );
+                patchRecord({
+                  batchId: batch?.batchId ?? "",
+                  projectCode: batch?.projectCode ?? campaignCode,
+                });
+              }}
+              required
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+            >
+              {!campaignBatches.length ? (
+                <option value={`legacy:${record.projectCode || campaignCode}`}>
+                  {record.projectCode || campaignCode || "No project code"}
+                </option>
+              ) : null}
+              {campaignBatches.map((batch) => (
+                <option key={batch.batchId} value={batch.batchId}>
+                  {batch.projectCode}
+                  {batch.batchName ? ` | ${batch.batchName}` : ""}
+                  {batch.isDefault === "TRUE" ? " | Default" : ""}
+                </option>
+              ))}
+            </select>
+          </FieldLabel>
           <TextInput
             label="Creator Name"
             value={record.creatorName}
@@ -565,7 +661,7 @@ function CreatorRecordModal({
               onChange={(event) =>
                 patchRecord({ status: event.target.value as SelectedCreatorStatus })
               }
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+              className={`h-10 w-full rounded-md border px-3 text-sm font-medium outline-none ring-ring focus:ring-2 ${statusSelectStyles[record.status]}`}
             >
               {selectedCreatorStatuses.map((status) => (
                 <option key={status} value={status}>
@@ -809,7 +905,8 @@ function StatusSelect({
     <select
       value={status}
       onChange={(event) => onChange(event.target.value as SelectedCreatorStatus)}
-      className="h-8 min-w-32 rounded-full border border-border bg-background px-2 text-xs outline-none ring-ring focus:ring-2"
+      aria-label="Creator status"
+      className={`h-8 min-w-32 rounded-full border px-2 text-xs font-medium outline-none ring-ring transition-colors focus:ring-2 ${statusSelectStyles[status]}`}
     >
       {selectedCreatorStatuses.map((option) => (
         <option key={option} value={option}>

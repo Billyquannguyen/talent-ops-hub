@@ -4,6 +4,8 @@ import {
   type AgencyDatabaseRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
+  type CampaignBatchRecord,
+  type CampaignProjectInfoRecord,
   type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
   type CentralAppDatabase,
@@ -147,6 +149,8 @@ function mergeLegacyCampaignRegistry(database: CentralAppDatabase, now: string) 
     database.worksheets.ActiveCampaignCreators.push({
       recordId: stringValue(record.id) || createId("creator"),
       campaignId,
+      batchId: "",
+      projectCode: "",
       month: stringValue(record.month) || String(updatedAt).slice(0, 7),
       creatorName: stringValue(record.creatorName),
       creatorLink: stringValue(record.creatorLink),
@@ -244,6 +248,7 @@ function normalizeCentralDatabase(value: unknown): CentralAppDatabase {
     databaseName: "Katlas Buddy Database",
     worksheets: {
       CampaignProfiles: normalizeArray(worksheets.CampaignProfiles, normalizeCampaignProfile),
+      CampaignBatches: normalizeArray(worksheets.CampaignBatches, normalizeCampaignBatch),
       SourcingTemplates: normalizeArray(worksheets.SourcingTemplates, normalizeSourcingTemplate),
       OutreachTemplates: normalizeArray(worksheets.OutreachTemplates, normalizeOutreachTemplate),
       CampaignMemoryCards: normalizeArray(worksheets.CampaignMemoryCards, normalizeMemoryCard),
@@ -258,8 +263,28 @@ function normalizeCentralDatabase(value: unknown): CentralAppDatabase {
         worksheets.CampaignPromptVault,
         normalizeCampaignPromptVaultRecord,
       ),
+      CampaignProjectInfo: normalizeArray(
+        worksheets.CampaignProjectInfo,
+        normalizeCampaignProjectInfoRecord,
+      ),
       AppSettings: normalizeArray(worksheets.AppSettings, normalizeAppSetting),
     },
+  };
+}
+
+function normalizeCampaignBatch(value: unknown): CampaignBatchRecord {
+  const row = isRecord(value) ? value : {};
+  const now = new Date().toISOString();
+  const createdAt = stringValue(row.createdAt) || now;
+  return {
+    batchId: stringValue(row.batchId) || stringValue(row.id) || createId("batch"),
+    campaignId: stringValue(row.campaignId),
+    projectCode: stringValue(row.projectCode) || stringValue(row.campaignCode),
+    batchName: stringValue(row.batchName) || stringValue(row.projectCode),
+    isDefault: stringValue(row.isDefault) || "FALSE",
+    status: stringValue(row.status) || "active",
+    createdAt,
+    updatedAt: stringValue(row.updatedAt) || createdAt,
   };
 }
 
@@ -356,6 +381,8 @@ function normalizeActiveCampaignCreator(value: unknown): ActiveCampaignCreatorRe
   return {
     recordId: stringValue(row.recordId) || stringValue(row.id) || createId("creator"),
     campaignId: stringValue(row.campaignId),
+    batchId: stringValue(row.batchId),
+    projectCode: stringValue(row.projectCode) || stringValue(row.campaignCode),
     month: stringValue(row.month) || createdAt.slice(0, 7),
     creatorName: stringValue(row.creatorName),
     creatorLink: stringValue(row.creatorLink),
@@ -369,6 +396,24 @@ function normalizeActiveCampaignCreator(value: unknown): ActiveCampaignCreatorRe
     draftLink: stringValue(row.draftLink),
     liveLink: stringValue(row.liveLink),
     notes: stringValue(row.notes),
+    createdAt,
+    updatedAt: stringValue(row.updatedAt) || createdAt,
+  };
+}
+
+function normalizeCampaignProjectInfoRecord(value: unknown): CampaignProjectInfoRecord {
+  const row = isRecord(value) ? value : {};
+  const now = new Date().toISOString();
+  const createdAt = stringValue(row.createdAt) || now;
+  return {
+    infoId: stringValue(row.infoId) || stringValue(row.id) || createId("project-info"),
+    campaignId: stringValue(row.campaignId),
+    projectBrief: stringValue(row.projectBrief),
+    productInformation: stringValue(row.productInformation),
+    creatorPersonas: stringValue(row.creatorPersonas),
+    sop: stringValue(row.sop),
+    scriptFilmingNotes: stringValue(row.scriptFilmingNotes),
+    postingFinalisationNotes: stringValue(row.postingFinalisationNotes),
     createdAt,
     updatedAt: stringValue(row.updatedAt) || createdAt,
   };

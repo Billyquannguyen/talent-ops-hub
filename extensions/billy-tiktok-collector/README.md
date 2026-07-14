@@ -1,4 +1,4 @@
-# Billy TikTok Collector
+# Billy Creator Collector
 
 Private Chrome extension for Billy's Scraper System.
 
@@ -13,13 +13,13 @@ Private Chrome extension for Billy's Scraper System.
 
 ## Use
 
-1. Open a TikTok hashtag or sound page.
-2. Click the Billy TikTok Collector extension.
+1. Open a TikTok hashtag/sound page, Instagram hashtag/audio page, or YouTube search/hashtag/channel page.
+2. Click the Billy Creator Collector extension.
 3. Click `Begin Scraping Session`.
-4. Scroll the TikTok grid. The extension keeps adding newly loaded videos and dedupes creators.
+4. Scroll the source grid. The extension keeps adding newly loaded posts and dedupes creators.
 5. Click the extension again.
 6. Click `Finish & Send To Billy`.
 
-The TikTok tab stays open. Billy sends the creator session to the app in the background and shows a short transfer notice on the TikTok page.
+The source tab stays open. Billy sends the creator session to the app in the background and shows a short transfer notice on the source page.
 
-Billy imports the creator links, enriches profile data where TikTok exposes it, then uses Billy's follower filters and preview/export flow.
+TikTok imports still use Billy's existing profile lookup. Instagram and YouTube imports use the zero-cost browser collector; follower counts appear only when the platform exposes them while the session is running.

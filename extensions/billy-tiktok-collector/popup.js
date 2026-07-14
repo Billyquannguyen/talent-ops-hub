@@ -37,15 +37,15 @@ async function init() {
 
   collectButton.addEventListener("click", beginScrapingSession);
   sendButton.addEventListener("click", sendToBilly);
-  await syncActiveTikTokSession();
+  await syncActiveSourceSession();
   startLiveSessionRefresh();
 }
 
 async function beginScrapingSession() {
   setStatus("Starting Billy scraping session...");
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !tab.url?.includes("tiktok.com")) {
-    setStatus("Open a TikTok hashtag or sound page first.");
+  if (!tab?.id || !isSupportedSourceUrl(tab.url)) {
+    setStatus("Open a TikTok, Instagram, or YouTube source page first.");
     return;
   }
 
@@ -62,9 +62,9 @@ async function beginScrapingSession() {
     });
     renderPayload(lastPayload);
     startLiveSessionRefresh();
-    setStatus("Session started. Scroll TikTok and Billy will keep adding loaded videos.");
+    setStatus("Session started. Scroll the source page and Billy will keep adding loaded posts.");
   } catch (error) {
-    setStatus(`Could not start. Reload the TikTok page and try again. ${getError(error)}`);
+    setStatus(`Could not start. Reload the source page and try again. ${getError(error)}`);
   }
 }
 
@@ -75,11 +75,11 @@ async function sendToBilly() {
     return;
   }
 
-  const sourceTabId = sessionTabId || (await getActiveTikTokTabId());
+  const sourceTabId = sessionTabId || (await getActiveSourceTabId());
   const payload = await finishActiveSession(sourceTabId);
 
   if (!payload?.creators?.length) {
-    setStatus("Begin a session on a TikTok hashtag or sound page first.");
+    setStatus("Begin a session on a TikTok, Instagram, or YouTube source page first.");
     return;
   }
 
@@ -97,20 +97,20 @@ async function sendToBilly() {
     stopLiveSessionRefresh();
     await chrome.storage.local.remove(["billySessionTabId", "lastBillyPayload"]);
     renderPayload(undefined);
-    await notifyTikTokTab(
+    await notifySourceTab(
       sourceTabId,
       `Sent ${payload.creators.length} creators to Billy. You can keep scrolling.`,
     );
-    setStatus(`Sent ${payload.creators.length} creators to Billy. TikTok stayed open.`);
+    setStatus(`Sent ${payload.creators.length} creators to Billy. The source tab stayed open.`);
   } catch (error) {
-    await notifyTikTokTab(sourceTabId, `Billy did not receive the import. ${getError(error)}`);
+    await notifySourceTab(sourceTabId, `Billy did not receive the import. ${getError(error)}`);
     setStatus(`Billy did not receive the import. ${getError(error)}`);
   }
 }
 
-async function syncActiveTikTokSession() {
+async function syncActiveSourceSession() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !tab.url?.includes("tiktok.com")) {
+  if (!tab?.id || !isSupportedSourceUrl(tab.url)) {
     renderPayload(undefined);
     stopLiveSessionRefresh();
     return;
@@ -140,14 +140,14 @@ async function syncActiveTikTokSession() {
     }
     renderPayload(lastPayload);
     startLiveSessionRefresh();
-    setStatus("Session is running. Keep scrolling TikTok, then finish and send.");
+    setStatus("Session is running. Keep scrolling, then finish and send.");
   } catch {
     renderPayload(undefined);
   }
 }
 
 async function finishActiveSession(targetTabId) {
-  targetTabId = targetTabId || sessionTabId || (await getActiveTikTokTabId());
+  targetTabId = targetTabId || sessionTabId || (await getActiveSourceTabId());
   if (!targetTabId) return undefined;
 
   try {
@@ -163,15 +163,15 @@ async function finishActiveSession(targetTabId) {
     return lastPayload;
   } catch (error) {
     setStatus(
-      `Could not finish the active session. Return to the TikTok tab and try again. ${getError(error)}`,
+      `Could not finish the active session. Return to the source tab and try again. ${getError(error)}`,
     );
     return undefined;
   }
 }
 
-async function getActiveTikTokTabId() {
+async function getActiveSourceTabId() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab?.id && tab.url?.includes("tiktok.com") ? tab.id : undefined;
+  return tab?.id && isSupportedSourceUrl(tab.url) ? tab.id : undefined;
 }
 
 function startLiveSessionRefresh() {
@@ -193,7 +193,7 @@ async function refreshActiveSession() {
     return;
   }
 
-  const targetTabId = sessionTabId || (await getActiveTikTokTabId());
+  const targetTabId = sessionTabId || (await getActiveSourceTabId());
   if (!targetTabId) return;
 
   try {
@@ -324,7 +324,7 @@ async function waitForBillyImportAck(tabId, importId) {
   throw new Error("Billy opened, but the dashboard did not confirm the import.");
 }
 
-async function notifyTikTokTab(tabId, message) {
+async function notifySourceTab(tabId, message) {
   if (!tabId) return;
   try {
     await chrome.tabs.sendMessage(tabId, {
@@ -332,7 +332,20 @@ async function notifyTikTokTab(tabId, message) {
       message,
     });
   } catch {
-    // The TikTok tab may have been closed. The popup status still reports the result.
+    // The source tab may have been closed. The popup status still reports the result.
+  }
+}
+
+function isSupportedSourceUrl(value) {
+  try {
+    const url = new URL(value || "");
+    return (
+      url.hostname.includes("tiktok.com") ||
+      url.hostname.includes("instagram.com") ||
+      url.hostname.includes("youtube.com")
+    );
+  } catch {
+    return false;
   }
 }
 

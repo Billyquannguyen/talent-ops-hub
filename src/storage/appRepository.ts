@@ -13,6 +13,7 @@ import {
   deleteActiveCampaignCreatorFromGoogleSheets,
   deleteAgencyDatabaseFromGoogleSheets,
   deleteCampaignProfileFromGoogleSheets,
+  deleteCampaignBatchFromGoogleSheets,
   deleteCampaignMemoryCardFromGoogleSheets,
   deleteCampaignProjectInfoFromGoogleSheets,
   deleteCampaignPromptVaultFromGoogleSheets,
@@ -24,6 +25,7 @@ import {
   listAppSettingsFromGoogleSheets,
   listActiveCampaignCreatorsFromGoogleSheets,
   listCampaignMemoryCardsFromGoogleSheets,
+  listCampaignBatchesFromGoogleSheets,
   listCampaignProjectInfoFromGoogleSheets,
   listCampaignPromptVaultFromGoogleSheets,
   listCampaignProfilesFromGoogleSheets,
@@ -42,6 +44,7 @@ import {
   saveDatabaseToGoogleSheets,
   saveAppSettingToGoogleSheets,
   saveCampaignProfileToGoogleSheets,
+  saveCampaignBatchToGoogleSheets,
   saveCampaignProjectInfoToGoogleSheets,
   saveCampaignPromptVaultToGoogleSheets,
   saveCreatorDatabaseToGoogleSheets,
@@ -67,6 +70,7 @@ import {
   type ActiveCampaignCreatorRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
+  type CampaignBatchRecord,
   type CampaignProjectInfoRecord,
   type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
@@ -144,6 +148,7 @@ export async function loadActiveCampaignsBundleFromGoogleSheetsOnly(): Promise<A
     throw new Error(getStorageFailureMessage(result.status));
   }
   rememberCampaignProfiles(result.campaignProfiles);
+  rememberCampaignBatches(result.campaignBatches);
   rememberActiveCampaignCreators(result.activeCampaignCreators);
   return result;
 }
@@ -236,6 +241,52 @@ export async function deleteCampaignProfileFromGoogleSheetsOnly(
   }
   clearPrimaryDatabaseCache();
   rememberCampaignProfiles(result.records);
+  return result.records;
+}
+
+export async function listCampaignBatchesFromGoogleSheetsOnly(): Promise<CampaignBatchRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "list-campaign-batches-start", {
+    at: new Date().toISOString(),
+  });
+  const result = await listCampaignBatchesFromGoogleSheets();
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  rememberCampaignBatches(result.records);
+  return result.records;
+}
+
+export async function saveCampaignBatchToGoogleSheetsOnly(
+  record: CampaignBatchRecord,
+): Promise<CampaignBatchRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "save-campaign-batch-start", {
+    batchId: record.batchId,
+    campaignId: record.campaignId,
+    projectCode: record.projectCode,
+    at: new Date().toISOString(),
+  });
+  const result = await saveCampaignBatchToGoogleSheets(record);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignBatches(result.records);
+  return result.records;
+}
+
+export async function deleteCampaignBatchFromGoogleSheetsOnly(
+  batchId: string,
+): Promise<CampaignBatchRecord[]> {
+  console.info("[AppRepositoryGoogleSheets]", "delete-campaign-batch-start", {
+    batchId,
+    at: new Date().toISOString(),
+  });
+  const result = await deleteCampaignBatchFromGoogleSheets(batchId);
+  if (!result.ok) {
+    throw new Error(getStorageFailureMessage(result.status));
+  }
+  clearPrimaryDatabaseCache();
+  rememberCampaignBatches(result.records);
   return result.records;
 }
 
@@ -1025,6 +1076,12 @@ function rememberCampaignProfiles(records: CampaignProfileRecord[]) {
   saveCentralDatabaseToLocalStorage(database);
 }
 
+function rememberCampaignBatches(records: CampaignBatchRecord[]) {
+  const database = loadAppDatabase();
+  database.worksheets.CampaignBatches = records;
+  saveCentralDatabaseToLocalStorage(database);
+}
+
 function rememberOutreachTemplates(records: OutreachTemplateRecord[]) {
   const database = loadAppDatabase();
   database.worksheets.OutreachTemplates = records;
@@ -1114,6 +1171,16 @@ export async function migrateLocalDatabaseToPrimary(): Promise<{
 
 export function readCampaignProfiles(): CampaignProfileRecord[] {
   return loadAppDatabase().worksheets.CampaignProfiles;
+}
+
+export function readCampaignBatches(): CampaignBatchRecord[] {
+  return loadAppDatabase().worksheets.CampaignBatches;
+}
+
+export function writeCampaignBatches(records: CampaignBatchRecord[]) {
+  updateDatabase((database) => {
+    database.worksheets.CampaignBatches = records;
+  });
 }
 
 export function writeCampaignProfiles(records: CampaignProfileRecord[]) {

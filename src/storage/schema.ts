@@ -2,6 +2,7 @@ export const centralDatabaseName = "Katlas Buddy Database";
 
 export const centralWorksheetNames = [
   "CampaignProfiles",
+  "CampaignBatches",
   "SourcingTemplates",
   "OutreachTemplates",
   "CampaignMemoryCards",
@@ -22,6 +23,17 @@ export type CampaignProfileRecord = {
   campaignCode: string;
   country: string;
   preferredLanguages: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CampaignBatchRecord = {
+  batchId: string;
+  campaignId: string;
+  projectCode: string;
+  batchName: string;
+  isDefault: string;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -62,6 +74,8 @@ export type CampaignMemoryCardRecord = {
 export type ActiveCampaignCreatorRecord = {
   recordId: string;
   campaignId: string;
+  batchId: string;
+  projectCode: string;
   month: string;
   creatorName: string;
   creatorLink: string;
@@ -169,6 +183,7 @@ export type CentralAppDatabase = {
   databaseName: typeof centralDatabaseName;
   worksheets: {
     CampaignProfiles: CampaignProfileRecord[];
+    CampaignBatches: CampaignBatchRecord[];
     SourcingTemplates: SourcingTemplateRecord[];
     OutreachTemplates: OutreachTemplateRecord[];
     CampaignMemoryCards: CampaignMemoryCardRecord[];
@@ -207,6 +222,16 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "createdAt",
     "updatedAt",
   ],
+  CampaignBatches: [
+    "batchId",
+    "campaignId",
+    "projectCode",
+    "batchName",
+    "isDefault",
+    "status",
+    "createdAt",
+    "updatedAt",
+  ],
   SourcingTemplates: [
     "id",
     "campaignId",
@@ -232,6 +257,8 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
   ActiveCampaignCreators: [
     "recordId",
     "campaignId",
+    "batchId",
+    "projectCode",
     "month",
     "creatorName",
     "creatorLink",
@@ -328,6 +355,10 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
 
 export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   campaignId: ["id", "campaign id", "campaign_id"],
+  batchId: ["batch id", "batch_id", "id"],
+  projectCode: ["project code", "project_code", "campaign code", "campaign_code"],
+  batchName: ["batch name", "batch_name", "name"],
+  isDefault: ["is default", "is_default", "default"],
   month: ["month", "campaign month", "performance month"],
   campaignName: ["campaign name", "name", "campaign_name"],
   campaignCode: ["campaign code", "campaign id code", "campaign_code"],
@@ -386,6 +417,7 @@ export function createEmptyCentralDatabase(): CentralAppDatabase {
     databaseName: centralDatabaseName,
     worksheets: {
       CampaignProfiles: [],
+      CampaignBatches: [],
       SourcingTemplates: [],
       OutreachTemplates: [],
       CampaignMemoryCards: [],

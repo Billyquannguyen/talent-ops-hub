@@ -11,6 +11,7 @@ import {
   type AgencyDatabaseRecord,
   type AppSettingRecord,
   type CampaignMemoryCardRecord,
+  type CampaignBatchRecord,
   type CampaignProjectInfoRecord,
   type CampaignPromptVaultRecord,
   type CampaignProfileRecord,
@@ -22,6 +23,11 @@ import {
   type SourcingTemplateRecord,
   type StorageDiagnostic,
 } from "./schema";
+import {
+  cleanupCampaignBatchRecords,
+  removeCampaignBatchRecord,
+  upsertCampaignBatchRecord,
+} from "./campaignBatches";
 import {
   cleanupSourcingTemplateRecords,
   isActiveSourcingTemplateRecord,
@@ -95,6 +101,7 @@ const scopes = [
 
 const rowIdFields: Record<CentralWorksheetName, string> = {
   CampaignProfiles: "campaignId",
+  CampaignBatches: "batchId",
   SourcingTemplates: "id",
   OutreachTemplates: "templateId",
   CampaignMemoryCards: "cardId",
@@ -276,12 +283,13 @@ export async function readActiveCampaignsBundleFromGoogleSheets() {
   const spreadsheetId = await resolveSpreadsheetId(config);
   const database = await readWorksheetSubsetFromGoogleSheets(
     spreadsheetId,
-    ["CampaignProfiles", "ActiveCampaignCreators"],
+    ["CampaignProfiles", "CampaignBatches", "ActiveCampaignCreators"],
     "active-campaigns:bundle",
   );
 
   return {
     campaignProfiles: database.worksheets.CampaignProfiles,
+    campaignBatches: database.worksheets.CampaignBatches,
     activeCampaignCreators: database.worksheets.ActiveCampaignCreators,
   };
 }
@@ -420,6 +428,74 @@ export async function deleteCampaignProfileInGoogleSheets(campaignId: string) {
   return {
     records: cleanup.records,
   };
+}
+
+export async function listCampaignBatchesInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const batchRows = await readWorksheetRecordsWithRowNumbers<CampaignBatchRecord>(
+    spreadsheetId,
+    "CampaignBatches",
+  );
+  const cleanup = cleanupCampaignBatchRecords(batchRows.rows.map((row) => row.record));
+  if (cleanup.removedCount > 0) {
+    await writeCurrentStateWorksheetRows(
+      spreadsheetId,
+      "CampaignBatches",
+      batchRows,
+      cleanup.records,
+    );
+    invalidateDatabaseReadCache("campaign-batch-list-cleanup");
+  }
+  return { records: cleanup.records };
+}
+
+export async function upsertCampaignBatchInGoogleSheets(record: CampaignBatchRecord) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const batchRows = await readWorksheetRecordsWithRowNumbers<CampaignBatchRecord>(
+    spreadsheetId,
+    "CampaignBatches",
+  );
+  const cleanup = upsertCampaignBatchRecord(
+    batchRows.rows.map((row) => row.record),
+    record,
+  );
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignBatches",
+    batchRows,
+    cleanup.records,
+  );
+  invalidateDatabaseReadCache("campaign-batch-targeted-write");
+  return { records: cleanup.records };
+}
+
+export async function deleteCampaignBatchInGoogleSheets(batchId: string) {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  await ensureDatabaseShape(spreadsheetId);
+
+  const batchRows = await readWorksheetRecordsWithRowNumbers<CampaignBatchRecord>(
+    spreadsheetId,
+    "CampaignBatches",
+  );
+  const cleanup = removeCampaignBatchRecord(
+    batchRows.rows.map((row) => row.record),
+    batchId,
+  );
+  await writeCurrentStateWorksheetRows(
+    spreadsheetId,
+    "CampaignBatches",
+    batchRows,
+    cleanup.records,
+  );
+  invalidateDatabaseReadCache("campaign-batch-targeted-delete");
+  return { records: cleanup.records };
 }
 
 export async function migrateAgencyDatabaseContactsInGoogleSheets() {
@@ -1429,6 +1505,7 @@ export async function mergeCentralDatabaseIntoGoogleSheets(localDatabase: Centra
   });
   const report = {
     CampaignProfiles: 0,
+    CampaignBatches: 0,
     SourcingTemplates: 0,
     OutreachTemplates: 0,
     CampaignMemoryCards: 0,
@@ -2538,6 +2615,18 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         createdAt: stringValue(row.createdAt),
         updatedAt: stringValue(row.updatedAt),
       })),
+      CampaignBatches: cleanupCampaignBatchRecords(
+        rowsBySheet.CampaignBatches.map((row) => ({
+          batchId: stringValue(row.batchId),
+          campaignId: stringValue(row.campaignId),
+          projectCode: stringValue(row.projectCode),
+          batchName: stringValue(row.batchName),
+          isDefault: stringValue(row.isDefault),
+          status: stringValue(row.status),
+          createdAt: stringValue(row.createdAt),
+          updatedAt: stringValue(row.updatedAt),
+        })),
+      ).records,
       SourcingTemplates: rowsBySheet.SourcingTemplates.map((row) => ({
         id: stringValue(row.id),
         campaignId: stringValue(row.campaignId),
@@ -2575,6 +2664,8 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         rowsBySheet.ActiveCampaignCreators.map((row) => ({
           recordId: stringValue(row.recordId),
           campaignId: stringValue(row.campaignId),
+          batchId: stringValue(row.batchId),
+          projectCode: stringValue(row.projectCode),
           month: stringValue(row.month),
           creatorName: stringValue(row.creatorName),
           creatorLink: stringValue(row.creatorLink),
@@ -2688,6 +2779,10 @@ function getRowsForWorksheet(
 ): CampaignProfileRecord[];
 function getRowsForWorksheet(
   database: CentralAppDatabase,
+  worksheetName: "CampaignBatches",
+): CampaignBatchRecord[];
+function getRowsForWorksheet(
+  database: CentralAppDatabase,
   worksheetName: "SourcingTemplates",
 ): SourcingTemplateRecord[];
 function getRowsForWorksheet(
@@ -2726,8 +2821,12 @@ function getRowsForWorksheet(
   database: CentralAppDatabase,
   worksheetName: "AppSettings",
 ): AppSettingRecord[];
+function getRowsForWorksheet(
+  database: CentralAppDatabase,
+  worksheetName: CentralWorksheetName,
+): Array<Record<string, unknown>>;
 function getRowsForWorksheet(database: CentralAppDatabase, worksheetName: CentralWorksheetName) {
-  return database.worksheets[worksheetName];
+  return database.worksheets[worksheetName] as unknown as Array<Record<string, unknown>>;
 }
 
 function setRowsForWorksheet(

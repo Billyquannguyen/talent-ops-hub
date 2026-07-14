@@ -65,6 +65,8 @@ export type GlobalCampaign = {
 export type SelectedCreatorRecord = {
   id: string;
   campaignRegistryId: string;
+  batchId: string;
+  projectCode: string;
   month: string;
   creatorName: string;
   creatorLink: string;
@@ -307,6 +309,8 @@ export function selectedCreatorRecordToStorageRecord(
   return {
     recordId: record.id,
     campaignId: record.campaignRegistryId,
+    batchId: record.batchId,
+    projectCode: record.projectCode,
     month: record.month,
     creatorName: record.creatorName,
     creatorLink: record.creatorLink,
@@ -332,6 +336,8 @@ function activeCampaignCreatorRecordsToSelectedCreatorRecords(
     normalizeCreatorRecord({
       id: record.recordId,
       campaignRegistryId: record.campaignId,
+      batchId: record.batchId,
+      projectCode: record.projectCode,
       month: record.month,
       creatorName: record.creatorName,
       creatorLink: record.creatorLink,
@@ -379,6 +385,8 @@ function databaseToCampaignRegistry(
     normalizeCreatorRecord({
       id: record.recordId,
       campaignRegistryId: record.campaignId,
+      batchId: record.batchId,
+      projectCode: record.projectCode,
       month: record.month,
       creatorName: record.creatorName,
       creatorLink: record.creatorLink,
@@ -419,11 +427,16 @@ export function createCampaignMemoryCard(title = "New Memory", content = ""): Ca
   };
 }
 
-export function createSelectedCreatorRecord(campaignRegistryId: string): SelectedCreatorRecord {
+export function createSelectedCreatorRecord(
+  campaignRegistryId: string,
+  batch: { batchId: string; projectCode: string } = { batchId: "", projectCode: "" },
+): SelectedCreatorRecord {
   const now = new Date().toISOString();
   return {
     id: createId("creator"),
     campaignRegistryId,
+    batchId: batch.batchId,
+    projectCode: batch.projectCode.trim().toUpperCase(),
     month: getCurrentMonthValue(),
     creatorName: "",
     creatorLink: "",
@@ -546,27 +559,27 @@ function loadLegacyCampaignRegistry(
     const now = new Date().toISOString();
 
     const campaigns = parsed.map((value) => {
-        const campaign = isRecord(value) ? value : {};
-        const name =
-          stringValue(campaign.name) || stringValue(campaign.campaignName) || "Untitled Campaign";
+      const campaign = isRecord(value) ? value : {};
+      const name =
+        stringValue(campaign.name) || stringValue(campaign.campaignName) || "Untitled Campaign";
 
-        return {
-          id: stringValue(campaign.id) || createId("campaign"),
-          campaignName: name,
-          campaignCode:
-            stringValue(campaign.campaignCode) ||
-            stringValue(campaign.campaignId) ||
-            createCampaignCode(name),
-          status: normalizeCampaignStatus(campaign.status),
-          preferredLanguages: normalizePreferredLanguages(
-            campaign.preferredLanguages,
-            inferPreferredLanguages(name),
-          ),
-          memoryCards: normalizeMemoryCardsOrDefault(campaign.memoryCards),
-          createdAt: stringValue(campaign.createdAt) || now,
-          updatedAt: stringValue(campaign.updatedAt) || now,
-        };
-      });
+      return {
+        id: stringValue(campaign.id) || createId("campaign"),
+        campaignName: name,
+        campaignCode:
+          stringValue(campaign.campaignCode) ||
+          stringValue(campaign.campaignId) ||
+          createCampaignCode(name),
+        status: normalizeCampaignStatus(campaign.status),
+        preferredLanguages: normalizePreferredLanguages(
+          campaign.preferredLanguages,
+          inferPreferredLanguages(name),
+        ),
+        memoryCards: normalizeMemoryCardsOrDefault(campaign.memoryCards),
+        createdAt: stringValue(campaign.createdAt) || now,
+        updatedAt: stringValue(campaign.updatedAt) || now,
+      };
+    });
 
     return {
       campaigns: options.includeHidden
@@ -638,6 +651,8 @@ function normalizeCreatorRecord(value: unknown): SelectedCreatorRecord {
   return {
     id: stringValue(record.id) || createId("creator"),
     campaignRegistryId: stringValue(record.campaignRegistryId),
+    batchId: stringValue(record.batchId),
+    projectCode: stringValue(record.projectCode).toUpperCase(),
     month: stringValue(record.month) || createdAt.slice(0, 7),
     creatorName: stringValue(record.creatorName),
     creatorLink: stringValue(record.creatorLink),

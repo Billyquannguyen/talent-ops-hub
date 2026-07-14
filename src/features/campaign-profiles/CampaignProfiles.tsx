@@ -10,8 +10,10 @@ import {
   Package,
   Pencil,
   Plus,
+  Layers3,
   RotateCcw,
   Save,
+  Star,
   TrendingUp,
   Trash2,
   Users,
@@ -24,10 +26,16 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 
 import { TopBar } from "@/components/TopBar";
 import {
+  deleteCampaignBatchFromGoogleSheetsOnly,
   listCampaignProjectInfoFromGoogleSheetsOnly,
   listEmployeeProfilesFromGoogleSheetsOnly,
+  readCampaignBatches,
+  readCampaignProfiles,
+  saveCampaignBatchToGoogleSheetsOnly,
+  saveCampaignProfileToGoogleSheetsOnly,
   saveCampaignProjectInfoToGoogleSheetsOnly,
 } from "@/storage/appRepository";
+import { createCampaignBatchRecord } from "@/storage/campaignBatches";
 import {
   employeeProfileFromRecord,
   employeeProfileRecordId,
@@ -48,7 +56,11 @@ import {
   type CampaignMemoryCard,
   type CampaignMemoryLanguage,
 } from "@/lib/campaignRegistry";
-import type { CampaignProjectInfoRecord } from "@/storage/schema";
+import type {
+  CampaignBatchRecord,
+  CampaignProfileRecord,
+  CampaignProjectInfoRecord,
+} from "@/storage/schema";
 import {
   campaignActiveStatus,
   campaignHiddenStatus,
@@ -81,6 +93,14 @@ type ProjectInfoTextKey =
 type ProjectInfoEditorState = {
   campaign: GlobalCampaign;
   record: CampaignProjectInfoRecord;
+};
+
+type CampaignBatchDraft = {
+  batchId?: string;
+  projectCode: string;
+  batchName: string;
+  isDefault: boolean;
+  createdAt?: string;
 };
 
 const projectInfoSections: Array<{
@@ -142,6 +162,13 @@ export function CampaignProfiles() {
   const [loaded, setLoaded] = useState(false);
   const [registry, setRegistry] = useState<GlobalCampaignRegistry>(() => loadCampaignRegistry());
   const [editingDraft, setEditingDraft] = useState<CampaignDraft | null>(null);
+  const [editingBatchCampaign, setEditingBatchCampaign] = useState<GlobalCampaign | null>(null);
+  const [editingBatchDraft, setEditingBatchDraft] = useState<CampaignBatchDraft | null>(null);
+  const [campaignBatches, setCampaignBatches] = useState<CampaignBatchRecord[]>(() =>
+    readCampaignBatches(),
+  );
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [batchStatus, setBatchStatus] = useState("");
   const [editingProjectInfo, setEditingProjectInfo] = useState<ProjectInfoEditorState | null>(null);
   const [projectInfoRecords, setProjectInfoRecords] = useState<CampaignProjectInfoRecord[]>([]);
   const [projectInfoLoaded, setProjectInfoLoaded] = useState(false);
@@ -183,6 +210,7 @@ export function CampaignProfiles() {
 
         skipNextRegistrySave.current = true;
         setRegistry(nextRegistry);
+        setCampaignBatches(readCampaignBatches());
         setRoiStatus("ROI data loaded from Katlas Buddy Database");
       } catch (error) {
         if (cancelled) return;
@@ -229,40 +257,254 @@ export function CampaignProfiles() {
     event.preventDefault();
     if (!editingDraft?.campaignName.trim() || !editingDraft.campaignCode.trim()) return;
     const now = new Date().toISOString();
+    let savedCampaign: GlobalCampaign;
 
-    setRegistry((current) => {
-      if (editingDraft.id) {
-        return {
-          ...current,
-          campaigns: current.campaigns.map((campaign) =>
-            campaign.id === editingDraft.id
-              ? {
-                  ...campaign,
-                  campaignName: editingDraft.campaignName.trim(),
-                  campaignCode: editingDraft.campaignCode.trim().toUpperCase(),
-                  preferredLanguages: editingDraft.preferredLanguages,
-                  memoryCards: editingDraft.memoryCards,
-                  updatedAt: now,
-                }
-              : campaign,
-          ),
-        };
-      }
-
-      return {
-        ...current,
-        campaigns: [
-          {
-            ...createCampaign(editingDraft.campaignName, editingDraft.campaignCode),
-            preferredLanguages: editingDraft.preferredLanguages,
-            memoryCards: editingDraft.memoryCards,
-          },
-          ...current.campaigns,
-        ],
+    if (editingDraft.id) {
+      const existingCampaign = registry.campaigns.find(
+        (campaign) => campaign.id === editingDraft.id,
+      );
+      if (!existingCampaign) return;
+      savedCampaign = {
+        ...existingCampaign,
+        campaignName: editingDraft.campaignName.trim(),
+        campaignCode: existingCampaign.campaignCode,
+        preferredLanguages: editingDraft.preferredLanguages,
+        memoryCards: editingDraft.memoryCards,
+        updatedAt: now,
       };
-    });
+      setRegistry((current) => ({
+        ...current,
+        campaigns: current.campaigns.map((campaign) =>
+          campaign.id === savedCampaign.id ? savedCampaign : campaign,
+        ),
+      }));
+    } else {
+      savedCampaign = {
+        ...createCampaign(editingDraft.campaignName, editingDraft.campaignCode),
+        preferredLanguages: editingDraft.preferredLanguages,
+        memoryCards: editingDraft.memoryCards,
+      };
+      setRegistry((current) => ({
+        ...current,
+        campaigns: [savedCampaign, ...current.campaigns],
+      }));
+    }
 
     setEditingDraft(null);
+    if (!editingDraft.id) {
+      void syncDefaultBatchForCampaign(savedCampaign);
+    }
+  }
+
+  async function syncDefaultBatchForCampaign(campaign: GlobalCampaign) {
+    const existingBatches = campaignBatches.filter((batch) => batch.campaignId === campaign.id);
+    const currentDefault =
+      existingBatches.find((batch) => batch.isDefault === "TRUE") ?? existingBatches[0];
+    const now = new Date().toISOString();
+    const nextBatch = currentDefault
+      ? {
+          ...currentDefault,
+          projectCode: campaign.campaignCode,
+          isDefault: "TRUE",
+          updatedAt: now,
+        }
+      : createCampaignBatchRecord({
+          campaignId: campaign.id,
+          projectCode: campaign.campaignCode,
+          batchName: "Initial batch",
+          isDefault: true,
+        });
+
+    try {
+      const records = await saveCampaignBatchToGoogleSheetsOnly(nextBatch);
+      setCampaignBatches(records);
+    } catch (error) {
+      setBatchStatus(
+        error instanceof Error ? error.message : "The default project code could not be saved.",
+      );
+    }
+  }
+
+  async function openBatchManager(campaign: GlobalCampaign) {
+    setEditingBatchCampaign(campaign);
+    setEditingBatchDraft(null);
+    setBatchStatus("");
+
+    const existingBatches = campaignBatches.filter((batch) => batch.campaignId === campaign.id);
+    if (existingBatches.length || !campaign.campaignCode.trim()) return;
+
+    setBatchSaving(true);
+    setBatchStatus("Creating the initial project code...");
+    try {
+      const records = await saveCampaignBatchToGoogleSheetsOnly(
+        createCampaignBatchRecord({
+          campaignId: campaign.id,
+          projectCode: campaign.campaignCode,
+          batchName: "Initial batch",
+          isDefault: true,
+        }),
+      );
+      setCampaignBatches(records);
+      setBatchStatus("Initial project code ready.");
+    } catch (error) {
+      setBatchStatus(error instanceof Error ? error.message : "Project codes could not be loaded.");
+    } finally {
+      setBatchSaving(false);
+    }
+  }
+
+  async function saveCampaignBatch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingBatchCampaign || !editingBatchDraft?.projectCode.trim()) return;
+
+    const projectCode = editingBatchDraft.projectCode.trim().toUpperCase();
+    const campaignRecords = campaignBatches.filter(
+      (batch) => batch.campaignId === editingBatchCampaign.id,
+    );
+    const duplicate = campaignRecords.some(
+      (batch) =>
+        batch.projectCode.toUpperCase() === projectCode &&
+        batch.batchId !== editingBatchDraft.batchId,
+    );
+    if (duplicate) {
+      setBatchStatus(`${projectCode} already exists for this campaign.`);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const record: CampaignBatchRecord = editingBatchDraft.batchId
+      ? {
+          batchId: editingBatchDraft.batchId,
+          campaignId: editingBatchCampaign.id,
+          projectCode,
+          batchName: editingBatchDraft.batchName.trim() || projectCode,
+          isDefault: editingBatchDraft.isDefault || campaignRecords.length === 1 ? "TRUE" : "FALSE",
+          status: "active",
+          createdAt: editingBatchDraft.createdAt || now,
+          updatedAt: now,
+        }
+      : createCampaignBatchRecord({
+          campaignId: editingBatchCampaign.id,
+          projectCode,
+          batchName: editingBatchDraft.batchName,
+          isDefault: editingBatchDraft.isDefault || campaignRecords.length === 0,
+        });
+
+    setBatchSaving(true);
+    setBatchStatus("");
+    try {
+      const records = await saveCampaignBatchToGoogleSheetsOnly(record);
+      setCampaignBatches(records);
+      setEditingBatchDraft(null);
+      setBatchStatus("Project code saved.");
+      const savedRecord = records.find((batch) => batch.batchId === record.batchId) ?? record;
+      if (savedRecord.isDefault === "TRUE") {
+        await updateCampaignDefaultCode(editingBatchCampaign, savedRecord);
+      }
+    } catch (error) {
+      setBatchStatus(
+        error instanceof Error ? error.message : "The project code could not be saved.",
+      );
+    } finally {
+      setBatchSaving(false);
+    }
+  }
+
+  async function makeDefaultBatch(campaign: GlobalCampaign, batch: CampaignBatchRecord) {
+    setBatchSaving(true);
+    setBatchStatus("");
+    try {
+      const records = await saveCampaignBatchToGoogleSheetsOnly({
+        ...batch,
+        isDefault: "TRUE",
+        updatedAt: new Date().toISOString(),
+      });
+      setCampaignBatches(records);
+      const savedBatch = records.find((record) => record.batchId === batch.batchId) ?? batch;
+      await updateCampaignDefaultCode(campaign, savedBatch);
+      setBatchStatus(`${savedBatch.projectCode} is now the default project code.`);
+    } catch (error) {
+      setBatchStatus(
+        error instanceof Error ? error.message : "The default project code could not be changed.",
+      );
+    } finally {
+      setBatchSaving(false);
+    }
+  }
+
+  async function updateCampaignDefaultCode(campaign: GlobalCampaign, batch: CampaignBatchRecord) {
+    const now = new Date().toISOString();
+    const existingProfile = readCampaignProfiles().find(
+      (profileRecord) => profileRecord.campaignId === campaign.id,
+    );
+    const profileRecord: CampaignProfileRecord = {
+      campaignId: campaign.id,
+      campaignName: campaign.campaignName,
+      campaignCode: batch.projectCode,
+      country: existingProfile?.country ?? "",
+      preferredLanguages: campaign.preferredLanguages.join(", "),
+      status: campaign.status || existingProfile?.status || campaignActiveStatus,
+      createdAt: existingProfile?.createdAt || campaign.createdAt || now,
+      updatedAt: now,
+    };
+    await saveCampaignProfileToGoogleSheetsOnly(profileRecord);
+    skipNextRegistrySave.current = true;
+    setRegistry((current) => ({
+      ...current,
+      campaigns: current.campaigns.map((item) =>
+        item.id === campaign.id
+          ? { ...item, campaignCode: batch.projectCode, updatedAt: now }
+          : item,
+      ),
+    }));
+    setEditingBatchCampaign((current) =>
+      current?.id === campaign.id
+        ? { ...current, campaignCode: batch.projectCode, updatedAt: now }
+        : current,
+    );
+  }
+
+  async function deleteCampaignBatch(campaign: GlobalCampaign, batch: CampaignBatchRecord) {
+    const campaignRecords = campaignBatches.filter((item) => item.campaignId === campaign.id);
+    if (campaignRecords.length <= 1) {
+      setBatchStatus("A campaign must keep at least one project code.");
+      return;
+    }
+    if (batch.isDefault === "TRUE") {
+      setBatchStatus("Choose another default project code before deleting this one.");
+      return;
+    }
+    const assignedCreator = registry.creatorRecords.find(
+      (record) =>
+        record.campaignRegistryId === campaign.id &&
+        (record.batchId === batch.batchId ||
+          (!record.batchId && record.projectCode === batch.projectCode)),
+    );
+    if (assignedCreator) {
+      setBatchStatus(
+        `${batch.projectCode} is used by ${assignedCreator.creatorName || "a creator record"} and cannot be deleted.`,
+      );
+      return;
+    }
+    const confirmed =
+      typeof window === "undefined" ||
+      window.confirm(`Delete project code ${batch.projectCode}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setBatchSaving(true);
+    setBatchStatus("");
+    try {
+      const records = await deleteCampaignBatchFromGoogleSheetsOnly(batch.batchId);
+      setCampaignBatches(records);
+      setEditingBatchDraft(null);
+      setBatchStatus("Project code deleted.");
+    } catch (error) {
+      setBatchStatus(
+        error instanceof Error ? error.message : "The project code could not be deleted.",
+      );
+    } finally {
+      setBatchSaving(false);
+    }
   }
 
   function deleteCampaign(campaignId: string) {
@@ -375,8 +617,8 @@ export function CampaignProfiles() {
                 Global campaign registry
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Create and manage campaign names and campaign IDs here. Other workflow tools
-                reference these profiles.
+                Create and manage campaigns here. Each campaign can have multiple project codes for
+                separate batches without becoming a duplicate campaign.
               </p>
             </div>
             <div className="grid w-full gap-0 border-y border-border py-4 sm:grid-cols-3 lg:max-w-lg">
@@ -412,7 +654,7 @@ export function CampaignProfiles() {
               <thead className="bg-muted/40 text-xs text-muted-foreground">
                 <tr>
                   <TableHeader>Campaign Name</TableHeader>
-                  <TableHeader>Campaign ID</TableHeader>
+                  <TableHeader>Project Codes</TableHeader>
                   <TableHeader>Status</TableHeader>
                   <TableHeader>Preferred Languages</TableHeader>
                   <TableHeader>Memory Cards</TableHeader>
@@ -432,9 +674,35 @@ export function CampaignProfiles() {
                         <span className="font-medium">{campaign.campaignName}</span>
                       </TableCell>
                       <TableCell>
-                        <span className="rounded-full border border-border bg-background px-2 py-1 text-xs">
-                          {campaign.campaignCode}
-                        </span>
+                        <div className="flex max-w-56 flex-wrap gap-1.5">
+                          {campaignBatches.some((batch) => batch.campaignId === campaign.id) ? (
+                            campaignBatches
+                              .filter((batch) => batch.campaignId === campaign.id)
+                              .sort(
+                                (left, right) =>
+                                  Number(right.isDefault === "TRUE") -
+                                  Number(left.isDefault === "TRUE"),
+                              )
+                              .map((batch) => (
+                                <span
+                                  key={batch.batchId}
+                                  className={`rounded-full border px-2 py-1 text-xs ${
+                                    batch.isDefault === "TRUE"
+                                      ? "border-primary/50 bg-primary/10 text-foreground"
+                                      : "border-border bg-background text-muted-foreground"
+                                  }`}
+                                  title={batch.batchName || batch.projectCode}
+                                >
+                                  {batch.projectCode}
+                                  {batch.isDefault === "TRUE" ? " · Default" : ""}
+                                </span>
+                              ))
+                          ) : (
+                            <span className="rounded-full border border-border bg-background px-2 py-1 text-xs">
+                              {campaign.campaignCode}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <span
@@ -466,6 +734,13 @@ export function CampaignProfiles() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => void openBatchManager(campaign)}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition hover:bg-accent"
+                          >
+                            <Layers3 className="size-3.5" />
+                            Project Codes
+                          </button>
                           <button
                             onClick={() => void openProjectInfo(campaign)}
                             className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition hover:bg-accent"
@@ -618,6 +893,242 @@ export function CampaignProfiles() {
           onSubmit={saveProjectInfo}
         />
       ) : null}
+
+      {editingBatchCampaign ? (
+        <CampaignBatchModal
+          campaign={editingBatchCampaign}
+          batches={campaignBatches.filter((batch) => batch.campaignId === editingBatchCampaign.id)}
+          draft={editingBatchDraft}
+          status={batchStatus}
+          saving={batchSaving}
+          onAdd={() =>
+            setEditingBatchDraft({
+              projectCode: "",
+              batchName: "",
+              isDefault: false,
+            })
+          }
+          onEdit={(batch) =>
+            setEditingBatchDraft({
+              batchId: batch.batchId,
+              projectCode: batch.projectCode,
+              batchName: batch.batchName,
+              isDefault: batch.isDefault === "TRUE",
+              createdAt: batch.createdAt,
+            })
+          }
+          onDraftChange={(patch) =>
+            setEditingBatchDraft((current) => (current ? { ...current, ...patch } : current))
+          }
+          onCancelDraft={() => setEditingBatchDraft(null)}
+          onMakeDefault={(batch) => void makeDefaultBatch(editingBatchCampaign, batch)}
+          onDelete={(batch) => void deleteCampaignBatch(editingBatchCampaign, batch)}
+          onClose={() => {
+            setEditingBatchCampaign(null);
+            setEditingBatchDraft(null);
+            setBatchStatus("");
+          }}
+          onSubmit={saveCampaignBatch}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function CampaignBatchModal({
+  campaign,
+  batches,
+  draft,
+  status,
+  saving,
+  onAdd,
+  onEdit,
+  onDraftChange,
+  onCancelDraft,
+  onMakeDefault,
+  onDelete,
+  onClose,
+  onSubmit,
+}: {
+  campaign: GlobalCampaign;
+  batches: CampaignBatchRecord[];
+  draft: CampaignBatchDraft | null;
+  status: string;
+  saving: boolean;
+  onAdd: () => void;
+  onEdit: (batch: CampaignBatchRecord) => void;
+  onDraftChange: (patch: Partial<CampaignBatchDraft>) => void;
+  onCancelDraft: () => void;
+  onMakeDefault: (batch: CampaignBatchRecord) => void;
+  onDelete: (batch: CampaignBatchRecord) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const sortedBatches = [...batches].sort(
+    (left, right) =>
+      Number(right.isDefault === "TRUE") - Number(left.isDefault === "TRUE") ||
+      left.createdAt.localeCompare(right.createdAt),
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
+      <section className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border bg-card shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-border p-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Campaign Profiles / Project Codes
+            </p>
+            <h2 className="mt-2 text-xl font-semibold">{campaign.campaignName}</h2>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Keep one campaign profile and add a separate code for each project batch.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-background transition hover:bg-accent"
+            aria-label="Close project codes"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-sm font-semibold">Project codes</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                The default code is used only when an older creator record has no batch selected.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onAdd}
+              disabled={saving || Boolean(draft)}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus className="size-3.5" />
+              Add Project Code
+            </button>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {sortedBatches.length ? (
+              sortedBatches.map((batch) => (
+                <div
+                  key={batch.batchId}
+                  className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">{batch.projectCode}</span>
+                      {batch.isDefault === "TRUE" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-medium">
+                          <Star className="size-3 fill-current" />
+                          Default
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {batch.batchName || "No batch label"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {batch.isDefault !== "TRUE" ? (
+                      <button
+                        type="button"
+                        onClick={() => onMakeDefault(batch)}
+                        disabled={saving}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent disabled:opacity-50"
+                      >
+                        <Star className="size-3.5" />
+                        Set Default
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => onEdit(batch)}
+                      disabled={saving || Boolean(draft)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent disabled:opacity-50"
+                    >
+                      <Pencil className="size-3.5" />
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(batch)}
+                      disabled={saving || Boolean(draft)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium transition hover:bg-accent disabled:opacity-50"
+                    >
+                      <Trash2 className="size-3.5" />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                {saving ? "Preparing the initial project code..." : "No project codes yet."}
+              </div>
+            )}
+          </div>
+
+          {draft ? (
+            <form
+              onSubmit={onSubmit}
+              className="mt-4 rounded-lg border border-border bg-background p-4"
+            >
+              <p className="text-sm font-semibold">
+                {draft.batchId ? "Edit project code" : "Add project code"}
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <TextInput
+                  label="Project Code"
+                  value={draft.projectCode}
+                  placeholder="CCIT02"
+                  required
+                  onChange={(projectCode) => onDraftChange({ projectCode })}
+                />
+                <TextInput
+                  label="Batch Label"
+                  value={draft.batchName}
+                  placeholder="Batch 2"
+                  onChange={(batchName) => onDraftChange({ batchName })}
+                />
+              </div>
+              <label className="mt-3 flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={draft.isDefault}
+                  onChange={(event) => onDraftChange({ isDefault: event.target.checked })}
+                  className="size-4 accent-primary"
+                />
+                Use as the default code for this campaign
+              </label>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={onCancelDraft}
+                  disabled={saving}
+                  className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs font-medium transition hover:bg-accent disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving || !draft.projectCode.trim()}
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Save className="size-3.5" />
+                  {saving ? "Saving..." : "Save Project Code"}
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {status ? <p className="mt-4 text-xs text-muted-foreground">{status}</p> : null}
+        </div>
+      </section>
     </div>
   );
 }
@@ -869,13 +1380,20 @@ function CampaignProfileModal({
             required
           />
           <TextInput
-            label="Campaign ID"
+            label="Default Project Code"
             value={draft.campaignCode}
             onChange={(campaignCode) => onChange({ campaignCode })}
-            placeholder="DOLA-TH"
+            placeholder="CCIT01"
             required
+            disabled={Boolean(draft.id)}
           />
         </div>
+
+        {draft.id ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Change the default or add another code from Project Codes in the campaign table.
+          </p>
+        ) : null}
 
         <div className="mt-5 border-t border-border pt-4">
           <p className="text-xs font-medium text-muted-foreground">Preferred Languages</p>
@@ -1033,12 +1551,14 @@ function TextInput({
   value,
   placeholder,
   required,
+  disabled,
   onChange,
 }: {
   label: string;
   value: string;
   placeholder?: string;
   required?: boolean;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -1047,8 +1567,9 @@ function TextInput({
         value={value}
         placeholder={placeholder}
         required={required}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
       />
     </FieldLabel>
   );

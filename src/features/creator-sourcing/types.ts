@@ -52,7 +52,7 @@ export type FilterSettings = {
   keyword: string;
 };
 
-export type TemplateBlockType = "field" | "contacts" | "blank" | "custom";
+export type TemplateBlockType = "field" | "contacts" | "blank" | "custom" | "currentDate";
 
 export type TemplateColumn = {
   id: string;

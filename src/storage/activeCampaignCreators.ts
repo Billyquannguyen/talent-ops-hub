@@ -83,6 +83,8 @@ function normalizeActiveCampaignCreatorRecord(
   return {
     recordId: stringValue(record.recordId),
     campaignId: stringValue(record.campaignId),
+    batchId: stringValue(record.batchId),
+    projectCode: stringValue(record.projectCode).toUpperCase(),
     month: stringValue(record.month) || createdAt.slice(0, 7),
     creatorName: stringValue(record.creatorName),
     creatorLink: stringValue(record.creatorLink),

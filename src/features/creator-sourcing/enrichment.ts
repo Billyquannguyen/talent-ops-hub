@@ -1,4 +1,6 @@
 import { getCell } from "./filters";
+import { formatCurrentDate } from "./dateFormatting";
+import { formatSourcingFieldValue } from "./numberFormatting";
 import type {
   ColumnMap,
   ContactDiscovery,
@@ -223,9 +225,13 @@ export function buildPreviewRow({
   const values = template.map((column) => {
     if (column.blockType === "blank") return "";
     if (column.blockType === "custom") return column.customValue ?? "";
+    if (column.blockType === "currentDate") return formatCurrentDate();
     if (column.blockType === "contacts") return formatContacts(resolvedContactInfo);
     if (!column.fieldKey) return "";
-    return getCell(data, columnMap, column.fieldKey);
+    return formatSourcingFieldValue(
+      column.fieldKey,
+      getCell(data, columnMap, column.fieldKey),
+    );
   });
 
   return { id, values, contactInfo: resolvedContactInfo };
