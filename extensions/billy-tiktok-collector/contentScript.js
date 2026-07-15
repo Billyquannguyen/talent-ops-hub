@@ -424,6 +424,7 @@ async function hydrateTikTokProfile(username) {
     if (!response.ok) throw new Error(`TikTok returned HTTP ${response.status}.`);
     const html = await response.text();
     return {
+      followers: extractTikTokFollowersFromHtml(html),
       bio: extractTikTokBioFromHtml(html),
       bioLink: extractTikTokBioLinkFromHtml(html),
     };
@@ -1111,6 +1112,27 @@ function extractInstagramBioLinkFromHtml(html) {
 function extractTikTokBioFromHtml(html) {
   const signature = html.match(/"signature"\s*:\s*"((?:\\"|[^"])*)"/i)?.[1];
   return signature ? cleanText(decodeJsonString(signature)) : "";
+}
+
+function extractTikTokFollowersFromHtml(html) {
+  const structuredCount = html.match(/"followerCount"\s*:\s*"?([\d,.]+)"?/i)?.[1];
+  if (structuredCount) {
+    const parsed = parseCompactNumber(structuredCount);
+    if (parsed !== "") return parsed;
+  }
+
+  const metaText = cleanText(
+    decodeHtmlEntities(
+      [
+        getMetaContent(html, "description"),
+        getMetaContent(html, "og:description"),
+        getMetaContent(html, "twitter:description"),
+      ].join(" "),
+    ),
+  );
+  const metaMatch = metaText.match(/([\d,.]+)\s*([KMB]?)\s*Followers/i);
+  if (!metaMatch) return "";
+  return parseCompactNumber(`${metaMatch[1]}${metaMatch[2]}`);
 }
 
 function extractTikTokBioLinkFromHtml(html) {

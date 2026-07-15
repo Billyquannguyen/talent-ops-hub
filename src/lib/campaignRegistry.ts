@@ -71,6 +71,8 @@ export type SelectedCreatorRecord = {
   creatorName: string;
   creatorLink: string;
   avgViews: number;
+  creatorPaymentAmount: number;
+  creatorPaymentCurrency: string;
   internalQuote: number;
   externalQuote: number;
   status: SelectedCreatorStatus;
@@ -315,6 +317,8 @@ export function selectedCreatorRecordToStorageRecord(
     creatorName: record.creatorName,
     creatorLink: record.creatorLink,
     avgViews: record.avgViews,
+    creatorPaymentAmount: record.creatorPaymentAmount,
+    creatorPaymentCurrency: record.creatorPaymentCurrency,
     internalQuote: record.internalQuote,
     externalQuote: record.externalQuote,
     cpm: financials.cpm,
@@ -342,6 +346,8 @@ function activeCampaignCreatorRecordsToSelectedCreatorRecords(
       creatorName: record.creatorName,
       creatorLink: record.creatorLink,
       avgViews: record.avgViews,
+      creatorPaymentAmount: record.creatorPaymentAmount,
+      creatorPaymentCurrency: record.creatorPaymentCurrency,
       internalQuote: record.internalQuote,
       externalQuote: record.externalQuote,
       status: record.status,
@@ -391,6 +397,8 @@ function databaseToCampaignRegistry(
       creatorName: record.creatorName,
       creatorLink: record.creatorLink,
       avgViews: record.avgViews,
+      creatorPaymentAmount: record.creatorPaymentAmount,
+      creatorPaymentCurrency: record.creatorPaymentCurrency,
       internalQuote: record.internalQuote,
       externalQuote: record.externalQuote,
       status: record.status,
@@ -441,6 +449,8 @@ export function createSelectedCreatorRecord(
     creatorName: "",
     creatorLink: "",
     avgViews: 0,
+    creatorPaymentAmount: 0,
+    creatorPaymentCurrency: "USD",
     internalQuote: 0,
     externalQuote: 0,
     status: "Contract signed",
@@ -657,6 +667,9 @@ function normalizeCreatorRecord(value: unknown): SelectedCreatorRecord {
     creatorName: stringValue(record.creatorName),
     creatorLink: stringValue(record.creatorLink),
     avgViews: numberValue(record.avgViews),
+    creatorPaymentAmount:
+      numberValue(record.creatorPaymentAmount) || numberValue(record.internalQuote),
+    creatorPaymentCurrency: stringValue(record.creatorPaymentCurrency).toUpperCase() || "USD",
     internalQuote: numberValue(record.internalQuote),
     externalQuote: numberValue(record.externalQuote),
     status: normalizeStatus(record.status),

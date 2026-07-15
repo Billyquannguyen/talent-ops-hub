@@ -438,8 +438,9 @@ function CreatorRecordsTable({
             <TableHeader>Project Code</TableHeader>
             <TableHeader>Creator Link</TableHeader>
             <TableHeader>Avg Views</TableHeader>
-            <TableHeader>Internal Quote</TableHeader>
-            <TableHeader>External Quote</TableHeader>
+            <TableHeader>Creator Payment</TableHeader>
+            <TableHeader>Internal Cost USD</TableHeader>
+            <TableHeader>Client Quote USD</TableHeader>
             <TableHeader>CPM</TableHeader>
             <TableHeader>Profit</TableHeader>
             <TableHeader>Profit Margin</TableHeader>
@@ -480,6 +481,12 @@ function CreatorRecordsTable({
                     <InlineLink href={record.creatorLink} label="Creator Link" />
                   </TableCell>
                   <TableCell>{formatNumber(record.avgViews)}</TableCell>
+                  <TableCell>
+                    {formatPaymentAmount(
+                      record.creatorPaymentAmount,
+                      record.creatorPaymentCurrency,
+                    )}
+                  </TableCell>
                   <TableCell>{formatCurrency(record.internalQuote)}</TableCell>
                   <TableCell>{formatCurrency(record.externalQuote)}</TableCell>
                   <TableCell>{formatCpm(financials.cpm)}</TableCell>
@@ -641,12 +648,25 @@ function CreatorRecordModal({
             onChange={(avgViews) => patchRecord({ avgViews })}
           />
           <NumberInput
-            label="Internal Quote"
+            label="Creator Payment Amount"
+            value={record.creatorPaymentAmount}
+            onChange={(creatorPaymentAmount) => patchRecord({ creatorPaymentAmount })}
+          />
+          <TextInput
+            label="Creator Payment Currency"
+            value={record.creatorPaymentCurrency}
+            onChange={(creatorPaymentCurrency) =>
+              patchRecord({ creatorPaymentCurrency: creatorPaymentCurrency.toUpperCase() })
+            }
+            required
+          />
+          <NumberInput
+            label="Internal Cost USD"
             value={record.internalQuote}
             onChange={(internalQuote) => patchRecord({ internalQuote })}
           />
           <NumberInput
-            label="External Quote"
+            label="Client Quote USD"
             value={record.externalQuote}
             onChange={(externalQuote) => patchRecord({ externalQuote })}
           />
@@ -947,6 +967,19 @@ function formatCurrency(value: number): string {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatPaymentAmount(value: number, currency: string): string {
+  const normalizedCurrency = currency.trim().toUpperCase() || "USD";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: normalizedCurrency,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)} ${normalizedCurrency}`;
+  }
 }
 
 function formatCpm(value: number): string {

@@ -80,6 +80,8 @@ export type ActiveCampaignCreatorRecord = {
   creatorName: string;
   creatorLink: string;
   avgViews: number;
+  creatorPaymentAmount: number;
+  creatorPaymentCurrency: string;
   internalQuote: number;
   externalQuote: number;
   cpm: number;
@@ -263,6 +265,8 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "creatorName",
     "creatorLink",
     "avgViews",
+    "creatorPaymentAmount",
+    "creatorPaymentCurrency",
     "internalQuote",
     "externalQuote",
     "cpm",
@@ -373,6 +377,18 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   creatorName: ["creator", "creator name", "creator_name"],
   creatorLink: ["creator link", "profile url", "url", "creator_link"],
   avgViews: ["avg views", "average views", "avg_views"],
+  creatorPaymentAmount: [
+    "creator payment amount",
+    "creator quote amount",
+    "payment amount",
+    "creator_payment_amount",
+  ],
+  creatorPaymentCurrency: [
+    "creator payment currency",
+    "creator quote currency",
+    "payment currency",
+    "creator_payment_currency",
+  ],
   internalQuote: ["internal quote", "cost", "internal_quote"],
   externalQuote: ["external quote", "price", "external_quote"],
   profitMargin: ["profit margin", "margin", "profit_margin"],

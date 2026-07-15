@@ -139,6 +139,7 @@ let creatorSourcingReadPromise: {
 let databaseShapeCache: { spreadsheetId: string; expiresAt: number } | null = null;
 const valuesReadCache = new Map<string, { values: unknown[][]; expiresAt: number }>();
 const valuesReadPromises = new Map<string, Promise<unknown[][]>>();
+const ensuredHeaders = new Set<string>();
 
 export function getGoogleSheetsServerStatus() {
   const config = readConfig();
@@ -1097,6 +1098,7 @@ export async function listActiveCampaignCreatorsInGoogleSheets() {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
+  await ensureHeaders(spreadsheetId, "ActiveCampaignCreators");
 
   const creatorRows = await readWorksheetRecordsWithRowNumbers<ActiveCampaignCreatorRecord>(
     spreadsheetId,
@@ -1127,6 +1129,7 @@ export async function upsertActiveCampaignCreatorInGoogleSheets(
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
+  await ensureHeaders(spreadsheetId, "ActiveCampaignCreators");
 
   const creatorRows = await readWorksheetRecordsWithRowNumbers<ActiveCampaignCreatorRecord>(
     spreadsheetId,
@@ -1156,6 +1159,7 @@ export async function deleteActiveCampaignCreatorInGoogleSheets(recordId: string
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
+  await ensureHeaders(spreadsheetId, "ActiveCampaignCreators");
 
   const creatorRows = await readWorksheetRecordsWithRowNumbers<ActiveCampaignCreatorRecord>(
     spreadsheetId,
@@ -1608,17 +1612,24 @@ async function ensureDatabaseShape(spreadsheetId: string) {
 }
 
 async function ensureHeaders(spreadsheetId: string, worksheetName: CentralWorksheetName) {
+  const cacheKey = `${spreadsheetId}::${worksheetName}`;
+  if (ensuredHeaders.has(cacheKey)) return;
+
   const requiredHeaders = requiredWorksheetHeaders[worksheetName];
   const currentHeaderRow = await readValues(spreadsheetId, `${quoteSheetName(worksheetName)}!1:1`);
   const existingHeaders = (currentHeaderRow[0] ?? []).map(stringValue).filter(Boolean);
   const headerMap = buildHeaderMap(existingHeaders, requiredHeaders);
   const missingHeaders = requiredHeaders.filter((header) => headerMap[header] === undefined);
-  if (existingHeaders.length > 0 && missingHeaders.length === 0) return;
+  if (existingHeaders.length > 0 && missingHeaders.length === 0) {
+    ensuredHeaders.add(cacheKey);
+    return;
+  }
 
   const nextHeaders =
     existingHeaders.length > 0 ? [...existingHeaders, ...missingHeaders] : requiredHeaders;
 
   await updateHeaderRow(spreadsheetId, worksheetName, nextHeaders);
+  ensuredHeaders.add(cacheKey);
 }
 
 async function writeRequiredHeaders(spreadsheetId: string, worksheetName: CentralWorksheetName) {
@@ -2670,6 +2681,9 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
           creatorName: stringValue(row.creatorName),
           creatorLink: stringValue(row.creatorLink),
           avgViews: numberValue(row.avgViews),
+          creatorPaymentAmount:
+            numberValue(row.creatorPaymentAmount) || numberValue(row.internalQuote),
+          creatorPaymentCurrency: stringValue(row.creatorPaymentCurrency).toUpperCase() || "USD",
           internalQuote: numberValue(row.internalQuote),
           externalQuote: numberValue(row.externalQuote),
           cpm: numberValue(row.cpm),

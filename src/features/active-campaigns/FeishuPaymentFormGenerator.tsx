@@ -98,9 +98,9 @@ export function FeishuPaymentFormGenerator({
   const [customPaymentDescription, setCustomPaymentDescription] = useState("");
   const [paymentPercentage, setPaymentPercentage] = useState("");
   const [platform, setPlatform] = useState<PlatformCode>(detectedPlatform);
-  const [clientQuote, setClientQuote] = useState(formatNumberForInput(record.externalQuote));
+  const [clientQuote, setClientQuote] = useState(formatNumberForInput(record.creatorPaymentAmount));
   const [amountUsd, setAmountUsd] = useState(formatNumberForInput(record.internalQuote));
-  const [quoteCurrency, setQuoteCurrency] = useState("USD");
+  const [quoteCurrency, setQuoteCurrency] = useState(record.creatorPaymentCurrency || "USD");
   const matchedBatch =
     campaignBatches.find((batch) => batch.batchId === record.batchId) ??
     campaignBatches.find((batch) => batch.projectCode === record.projectCode) ??

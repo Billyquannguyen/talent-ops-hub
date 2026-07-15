@@ -2642,10 +2642,7 @@ function buildBillyPreviewRow({
     if (column.blockType === "currentDate") return formatCurrentDate();
     if (isBillyContactsColumn(column)) return resolvedContactInfo.rawText ?? "";
     if (!column.fieldKey) return "";
-    return formatSourcingFieldValue(
-      column.fieldKey,
-      getCell(data, columnMap, column.fieldKey),
-    );
+    return formatSourcingFieldValue(column.fieldKey, getCell(data, columnMap, column.fieldKey));
   });
 
   return { id, values, contactInfo: resolvedContactInfo };
@@ -3297,6 +3294,7 @@ function PreviewModal({
   onClose: () => void;
 }) {
   const [isSmartSorted, setIsSmartSorted] = useState(false);
+  const selectionAnchorIdRef = useRef<string | null>(null);
   const displayedRows = useMemo(
     () => (isSmartSorted ? smartSortPreviewRows(rows) : rows),
     [isSmartSorted, rows],
@@ -3305,6 +3303,32 @@ function PreviewModal({
     () => displayedRows.filter((row) => selectedRowIds.includes(row.id)),
     [displayedRows, selectedRowIds],
   );
+
+  function handleTogglePreviewRow(rowId: string, selectRange: boolean) {
+    const anchorId = selectionAnchorIdRef.current;
+
+    if (selectRange && anchorId) {
+      const anchorIndex = displayedRows.findIndex((row) => row.id === anchorId);
+      const rowIndex = displayedRows.findIndex((row) => row.id === rowId);
+
+      if (anchorIndex >= 0 && rowIndex >= 0) {
+        const startIndex = Math.min(anchorIndex, rowIndex);
+        const endIndex = Math.max(anchorIndex, rowIndex);
+        const shouldSelect = !selectedRowIds.includes(rowId);
+
+        displayedRows.slice(startIndex, endIndex + 1).forEach((row) => {
+          if (selectedRowIds.includes(row.id) !== shouldSelect) {
+            onToggleRow(row.id);
+          }
+        });
+        selectionAnchorIdRef.current = rowId;
+        return;
+      }
+    }
+
+    onToggleRow(rowId);
+    selectionAnchorIdRef.current = rowId;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
@@ -3319,6 +3343,9 @@ function PreviewModal({
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
               {selectedRowIds.length.toLocaleString()} selected
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Select one row, then Shift, Ctrl, or Cmd-click another row to select the range.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -3382,7 +3409,7 @@ function PreviewModal({
             headers={headers}
             rows={displayedRows}
             selectedRowIds={selectedRowIds}
-            onToggleRow={onToggleRow}
+            onToggleRow={handleTogglePreviewRow}
             onToggleAll={onToggleAll}
           />
         </div>
@@ -3849,7 +3876,7 @@ function PreviewTable({
   headers: string[];
   rows: PreviewRow[];
   selectedRowIds: string[];
-  onToggleRow: (rowId: string) => void;
+  onToggleRow: (rowId: string, selectRange: boolean) => void;
   onToggleAll: () => void;
 }) {
   if (headers.length === 0) {
@@ -3895,7 +3922,10 @@ function PreviewTable({
                 <input
                   type="checkbox"
                   checked={selectedRowIds.includes(row.id)}
-                  onChange={() => onToggleRow(row.id)}
+                  onClick={(event) =>
+                    onToggleRow(row.id, event.shiftKey || event.ctrlKey || event.metaKey)
+                  }
+                  readOnly
                   className="size-4 accent-foreground"
                   aria-label="Select preview row"
                 />
@@ -4480,7 +4510,9 @@ function parseBillyExtensionPlatform(
   value: unknown,
   fallback: BillyExtensionPlatform = "TikTok",
 ): BillyExtensionPlatform {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (normalized === "instagram") return "Instagram";
   if (normalized === "youtube") return "YouTube";
   if (normalized === "tiktok") return "TikTok";

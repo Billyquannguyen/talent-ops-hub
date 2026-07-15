@@ -14,6 +14,7 @@ const tiktokProfileImportSchema = z.object({
         videoDescription: z.string().max(5000).optional(),
         profileBio: z.string().max(5000).optional(),
         bioLink: z.string().max(1000).optional(),
+        followers: z.union([z.number(), z.string().max(100)]).optional(),
         sourceLink: z.string().max(1000).optional(),
         videos: z.array(z.string().max(1000)).optional(),
       }),
@@ -125,7 +126,7 @@ async function enrichImportedCreators(
           const html = await fetchTikTokProfilePage(creator);
           return parseTikTokProfilePage(html, creator, fallbackSourceLink);
         } catch {
-          failedProfiles += 1;
+          if (!hasBrowserProfileData(creator)) failedProfiles += 1;
           return createFallbackCreatorRow(creator, fallbackSourceLink);
         }
       }),
@@ -134,6 +135,14 @@ async function enrichImportedCreators(
   }
 
   return { rows, failedProfiles };
+}
+
+function hasBrowserProfileData(creator: ImportedTikTokCreator): boolean {
+  return Boolean(
+    creator.profileBio ||
+      creator.bioLink ||
+      parseImportedFollowerCount(creator.followers) !== "",
+  );
 }
 
 async function fetchTikTokProfilePage(creator: ImportedTikTokCreator): Promise<string> {
@@ -184,7 +193,10 @@ function parseTikTokProfilePage(
   );
   const nickname =
     structuredProfile?.nickname || extractNickname(description, username) || username;
-  const followers = structuredProfile?.followers || extractFollowerCount(description);
+  const followers =
+    structuredProfile?.followers ||
+    parseImportedFollowerCount(creator.followers) ||
+    extractFollowerCount(description);
   const bio =
     structuredProfile?.bio || creator.profileBio || extractBio(description, creator.videoDescription ?? "");
   const bioLink = structuredProfile?.bioLink || normalizeDirectBioLink(creator.bioLink);
@@ -265,7 +277,7 @@ function createFallbackCreatorRow(
     description,
     bioLink: normalizeDirectBioLink(creator.bioLink),
     platform: "TikTok",
-    followers: "",
+    followers: parseImportedFollowerCount(creator.followers),
     avgViews: "",
     avgLikes: "",
     email: "",
@@ -316,6 +328,7 @@ function dedupeImportedCreators(creators: ImportedTikTokCreator[]): ImportedTikT
       videoDescription: existing.videoDescription || creator.videoDescription,
       profileBio: existing.profileBio || creator.profileBio,
       bioLink: existing.bioLink || creator.bioLink,
+      followers: existing.followers || creator.followers,
       sourceLink: existing.sourceLink || creator.sourceLink,
       videos: Array.from(new Set([...(existing.videos ?? []), ...(creator.videos ?? [])])),
     });
@@ -347,6 +360,12 @@ function extractFollowerCount(description: string): number | "" {
   const match = description.match(/([\d,.]+)\s*([KMB]?)\s*Followers/i);
   if (!match) return "";
   return parseCompactNumber(`${match[1]}${match[2]}`);
+}
+
+function parseImportedFollowerCount(value: ImportedTikTokCreator["followers"]): number | "" {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return "";
+  return parseCompactNumber(value);
 }
 
 function extractBio(description: string, fallbackDescription: string): string {
