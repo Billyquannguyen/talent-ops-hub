@@ -1625,7 +1625,7 @@ export function CreatorSourcingAssistant() {
           headers={previewHeaders}
           rows={previewRows}
           selectedRowIds={selectedRowIds}
-          onToggleRow={toggleRow}
+          onSetSelectedRowIds={setSelectedRowIds}
           onToggleAll={toggleAllPreviewRows}
           onCopyAll={(rows) => copyRows(rows, "All rows")}
           onCopySelected={(rows) => copyRows(rows, "Selected rows")}
@@ -2458,7 +2458,7 @@ function BillyScraperSystem({
           headers={previewHeaders}
           rows={previewRows}
           selectedRowIds={selectedRowIds}
-          onToggleRow={toggleRow}
+          onSetSelectedRowIds={setSelectedRowIds}
           onToggleAll={toggleAllPreviewRows}
           onCopyAll={(rows) => copyRows(rows, "Billy rows")}
           onCopySelected={(rows) => copyRows(rows, "Selected Billy rows")}
@@ -3276,7 +3276,7 @@ function PreviewModal({
   headers,
   rows,
   selectedRowIds,
-  onToggleRow,
+  onSetSelectedRowIds,
   onToggleAll,
   onCopyAll,
   onCopySelected,
@@ -3286,7 +3286,7 @@ function PreviewModal({
   headers: string[];
   rows: PreviewRow[];
   selectedRowIds: string[];
-  onToggleRow: (rowId: string) => void;
+  onSetSelectedRowIds: (rowIds: string[]) => void;
   onToggleAll: () => void;
   onCopyAll: (rows: PreviewRow[]) => void;
   onCopySelected: (rows: PreviewRow[]) => void;
@@ -3304,29 +3304,32 @@ function PreviewModal({
     [displayedRows, selectedRowIds],
   );
 
-  function handleTogglePreviewRow(rowId: string, selectRange: boolean) {
+  function handleTogglePreviewRow(
+    rowId: string,
+    modifiers: { shiftKey: boolean; additiveKey: boolean },
+  ) {
     const anchorId = selectionAnchorIdRef.current;
 
-    if (selectRange && anchorId) {
+    if (modifiers.shiftKey && anchorId) {
       const anchorIndex = displayedRows.findIndex((row) => row.id === anchorId);
       const rowIndex = displayedRows.findIndex((row) => row.id === rowId);
 
       if (anchorIndex >= 0 && rowIndex >= 0) {
         const startIndex = Math.min(anchorIndex, rowIndex);
         const endIndex = Math.max(anchorIndex, rowIndex);
-        const shouldSelect = !selectedRowIds.includes(rowId);
-
-        displayedRows.slice(startIndex, endIndex + 1).forEach((row) => {
-          if (selectedRowIds.includes(row.id) !== shouldSelect) {
-            onToggleRow(row.id);
-          }
-        });
-        selectionAnchorIdRef.current = rowId;
+        const rangeIds = displayedRows.slice(startIndex, endIndex + 1).map((row) => row.id);
+        onSetSelectedRowIds(
+          modifiers.additiveKey ? Array.from(new Set([...selectedRowIds, ...rangeIds])) : rangeIds,
+        );
         return;
       }
     }
 
-    onToggleRow(rowId);
+    onSetSelectedRowIds(
+      selectedRowIds.includes(rowId)
+        ? selectedRowIds.filter((selectedId) => selectedId !== rowId)
+        : [...selectedRowIds, rowId],
+    );
     selectionAnchorIdRef.current = rowId;
   }
 
@@ -3345,7 +3348,7 @@ function PreviewModal({
               {selectedRowIds.length.toLocaleString()} selected
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Select one row, then Shift, Ctrl, or Cmd-click another row to select the range.
+              Click a row, then Shift-click another to select the range. Ctrl or Cmd toggles rows.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -3870,13 +3873,16 @@ function PreviewTable({
   headers,
   rows,
   selectedRowIds,
-  onToggleRow,
+  onSetSelectedRowIds,
   onToggleAll,
 }: {
   headers: string[];
   rows: PreviewRow[];
   selectedRowIds: string[];
-  onToggleRow: (rowId: string, selectRange: boolean) => void;
+  onSetSelectedRowIds: (
+    rowId: string,
+    modifiers: { shiftKey: boolean; additiveKey: boolean },
+  ) => void;
   onToggleAll: () => void;
 }) {
   if (headers.length === 0) {
@@ -3917,14 +3923,31 @@ function PreviewTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id} className="border-b border-border bg-card last:border-b-0">
+            <tr
+              key={row.id}
+              onClick={(event) => {
+                const target = event.target as HTMLElement;
+                if (target.closest("a, button, input, select, textarea")) return;
+                onSetSelectedRowIds(row.id, {
+                  shiftKey: event.shiftKey,
+                  additiveKey: event.ctrlKey || event.metaKey,
+                });
+              }}
+              className={`cursor-pointer border-b border-border last:border-b-0 ${
+                selectedRowIds.includes(row.id) ? "bg-accent/40" : "bg-card hover:bg-accent/20"
+              }`}
+            >
               <td className="sticky left-0 z-10 border-r border-border bg-card px-3 py-2 align-top">
                 <input
                   type="checkbox"
                   checked={selectedRowIds.includes(row.id)}
-                  onClick={(event) =>
-                    onToggleRow(row.id, event.shiftKey || event.ctrlKey || event.metaKey)
-                  }
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSetSelectedRowIds(row.id, {
+                      shiftKey: event.shiftKey,
+                      additiveKey: event.ctrlKey || event.metaKey,
+                    });
+                  }}
                   readOnly
                   className="size-4 accent-foreground"
                   aria-label="Select preview row"
