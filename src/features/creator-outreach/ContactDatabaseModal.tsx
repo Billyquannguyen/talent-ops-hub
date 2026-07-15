@@ -1,5 +1,19 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Copy, ExternalLink, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Globe2,
+  Instagram,
+  MapPin,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 
 import type { AgencyDatabaseRecord, CreatorDatabaseRecord } from "@/storage/schema";
 
@@ -65,7 +79,11 @@ export function DatabaseViewModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
-      <div className="flex max-h-[92vh] w-full max-w-7xl flex-col rounded-xl border border-border bg-card shadow-2xl">
+      <div
+        className={`flex max-h-[92vh] w-full flex-col rounded-xl border border-border bg-card shadow-2xl ${
+          view === "agency" ? "h-[min(760px,92vh)] max-w-5xl" : "max-w-7xl"
+        }`}
+      >
         <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>
             <p className="text-xs font-semibold uppercase text-muted-foreground">
@@ -160,6 +178,7 @@ function AgencyDatabaseTable({
 }) {
   const [search, setSearch] = useState("");
   const [countryFilter, setCountryFilter] = useState("");
+  const [selectedAgencyId, setSelectedAgencyId] = useState<string | null>(null);
 
   const filteredRecords = useMemo(
     () =>
@@ -185,17 +204,136 @@ function AgencyDatabaseTable({
     [countryFilter, records, search],
   );
 
-  const normalizedRecords = useMemo(
-    () =>
-      filteredRecords.map((record) => ({
-        ...record,
-        contacts: getAgencyContacts(record).filter(hasAgencyContactContent),
-      })),
-    [filteredRecords],
+  const selectedAgency = useMemo(
+    () => records.find((record) => record.id === selectedAgencyId) ?? null,
+    [records, selectedAgencyId],
   );
 
+  if (selectedAgency) {
+    const contacts = getAgencyContacts(selectedAgency).filter(hasAgencyContactContent);
+
+    return (
+      <div
+        key={`agency-detail-${selectedAgency.id}`}
+        className="motion-reduce:animate-none animate-in fade-in-0 slide-in-from-right-3 duration-200"
+      >
+        <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <button
+              type="button"
+              onClick={() => setSelectedAgencyId(null)}
+              className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background transition hover:border-cyan-300/30 hover:bg-accent"
+              aria-label="Back to agency directory"
+              title="Back to agency directory"
+            >
+              <ArrowLeft className="size-4" />
+            </button>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
+                Agency profile
+              </p>
+              <h3 className="mt-1 truncate text-2xl font-semibold">
+                {selectedAgency.agencyName || "Untitled agency"}
+              </h3>
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5">
+                  <Users className="size-4" />
+                  {formatContactCount(contacts.length)}
+                </span>
+                {selectedAgency.country ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <MapPin className="size-4" />
+                    {selectedAgency.country}
+                  </span>
+                ) : null}
+                <AgencyExternalLinks record={selectedAgency} />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 flex-wrap gap-2 pl-12 sm:pl-0">
+            <button
+              type="button"
+              onClick={() => onEdit(selectedAgency)}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent"
+            >
+              <Pencil className="size-4" />
+              Edit Agency
+            </button>
+            <button
+              type="button"
+              onClick={() => onAddContact(selectedAgency)}
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+            >
+              <Plus className="size-4" />
+              Add Contact
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.8fr)]">
+          <section>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold">Contacts</h4>
+              <span className="text-xs text-muted-foreground">
+                {formatContactCount(contacts.length)}
+              </span>
+            </div>
+            <div className="overflow-hidden rounded-lg border border-border bg-background/35">
+              {contacts.length ? (
+                contacts.map((contact, index) => (
+                  <div
+                    key={contact.id}
+                    className={`grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.35fr)] sm:items-center ${
+                      index ? "border-t border-border" : ""
+                    }`}
+                  >
+                    <p className="truncate text-sm font-medium">{contact.name || "Contact"}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {contact.role || "No role"}
+                    </p>
+                    <div className="min-w-0">
+                      <ContactValue value={contact.contact} label="Contact" onCopy={onCopy} />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  No contacts yet. Add the first contact for this agency.
+                </div>
+              )}
+            </div>
+          </section>
+
+          <aside className="space-y-4">
+            <section className="rounded-lg border border-border bg-background/35 p-4">
+              <h4 className="text-sm font-semibold">Agency notes</h4>
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
+                {selectedAgency.notes || "No notes saved."}
+              </p>
+            </section>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedAgencyId(null);
+                onDelete(selectedAgency.id);
+              }}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-red-500/25 bg-red-500/5 px-3 text-sm font-medium text-red-200 transition hover:bg-red-500/10"
+            >
+              <Trash2 className="size-4" />
+              Delete Agency
+            </button>
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div>
+    <div
+      key="agency-directory"
+      className="motion-reduce:animate-none animate-in fade-in-0 slide-in-from-left-3 duration-200"
+    >
       <DatabaseToolbar
         search={search}
         onSearch={setSearch}
@@ -211,103 +349,126 @@ function AgencyDatabaseTable({
         />
       </DatabaseToolbar>
 
-      <div className="katlas-table-shell mt-4">
-        <table className="min-w-[980px] w-full text-left text-sm">
-          <thead className="bg-background text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-3 py-3">Agency</th>
-              <th className="px-3 py-3">Contacts</th>
-              <th className="px-3 py-3">Instagram</th>
-              <th className="px-3 py-3">Website</th>
-              <th className="px-3 py-3">Country</th>
-              <th className="px-3 py-3">Notes</th>
-              <th className="px-3 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <DatabaseLoadingRow colSpan={7} />
-            ) : normalizedRecords.length ? (
-              normalizedRecords.map((record) => (
-                <tr key={record.id} className="border-t border-border align-top">
-                  <td className="px-3 py-3 font-medium">{record.agencyName || "Untitled"}</td>
-                  <td className="min-w-[280px] px-3 py-3">
-                    <AgencyContactList
-                      contacts={record.contacts}
-                      onAddContact={() => onAddContact(record)}
-                      onCopy={onCopy}
-                    />
-                  </td>
-                  <td className="px-3 py-3">
-                    <ContactValue value={record.instagram} label="Instagram" onCopy={onCopy} />
-                  </td>
-                  <td className="px-3 py-3">
-                    <ContactValue value={record.website} label="Website" onCopy={onCopy} />
-                  </td>
-                  <td className="px-3 py-3">{record.country || "-"}</td>
-                  <td className="max-w-[300px] px-3 py-3 text-xs leading-5 text-muted-foreground">
-                    {record.notes || "-"}
-                  </td>
-                  <td className="px-3 py-3">
-                    <RecordActions
-                      onEdit={() => onEdit(record)}
-                      onDelete={() => onDelete(record.id)}
-                    />
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <DatabaseEmptyRow colSpan={7} label="No agencies found." />
-            )}
-          </tbody>
-        </table>
+      <div className="mt-4 overflow-hidden rounded-lg border border-border bg-background/30">
+        <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_120px_110px_36px] gap-4 border-b border-border bg-background/60 px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground md:grid">
+          <span>Agency</span>
+          <span>Primary contact</span>
+          <span>Contacts</span>
+          <span>Links</span>
+          <span className="sr-only">Open</span>
+        </div>
+        {isLoading ? (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+            Loading agencies...
+          </div>
+        ) : filteredRecords.length ? (
+          filteredRecords.map((record, index) => {
+            const contacts = getAgencyContacts(record).filter(hasAgencyContactContent);
+            const primaryContact = contacts[0];
+            return (
+              <div
+                key={record.id}
+                className={`group grid w-full gap-2 px-4 py-3 text-left transition hover:bg-cyan-300/[0.045] md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_120px_110px_36px] md:items-center md:gap-4 ${
+                  index ? "border-t border-border" : ""
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setSelectedAgencyId(record.id)}
+                  className="grid min-w-0 gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50 md:col-span-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_120px] md:items-center md:gap-4"
+                  aria-label={`Open ${record.agencyName || "agency"}`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">
+                      {record.agencyName || "Untitled agency"}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground md:hidden">
+                      {record.country || "Country not set"}
+                    </span>
+                    {record.country ? (
+                      <span className="mt-0.5 hidden truncate text-xs text-muted-foreground md:block">
+                        {record.country}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm">
+                      {primaryContact?.name || primaryContact?.contact || "No contact yet"}
+                    </span>
+                    {primaryContact?.name && primaryContact.contact ? (
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                        {primaryContact.contact}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
+                    <Users className="size-3.5" />
+                    {formatContactCount(contacts.length)}
+                  </span>
+                </button>
+                <span className="flex items-center gap-2">
+                  <AgencyExternalLinks record={record} compact />
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAgencyId(record.id)}
+                  className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50"
+                  aria-label={`Open ${record.agencyName || "agency"}`}
+                  title="Open agency"
+                >
+                  <ChevronRight className="size-4 transition group-hover:translate-x-0.5" />
+                </button>
+              </div>
+            );
+          })
+        ) : (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+            No agencies found.
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function AgencyContactList({
-  contacts,
-  onAddContact,
-  onCopy,
+function AgencyExternalLinks({
+  record,
+  compact = false,
 }: {
-  contacts: AgencyContact[];
-  onAddContact: () => void;
-  onCopy: (text: string, label: string) => void | Promise<void>;
+  record: AgencyDatabaseRecord;
+  compact?: boolean;
 }) {
+  const links = [
+    { value: record.instagram, label: "Open Instagram", icon: Instagram },
+    { value: record.website, label: "Open website", icon: Globe2 },
+  ].filter((link) => Boolean(formatExternalUrl(link.value)));
+
+  if (!links.length) {
+    return compact ? <span className="text-xs text-muted-foreground">No links</span> : null;
+  }
+
   return (
-    <div className="space-y-2">
-      {contacts.length ? (
-        contacts.map((contact) => (
-          <div key={contact.id} className="rounded-lg border border-border/70 bg-background/40 p-2">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{contact.name || "Contact"}</p>
-                {contact.role ? (
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{contact.role}</p>
-                ) : null}
-              </div>
-            </div>
-            <div className="mt-1">
-              <ContactValue value={contact.contact} label="Contact" onCopy={onCopy} />
-            </div>
-          </div>
-        ))
-      ) : (
-        <div className="rounded-lg border border-dashed border-border/80 bg-background/30 px-3 py-2 text-xs text-muted-foreground">
-          No contacts yet.
-        </div>
-      )}
-      <button
-        type="button"
-        onClick={onAddContact}
-        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-cyan-300/25 bg-cyan-300/5 px-2.5 text-xs font-medium text-cyan-100 transition hover:border-cyan-200/40 hover:bg-cyan-300/10"
-      >
-        <Plus className="size-3.5" />
-        Add Contact
-      </button>
-    </div>
+    <span className="inline-flex items-center gap-1.5">
+      {links.map(({ value, label, icon: Icon }) => (
+        <a
+          key={label}
+          href={formatExternalUrl(value) ?? undefined}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => event.stopPropagation()}
+          className="inline-flex size-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition hover:border-cyan-300/30 hover:bg-cyan-300/5 hover:text-cyan-100"
+          aria-label={label}
+          title={label}
+        >
+          <Icon className="size-4" />
+        </a>
+      ))}
+    </span>
   );
+}
+
+function formatContactCount(count: number) {
+  return `${count} ${count === 1 ? "contact" : "contacts"}`;
 }
 
 function CreatorDatabaseTable({
