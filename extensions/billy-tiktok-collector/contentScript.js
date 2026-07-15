@@ -1137,10 +1137,87 @@ function extractTikTokFollowersFromHtml(html) {
 
 function extractTikTokBioLinkFromHtml(html) {
   const candidates = [
+    extractTikTokBioLinkFromStructuredData(html),
     html.match(/"bioLink"\s*:\s*\{[\s\S]{0,1000}?"link"\s*:\s*"((?:\\"|[^"])*)"/i)?.[1],
     html.match(/"bioLink"\s*:\s*\{[\s\S]{0,1000}?"url"\s*:\s*"((?:\\"|[^"])*)"/i)?.[1],
+    html.match(/"bioLink"\s*:\s*"((?:\\"|[^"])*)"/i)?.[1],
+    html.match(/"linkInBio"\s*:\s*"((?:\\"|[^"])*)"/i)?.[1],
+    html.match(/"bio_url"\s*:\s*"((?:\\"|[^"])*)"/i)?.[1],
   ];
   return firstDirectBioLink(candidates, "tiktok.com");
+}
+
+function extractTikTokBioLinkFromStructuredData(html) {
+  const scriptMatches = html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi);
+
+  for (const match of scriptMatches) {
+    const content = match[1]?.trim();
+    if (!content || (!content.includes('"bioLink"') && !content.includes('"linkInBio"'))) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(content);
+      const candidate = findDirectBioLinkInData(parsed, 0);
+      if (candidate) return candidate;
+    } catch {
+      // Some TikTok scripts contain JavaScript rather than JSON. Regex fallbacks handle those.
+    }
+  }
+
+  return "";
+}
+
+function findDirectBioLinkInData(value, depth) {
+  if (depth > 14 || value == null) return "";
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const candidate = findDirectBioLinkInData(item, depth + 1);
+      if (candidate) return candidate;
+    }
+    return "";
+  }
+
+  if (typeof value !== "object") return "";
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase().replace(/[^a-z]/g, "");
+    if (["biolink", "linkinbio"].includes(normalizedKey)) {
+      const candidate = findUrlInBioLinkValue(nestedValue, 0);
+      if (candidate) return candidate;
+    }
+  }
+
+  for (const nestedValue of Object.values(value)) {
+    const candidate = findDirectBioLinkInData(nestedValue, depth + 1);
+    if (candidate) return candidate;
+  }
+
+  return "";
+}
+
+function findUrlInBioLinkValue(value, depth) {
+  if (depth > 6 || value == null) return "";
+  if (typeof value === "string") return normalizeDirectBioLink(value, "tiktok.com");
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const candidate = findUrlInBioLinkValue(item, depth + 1);
+      if (candidate) return candidate;
+    }
+    return "";
+  }
+
+  if (typeof value !== "object") return "";
+
+  const preferredKeys = ["link", "url", "webUrl", "mobileWebUrl", "href"];
+  for (const key of preferredKeys) {
+    const candidate = findUrlInBioLinkValue(value[key], depth + 1);
+    if (candidate) return candidate;
+  }
+
+  return "";
 }
 
 function extractYouTubeChannelFromHtml(html) {
@@ -1233,8 +1310,16 @@ function firstDirectBioLink(candidates, platformDomain) {
 }
 
 function normalizeDirectBioLink(value, platformDomain) {
-  const decoded = decodeHtmlEntities(decodeJsonString(value || "")).trim();
+  let decoded = decodeHtmlEntities(decodeJsonString(value || "")).trim();
   if (!decoded) return "";
+
+  if (!/^https?:\/\//i.test(decoded) && /^https?%3A/i.test(decoded)) {
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      return "";
+    }
+  }
 
   try {
     const url = new URL(decoded.startsWith("//") ? `https:${decoded}` : decoded);

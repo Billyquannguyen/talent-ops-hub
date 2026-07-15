@@ -2037,7 +2037,7 @@ function BillyScraperSystem({
           ? `Done. Added personal-provider emails to ${result.emailCount.toLocaleString()} blank Contacts cells. Existing Contacts values were preserved. No AI call used.`
           : mode === "all-emails"
             ? `Done. Added public emails to ${result.emailCount.toLocaleString()} blank Contacts cells. Existing Contacts values were preserved. No AI call used.`
-            : `Done. Copied ${result.bioCount.toLocaleString()} full bios and available direct profile links into blank Contacts cells. No AI call used.`,
+            : `Done. Copied ${result.bioCount.toLocaleString()} full bios and added ${result.bioLinkCount.toLocaleString()} direct bio links. Existing email-only Contacts values were preserved. No AI call used.`,
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
@@ -5145,17 +5145,34 @@ function fillBlankContacts({
   );
   let emailCount = 0;
   let bioCount = 0;
+  let bioLinkCount = 0;
 
   const nextCreators = creators.map((creator, index) => {
     const data = initialized.rows[index] ?? creator.data;
     if (!targetCreatorIds.has(creator.id)) return { ...creator, data };
 
-    const existingContacts = stringValue(data[initialized.contactsHeader]).trim();
-    if (existingContacts) return { ...creator, data };
-
     const emailColumnValue = getCell(data, columnMap, "Email");
     const bio = getCell(data, columnMap, "Description");
     const bioLink = getDirectBioLink(data);
+    const existingContacts = stringValue(data[initialized.contactsHeader]).trim();
+
+    if (existingContacts) {
+      const existingIsCopiedBio = Boolean(
+        mode === "bio-only" && bio.trim() && existingContacts === bio.trim(),
+      );
+      if (existingIsCopiedBio && bioLink && !existingContacts.includes(bioLink)) {
+        bioLinkCount += 1;
+        return {
+          ...creator,
+          data: {
+            ...data,
+            [initialized.contactsHeader]: `${existingContacts}\n${bioLink}`,
+          },
+        };
+      }
+      return { ...creator, data };
+    }
+
     const discoveredEmails =
       mode === "bio-only"
         ? []
@@ -5176,6 +5193,7 @@ function fillBlankContacts({
 
     if (mode === "bio-only" && (bio.trim() || bioLink)) {
       bioCount += 1;
+      if (bioLink) bioLinkCount += 1;
       return {
         ...creator,
         data: {
@@ -5194,6 +5212,7 @@ function fillBlankContacts({
     contactInfoByCreatorId: createContactInfoMap(nextCreators, initialized.contactsHeader),
     emailCount,
     bioCount,
+    bioLinkCount,
   };
 }
 
