@@ -12,7 +12,6 @@ import {
   Building2,
   Copy,
   CopyPlus,
-  Database,
   FileInput,
   Languages,
   Layers3,
@@ -32,9 +31,7 @@ import { filterVisibleCampaignProfiles } from "@/lib/campaignVisibility";
 import {
   campaignMemoryLanguages,
   loadCampaignRegistry,
-  saveCampaignMemoryForCampaign,
   type CampaignMemoryLanguage,
-  type CampaignMemoryCard,
   type GlobalCampaignRegistry,
 } from "@/lib/campaignRegistry";
 import {
@@ -52,7 +49,7 @@ import {
 } from "@/storage/appRepository";
 import type {
   AgencyDatabaseRecord,
-  CampaignMemoryCardRecord,
+  CampaignProjectInfoRecord,
   CampaignProfileRecord,
   CreatorDatabaseRecord,
   OutreachTemplateRecord,
@@ -90,6 +87,25 @@ const simpleTemplateTypes = ["DM", "Email"] as const;
 const databaseStatusOptions = ["potential", "contacted", "interested", "rejected", "saved"];
 type TextInsertTarget = "creatorMessage" | "replyEditor" | "translatedReply" | "templateBody";
 type DatabaseViewType = "agency" | "creator";
+type ProjectInfoFieldKey =
+  | "projectBrief"
+  | "productInformation"
+  | "creatorPersonas"
+  | "sop"
+  | "scriptFilmingNotes"
+  | "postingFinalisationNotes";
+
+const projectInfoFields: Array<{
+  key: ProjectInfoFieldKey;
+  label: string;
+}> = [
+  { key: "projectBrief", label: "Project Brief" },
+  { key: "productInformation", label: "Product Information" },
+  { key: "creatorPersonas", label: "Creator Personas" },
+  { key: "sop", label: "SOP" },
+  { key: "scriptFilmingNotes", label: "Script & Filming Notes" },
+  { key: "postingFinalisationNotes", label: "Posting & Finalisation Notes" },
+];
 const outreachEmojis = [
   "😊",
   "🙏",
@@ -126,8 +142,7 @@ export function CreatorOutreachAssistant() {
   const [translatedReply, setTranslatedReply] = useState("");
   const [isNewTemplateModalOpen, setIsNewTemplateModalOpen] = useState(false);
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
-  const [isSmartFieldsModalOpen, setIsSmartFieldsModalOpen] = useState(false);
-  const [isMemoryWidgetOpen, setIsMemoryWidgetOpen] = useState(false);
+  const [isProjectInfoFieldsOpen, setIsProjectInfoFieldsOpen] = useState(false);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [activeDatabaseView, setActiveDatabaseView] = useState<DatabaseViewType | null>(null);
   const [agencyRecords, setAgencyRecords] = useState<AgencyDatabaseRecord[]>([]);
@@ -137,7 +152,8 @@ export function CreatorOutreachAssistant() {
   const [databaseError, setDatabaseError] = useState("");
   const [agencyDraft, setAgencyDraft] = useState<AgencyDatabaseRecord | null>(null);
   const [creatorDraft, setCreatorDraft] = useState<CreatorDatabaseRecord | null>(null);
-  const [selectedMemoryCampaignId, setSelectedMemoryCampaignId] = useState("");
+  const [selectedProjectInfoCampaignId, setSelectedProjectInfoCampaignId] = useState("");
+  const [campaignProjectInfo, setCampaignProjectInfo] = useState<CampaignProjectInfoRecord[]>([]);
   const [templateDraft, setTemplateDraft] = useState<OutreachTemplate | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
   const [translationStatus, setTranslationStatus] = useState("");
@@ -210,20 +226,20 @@ export function CreatorOutreachAssistant() {
     selectedTemplateIdRef.current = loadedTemplateId;
     setSelectedTemplateId(loadedTemplateId);
     setTargetLanguage(getLanguageLabel(loadedDatabase.worksheets.Settings.defaultTargetLanguage));
-    setSelectedMemoryCampaignId(loadedRegistry.campaigns[0]?.id ?? "");
+    setSelectedProjectInfoCampaignId(loadedRegistry.campaigns[0]?.id ?? "");
     setLoaded(true);
 
     void (async () => {
       try {
         const bundle = await loadCreatorOutreachBundleFromGoogleSheetsOnly();
         if (cancelled) return;
-        const registryResult = createOutreachRegistryFromBundle(
-          bundle.campaignProfiles,
-          bundle.campaignMemoryCards,
-        );
+        const registryResult = createOutreachRegistryFromBundle(bundle.campaignProfiles);
         applyOutreachTemplateRecords(bundle.outreachTemplates);
+        setCampaignProjectInfo(bundle.campaignProjectInfo);
         setCampaignRegistry(registryResult);
-        setSelectedMemoryCampaignId((current) => current || registryResult.campaigns[0]?.id || "");
+        setSelectedProjectInfoCampaignId(
+          (current) => current || registryResult.campaigns[0]?.id || "",
+        );
       } catch (error) {
         if (cancelled) return;
         setCopyStatus(
@@ -751,32 +767,6 @@ export function CreatorOutreachAssistant() {
     }
   }
 
-  async function saveSmartFieldsCampaign(
-    updatedCampaign: GlobalCampaignRegistry["campaigns"][number],
-  ) {
-    const nextRegistry = {
-      ...campaignRegistry,
-      campaigns: campaignRegistry.campaigns.map((campaign) =>
-        campaign.id === updatedCampaign.id ? updatedCampaign : campaign,
-      ),
-    };
-    setCampaignRegistry(nextRegistry);
-    try {
-      const savedRegistry = await saveCampaignMemoryForCampaign(updatedCampaign);
-      setCampaignRegistry(savedRegistry);
-      if (selectedMemoryCampaignId === "" || selectedMemoryCampaignId === updatedCampaign.id) {
-        setSelectedMemoryCampaignId(updatedCampaign.id);
-      }
-      setCopyStatus("Smart fields saved.");
-    } catch (error) {
-      setCopyStatus(
-        error instanceof Error
-          ? error.message
-          : "Google Sheets save failed. Smart fields were not saved.",
-      );
-    }
-  }
-
   function insertSmartFieldContent(content: string) {
     if (!content.trim()) return;
 
@@ -924,11 +914,11 @@ export function CreatorOutreachAssistant() {
             <div className="flex flex-wrap gap-2 lg:justify-end">
               <button
                 type="button"
-                onClick={() => setIsSmartFieldsModalOpen(true)}
+                onClick={() => setIsProjectInfoFieldsOpen((current) => !current)}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
               >
                 <Layers3 className="size-4" />
-                Smart Fields
+                Project Info Fields
               </button>
               <button
                 type="button"
@@ -993,7 +983,7 @@ export function CreatorOutreachAssistant() {
               </EditorField>
             </div>
 
-            <div className="mt-3 flex min-h-10 flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+            <div className="mt-3 flex min-h-10 shrink-0 items-center justify-end gap-2 border-t border-border pt-3">
               <button
                 type="button"
                 onClick={() => void translateCreatorMessageToEnglish()}
@@ -1018,7 +1008,7 @@ export function CreatorOutreachAssistant() {
           </Panel>
 
           <Panel title="Reply Builder" icon={FileInput}>
-            <div className="grid min-h-[122px] gap-3 rounded-lg border border-border/75 bg-background/65 p-3 xl:grid-cols-[150px_minmax(0,1fr)_176px] xl:items-end">
+            <div className="grid min-h-[122px] gap-3 rounded-lg border border-border/75 bg-background/65 p-3 md:grid-cols-[128px_minmax(0,1fr)_150px] md:items-end">
               <ReplyTypeField value={creatorSource} onChange={changeCreatorSource} />
               <div className="flex items-end gap-2">
                 <div className="min-w-0 flex-1">
@@ -1112,11 +1102,11 @@ export function CreatorOutreachAssistant() {
               </EditorField>
             </div>
 
-            <div className="mt-3 flex min-h-10 flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+            <div className="mt-3 flex min-h-10 shrink-0 items-center justify-end gap-2 border-t border-border pt-3">
               <button
                 onClick={polishCurrentReply}
                 disabled={!replyEditor.trim() || isPolishingReply || isTranslatingReply}
-                className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-background px-2 text-xs font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Sparkles className="size-4" />
                 {isPolishingReply ? "Polishing..." : "Polish Reply"}
@@ -1125,7 +1115,7 @@ export function CreatorOutreachAssistant() {
                 type="button"
                 onClick={() => void translateCurrentReply()}
                 disabled={!replyEditor.trim() || isTranslatingReply || isPolishingReply}
-                className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-primary px-2 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Languages className="size-4" />
                 {isTranslatingReply ? `Translating...` : `Translate Reply`}
@@ -1133,7 +1123,7 @@ export function CreatorOutreachAssistant() {
               <button
                 onClick={() => copyText(replyEditor, "Original reply")}
                 disabled={!replyEditor.trim()}
-                className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-background px-2 text-xs font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Copy className="size-4" />
                 Copy Original
@@ -1141,7 +1131,7 @@ export function CreatorOutreachAssistant() {
               <button
                 onClick={() => copyText(translatedReply, "Translated reply")}
                 disabled={!translatedReply.trim()}
-                className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-primary px-2 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Copy className="size-4" />
                 Copy Reply
@@ -1151,7 +1141,7 @@ export function CreatorOutreachAssistant() {
                   copyText(`${replyEditor}\n\n${translatedReply}`, "Original and translation")
                 }
                 disabled={!replyEditor.trim() && !translatedReply.trim()}
-                className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-background px-2 text-xs font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Copy className="size-4" />
                 Copy Both
@@ -1165,25 +1155,16 @@ export function CreatorOutreachAssistant() {
         {copyStatus ? <div className="katlas-status-line">{copyStatus}</div> : null}
       </main>
 
-      <CampaignMemoryWidget
-        isOpen={isMemoryWidgetOpen}
+      <ProjectInfoFieldsTray
+        isOpen={isProjectInfoFieldsOpen}
         detectedLanguage={detectedLanguage}
         registry={campaignRegistry}
-        selectedCampaignId={selectedMemoryCampaignId}
-        onToggle={() => setIsMemoryWidgetOpen((current) => !current)}
-        onSelectCampaign={setSelectedMemoryCampaignId}
+        projectInfoRecords={campaignProjectInfo}
+        selectedCampaignId={selectedProjectInfoCampaignId}
+        onClose={() => setIsProjectInfoFieldsOpen(false)}
+        onSelectCampaign={setSelectedProjectInfoCampaignId}
         onInsert={insertSmartFieldContent}
       />
-
-      {isSmartFieldsModalOpen ? (
-        <SmartFieldsModal
-          registry={campaignRegistry}
-          selectedCampaignId={selectedMemoryCampaignId}
-          onSelectCampaign={setSelectedMemoryCampaignId}
-          onSave={saveSmartFieldsCampaign}
-          onClose={() => setIsSmartFieldsModalOpen(false)}
-        />
-      ) : null}
 
       {activeDatabaseView ? (
         <DatabaseViewModal
@@ -1379,212 +1360,6 @@ function NewTemplateModal({
   );
 }
 
-function SmartFieldsModal({
-  registry,
-  selectedCampaignId,
-  onSelectCampaign,
-  onSave,
-  onClose,
-}: {
-  registry: GlobalCampaignRegistry;
-  selectedCampaignId: string;
-  onSelectCampaign: (campaignId: string) => void;
-  onSave: (campaign: GlobalCampaignRegistry["campaigns"][number]) => void;
-  onClose: () => void;
-}) {
-  const firstCampaign = registry.campaigns[0];
-  const selectedCampaign =
-    registry.campaigns.find((campaign) => campaign.id === selectedCampaignId) ?? firstCampaign;
-  const [draftCampaignId, setDraftCampaignId] = useState(selectedCampaign?.id ?? "");
-  const activeCampaign =
-    registry.campaigns.find((campaign) => campaign.id === draftCampaignId) ?? firstCampaign;
-  const [preferredLanguages, setPreferredLanguages] = useState<CampaignMemoryLanguage[]>(
-    activeCampaign?.preferredLanguages ?? ["English"],
-  );
-  const [cardDrafts, setCardDrafts] = useState<Array<{ id: string; content: string }>>(
-    normalizeSmartFieldDrafts(activeCampaign?.memoryCards ?? []),
-  );
-
-  useEffect(() => {
-    if (!activeCampaign) return;
-    setPreferredLanguages(activeCampaign.preferredLanguages);
-    setCardDrafts(normalizeSmartFieldDrafts(activeCampaign.memoryCards));
-  }, [activeCampaign]);
-
-  function toggleLanguage(language: CampaignMemoryLanguage) {
-    setPreferredLanguages((current) => {
-      const next = current.includes(language)
-        ? current.filter((item) => item !== language)
-        : [...current, language];
-      return next.length ? next : current;
-    });
-  }
-
-  function saveDraft() {
-    if (!activeCampaign) return;
-    const now = new Date().toISOString();
-    onSave({
-      ...activeCampaign,
-      preferredLanguages,
-      memoryCards: cardDrafts
-        .filter((card) => card.content.trim())
-        .map((card, index) => ({
-          id: card.id,
-          title: `Smart Field ${index + 1}`,
-          content: card.content.trim(),
-        })),
-      updatedAt: now,
-    });
-    onSelectCampaign(activeCampaign.id);
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-card shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
-          <div>
-            <p className="text-xs font-semibold uppercase text-muted-foreground">Smart Fields</p>
-            <h2 className="mt-1 text-xl font-semibold">Campaign field cards</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex size-9 items-center justify-center rounded-md border border-border bg-background transition hover:bg-accent"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        {registry.campaigns.length === 0 ? (
-          <div className="p-5 text-sm text-muted-foreground">
-            Create a campaign in Campaign Profiles first.
-          </div>
-        ) : (
-          <>
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              <FieldLabel label="Campaign">
-                <select
-                  value={draftCampaignId}
-                  onChange={(event) => {
-                    setDraftCampaignId(event.target.value);
-                    onSelectCampaign(event.target.value);
-                  }}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-                >
-                  {registry.campaigns.map((campaign) => (
-                    <option key={campaign.id} value={campaign.id}>
-                      {campaign.campaignName}
-                    </option>
-                  ))}
-                </select>
-              </FieldLabel>
-
-              <div className="mt-4">
-                <p className="text-xs font-medium text-muted-foreground">Preferred Languages</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {campaignMemoryLanguages.map((language) => {
-                    const selected = preferredLanguages.includes(language);
-                    return (
-                      <button
-                        key={language}
-                        type="button"
-                        onClick={() => toggleLanguage(language)}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                          selected
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
-                        }`}
-                      >
-                        {language}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-5">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold">Smart Field Cards</p>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCardDrafts((current) => [
-                        ...current,
-                        { id: createOutreachId("memory-card"), content: "" },
-                      ])
-                    }
-                    className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-medium transition hover:bg-accent"
-                  >
-                    <Plus className="size-3.5" />
-                    Add Card
-                  </button>
-                </div>
-
-                <div className="mt-3 space-y-3">
-                  {cardDrafts.map((card, index) => (
-                    <div
-                      key={card.id}
-                      className="rounded-lg border border-border bg-background p-3"
-                    >
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <span className="text-xs font-medium text-muted-foreground">
-                          Card {index + 1}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setCardDrafts((current) =>
-                              current.filter((item) => item.id !== card.id),
-                            )
-                          }
-                          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2 text-xs font-medium transition hover:bg-accent"
-                        >
-                          <Trash2 className="size-3" />
-                          Delete
-                        </button>
-                      </div>
-                      <textarea
-                        value={card.content}
-                        rows={3}
-                        onChange={(event) =>
-                          setCardDrafts((current) =>
-                            current.map((item) =>
-                              item.id === card.id ? { ...item, content: event.target.value } : item,
-                            ),
-                          )
-                        }
-                        className="w-full resize-y rounded-md border border-input bg-card px-3 py-2 text-sm leading-6 outline-none ring-ring focus:ring-2"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="inline-flex h-10 items-center rounded-md border border-border bg-background px-4 text-sm font-medium transition hover:bg-accent"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={saveDraft}
-                className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
-              >
-                Save
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function OutreachTemplateManagerModal({
   templates,
   selectedTemplateId,
@@ -1713,20 +1488,22 @@ function OutreachTemplateManagerModal({
   );
 }
 
-function CampaignMemoryWidget({
+function ProjectInfoFieldsTray({
   isOpen,
   detectedLanguage,
   registry,
+  projectInfoRecords,
   selectedCampaignId,
-  onToggle,
+  onClose,
   onSelectCampaign,
   onInsert,
 }: {
   isOpen: boolean;
   detectedLanguage: string;
   registry: GlobalCampaignRegistry;
+  projectInfoRecords: CampaignProjectInfoRecord[];
   selectedCampaignId: string;
-  onToggle: () => void;
+  onClose: () => void;
   onSelectCampaign: (campaignId: string) => void;
   onInsert: (content: string) => void;
 }) {
@@ -1739,56 +1516,73 @@ function CampaignMemoryWidget({
     registry.campaigns.find((campaign) => campaign.id === selectedCampaignId) ??
     suggestedCampaigns[0] ??
     registry.campaigns[0];
+  const selectedProjectInfo = projectInfoRecords.find(
+    (record) => record.campaignId === selectedCampaign?.id,
+  );
+
+  if (!isOpen) return null;
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
-      {isOpen ? (
-        <section className="max-h-[calc(100vh-120px)] w-[min(460px,calc(100vw-40px))] overflow-y-auto rounded-2xl border border-cyan-300/20 bg-card/85 p-4 shadow-2xl shadow-cyan-950/30 backdrop-blur-xl transition-all duration-200">
-          <div className="flex items-start justify-between gap-4 border-b border-border pb-3">
-            <div>
-              <p className="text-xs font-semibold uppercase text-muted-foreground">
-                Campaign Memory
-              </p>
-              <h2 className="mt-1 text-lg font-semibold">Reusable campaign information</h2>
-            </div>
-            <button
-              type="button"
-              onClick={onToggle}
-              className="inline-flex size-8 items-center justify-center rounded-md border border-border bg-background transition hover:bg-accent"
-            >
-              <X className="size-4" />
-            </button>
+    <div className="fixed inset-0 z-50 bg-background/45 backdrop-blur-[2px]" onClick={onClose}>
+      <aside
+        className="absolute inset-y-0 right-0 flex w-[min(440px,calc(100vw-20px))] flex-col border-l border-cyan-300/20 bg-card/95 shadow-2xl shadow-black/50"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold uppercase text-muted-foreground">
+              Project Info Fields
+            </p>
+            <h2 className="mt-1 text-lg font-semibold">Drag campaign details into your reply</h2>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background transition hover:bg-accent"
+            aria-label="Close project info fields"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
 
-          <div className="mt-4 grid gap-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg border border-border bg-background/80 p-3">
               <p className="text-xs text-muted-foreground">Detected Language</p>
               <p className="mt-1 text-sm font-semibold">{detectedLanguageBadge}</p>
             </div>
-
             <div className="rounded-lg border border-border bg-background/80 p-3">
+              <p className="text-xs text-muted-foreground">Available Fields</p>
+              <p className="mt-1 text-sm font-semibold">
+                {
+                  projectInfoFields.filter((field) => selectedProjectInfo?.[field.key]?.trim())
+                    .length
+                }
+                /{projectInfoFields.length}
+              </p>
+            </div>
+          </div>
+
+          {suggestedCampaigns.length ? (
+            <div className="mt-4">
               <p className="text-xs font-medium text-muted-foreground">Suggested Campaigns</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {suggestedCampaigns.length ? (
-                  suggestedCampaigns.map((campaign) => (
-                    <button
-                      key={campaign.id}
-                      type="button"
-                      onClick={() => onSelectCampaign(campaign.id)}
-                      className="rounded-full border border-border bg-card px-3 py-1 text-xs font-medium transition hover:bg-accent"
-                    >
-                      {campaign.campaignName}
-                    </button>
-                  ))
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    No campaign matches this language yet.
-                  </span>
-                )}
+                {suggestedCampaigns.map((campaign) => (
+                  <button
+                    key={campaign.id}
+                    type="button"
+                    onClick={() => onSelectCampaign(campaign.id)}
+                    className="rounded-full border border-border bg-background px-3 py-1 text-xs font-medium transition hover:border-cyan-300/40 hover:bg-accent"
+                  >
+                    {campaign.campaignName}
+                  </button>
+                ))}
               </div>
             </div>
+          ) : null}
 
-            <FieldLabel label="Select Campaign">
+          <div className="mt-4">
+            <FieldLabel label="Campaign">
               <select
                 value={selectedCampaign?.id ?? ""}
                 onChange={(event) => onSelectCampaign(event.target.value)}
@@ -1801,60 +1595,53 @@ function CampaignMemoryWidget({
                 ))}
               </select>
             </FieldLabel>
+          </div>
 
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-xs font-medium text-muted-foreground">Smart Field Cards</p>
-                <span className="text-[11px] text-muted-foreground">
-                  Drag onto a {"{{field}}"} placeholder
-                </span>
-              </div>
-              <div className="space-y-2">
-                {selectedCampaign?.memoryCards.length ? (
-                  selectedCampaign.memoryCards.map((card) => (
-                    <article
-                      key={card.id}
-                      draggable={Boolean(card.content.trim())}
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData("text/plain", card.content);
-                        event.dataTransfer.effectAllowed = "copy";
-                      }}
-                      onClick={() => onInsert(card.content)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          onInsert(card.content);
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      title="Drag onto a placeholder to replace it, or click to insert at the cursor"
-                      className="cursor-grab rounded-lg border border-border bg-background/80 p-3 transition hover:border-cyan-300/40 hover:bg-accent/40 active:cursor-grabbing"
-                    >
-                      <p className="whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
-                        {card.content || "No content"}
-                      </p>
-                    </article>
-                  ))
-                ) : (
-                  <div className="rounded-lg border border-dashed border-border bg-background/80 p-4 text-sm text-muted-foreground">
-                    No smart field cards saved for this campaign yet. Open Smart Fields to add them.
-                  </div>
-                )}
-              </div>
+          <div className="mt-5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold">Smart Field Cards</p>
+              <span className="text-[11px] text-muted-foreground">Click or drag to insert</span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {projectInfoFields.map((field) => {
+                const content = selectedProjectInfo?.[field.key]?.trim() ?? "";
+                return (
+                  <article
+                    key={field.key}
+                    draggable={Boolean(content)}
+                    onDragStart={(event) => {
+                      if (!content) return;
+                      event.dataTransfer.setData("text/plain", content);
+                      event.dataTransfer.effectAllowed = "copy";
+                    }}
+                    onClick={() => {
+                      if (content) onInsert(content);
+                    }}
+                    onKeyDown={(event) => {
+                      if (content && (event.key === "Enter" || event.key === " ")) {
+                        event.preventDefault();
+                        onInsert(content);
+                      }
+                    }}
+                    role={content ? "button" : undefined}
+                    tabIndex={content ? 0 : -1}
+                    className={`rounded-lg border p-3 transition ${
+                      content
+                        ? "cursor-grab border-border bg-background/80 hover:border-cyan-300/40 hover:bg-accent/40 active:cursor-grabbing"
+                        : "cursor-not-allowed border-dashed border-border bg-background/40 opacity-55"
+                    }`}
+                  >
+                    <p className="text-xs font-semibold text-foreground">{field.label}</p>
+                    <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+                      {content || "Not added in Campaign Profiles yet."}
+                    </p>
+                  </article>
+                );
+              })}
             </div>
           </div>
-        </section>
-      ) : null}
-
-      <button
-        type="button"
-        onClick={onToggle}
-        className="inline-flex size-14 items-center justify-center rounded-full border border-cyan-300/30 bg-card/90 text-cyan-200 shadow-2xl shadow-cyan-950/30 backdrop-blur transition hover:scale-105 hover:border-cyan-300/50 hover:text-cyan-100"
-        aria-label="Campaign Memory"
-      >
-        <Database className="size-6" />
-      </button>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -1895,16 +1682,6 @@ function insertSmartFieldIntoText(value: string, content: string) {
     )}`;
   }
   return value.trim() ? `${value}\n\n${content}` : content;
-}
-
-function normalizeSmartFieldDrafts(cards: CampaignMemoryCard[]) {
-  const drafts = cards.length
-    ? cards.map((card) => ({
-        id: card.id || createOutreachId("memory-card"),
-        content: card.content || card.title || "",
-      }))
-    : [{ id: createOutreachId("memory-card"), content: "" }];
-  return drafts;
 }
 
 function getDuplicateTemplateName(baseName: string, templates: OutreachTemplate[]) {
@@ -2093,7 +1870,6 @@ function ReplyTypeField({
 
 function createOutreachRegistryFromBundle(
   campaignProfiles: CampaignProfileRecord[],
-  memoryCards: CampaignMemoryCardRecord[],
 ): GlobalCampaignRegistry {
   const visibleCampaignProfiles = filterVisibleCampaignProfiles(campaignProfiles);
   return {
@@ -2103,15 +1879,7 @@ function createOutreachRegistryFromBundle(
       campaignCode: campaign.campaignCode,
       status: campaign.status,
       preferredLanguages: parseCampaignMemoryLanguages(campaign.preferredLanguages),
-      memoryCards: memoryCards
-        .filter((card) => card.campaignId === campaign.campaignId)
-        .map(
-          (card): CampaignMemoryCard => ({
-            id: card.cardId,
-            title: card.title,
-            content: card.content,
-          }),
-        ),
+      memoryCards: [],
       createdAt: campaign.createdAt,
       updatedAt: campaign.updatedAt,
     })),

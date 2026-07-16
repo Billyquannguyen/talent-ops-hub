@@ -135,7 +135,7 @@ export async function loadCreatorOutreachBundleFromGoogleSheetsOnly(): Promise<C
   }
   rememberCampaignProfiles(result.campaignProfiles);
   rememberOutreachTemplates(result.outreachTemplates);
-  rememberCampaignMemoryCards(result.campaignMemoryCards, result.campaignProfiles);
+  rememberCampaignProjectInfo(result.campaignProjectInfo);
   return result;
 }
 

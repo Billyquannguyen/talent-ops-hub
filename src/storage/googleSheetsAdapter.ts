@@ -199,7 +199,7 @@ export type CreatorOutreachBundleResult = {
   ok: boolean;
   campaignProfiles: CampaignProfileRecord[];
   outreachTemplates: OutreachTemplateRecord[];
-  campaignMemoryCards: CampaignMemoryCardRecord[];
+  campaignProjectInfo: CampaignProjectInfoRecord[];
   status: StorageStatus;
 };
 

@@ -118,7 +118,7 @@ export const loadCreatorOutreachBundle = createServerFn({ method: "POST" }).hand
         ok: false,
         campaignProfiles: [] as CampaignProfileRecord[],
         outreachTemplates: [] as OutreachTemplateRecord[],
-        campaignMemoryCards: [] as CampaignMemoryCardRecord[],
+        campaignProjectInfo: [] as CampaignProjectInfoRecord[],
         status,
       };
     }
@@ -134,7 +134,7 @@ export const loadCreatorOutreachBundle = createServerFn({ method: "POST" }).hand
       ok: false,
       campaignProfiles: [] as CampaignProfileRecord[],
       outreachTemplates: [] as OutreachTemplateRecord[],
-      campaignMemoryCards: [] as CampaignMemoryCardRecord[],
+      campaignProjectInfo: [] as CampaignProjectInfoRecord[],
       status: {
         source: "googleSheets" as const,
         shared: true,

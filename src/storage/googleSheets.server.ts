@@ -92,6 +92,14 @@ type SheetRows = Record<string, string>[];
 type SheetRecordWithRowNumber<T> = {
   record: T;
   rowNumber: number;
+  rawValues: string[];
+  needsRepair?: boolean;
+};
+
+type WorksheetRecordsWithRowNumbers<T> = {
+  rows: Array<SheetRecordWithRowNumber<T>>;
+  nextRowNumber: number;
+  headers: string[];
 };
 
 const scopes = [
@@ -268,14 +276,14 @@ export async function readCreatorOutreachBundleFromGoogleSheets() {
   const spreadsheetId = await resolveSpreadsheetId(config);
   const database = await readWorksheetSubsetFromGoogleSheets(
     spreadsheetId,
-    ["CampaignProfiles", "OutreachTemplates", "CampaignMemoryCards"],
+    ["CampaignProfiles", "OutreachTemplates", "CampaignProjectInfo"],
     "creator-outreach:bundle",
   );
 
   return {
     campaignProfiles: database.worksheets.CampaignProfiles,
     outreachTemplates: database.worksheets.OutreachTemplates,
-    campaignMemoryCards: database.worksheets.CampaignMemoryCards,
+    campaignProjectInfo: database.worksheets.CampaignProjectInfo,
   };
 }
 
@@ -1105,9 +1113,16 @@ export async function listActiveCampaignCreatorsInGoogleSheets() {
     "ActiveCampaignCreators",
   );
   const cleanup = cleanupActiveCampaignCreatorRecords(creatorRows.rows.map((row) => row.record));
+  const repairCount = creatorRows.rows.filter((row) => row.needsRepair).length;
   logActiveCampaignCreatorCleanupSummary("list-current-state", cleanup);
 
-  if (cleanup.removedCount > 0) {
+  if (repairCount > 0) {
+    console.warn(
+      `[Google Sheets] Repairing ${repairCount} shifted ActiveCampaignCreators row(s) using canonical field positions.`,
+    );
+  }
+
+  if (cleanup.removedCount > 0 || repairCount > 0) {
     await writeCurrentStateWorksheetRows(
       spreadsheetId,
       "ActiveCampaignCreators",
@@ -1689,15 +1704,93 @@ function parseWorksheetRowsFromValues(worksheetName: CentralWorksheetName, value
   }
 
   return values.slice(1).flatMap((row) => {
-    const record = Object.fromEntries(
-      requiredWorksheetHeaders[worksheetName].map((header) => [
-        header,
-        stringValue(row[headerMap[header] ?? -1]),
-      ]),
-    );
+    const record = recoverWorksheetRecord(
+      worksheetName,
+      row,
+      createRecordFromHeaderMap(worksheetName, row, headerMap),
+    ).record;
     const idField = rowIdFields[worksheetName];
     return record[idField] ? [record] : [];
   });
+}
+
+function createRecordFromHeaderMap(
+  worksheetName: CentralWorksheetName,
+  row: unknown[],
+  headerMap: Record<string, number | undefined>,
+) {
+  return Object.fromEntries(
+    requiredWorksheetHeaders[worksheetName].map((header) => [
+      header,
+      stringValue(row[headerMap[header] ?? -1]),
+    ]),
+  );
+}
+
+function createRecordFromCanonicalPositions(worksheetName: CentralWorksheetName, row: unknown[]) {
+  return Object.fromEntries(
+    requiredWorksheetHeaders[worksheetName].map((header, index) => [
+      header,
+      stringValue(row[index]),
+    ]),
+  );
+}
+
+function recoverWorksheetRecord(
+  worksheetName: CentralWorksheetName,
+  row: unknown[],
+  mappedRecord: Record<string, string>,
+): { record: Record<string, string>; needsRepair: boolean } {
+  if (worksheetName !== "ActiveCampaignCreators") {
+    return { record: mappedRecord, needsRepair: false };
+  }
+
+  const canonicalRecord = createRecordFromCanonicalPositions(worksheetName, row);
+  const mappedScore = scoreActiveCampaignCreatorRecord(mappedRecord);
+  const canonicalScore = scoreActiveCampaignCreatorRecord(canonicalRecord);
+
+  if (canonicalScore >= mappedScore + 4) {
+    return { record: canonicalRecord, needsRepair: true };
+  }
+
+  return { record: mappedRecord, needsRepair: false };
+}
+
+function scoreActiveCampaignCreatorRecord(record: Record<string, string>) {
+  let score = 0;
+  const creatorName = record.creatorName.trim();
+  const campaignId = record.campaignId.trim();
+  const recordId = record.recordId.trim();
+  const projectCode = record.projectCode.trim();
+  const creatorLink = record.creatorLink.trim();
+  const month = record.month.trim();
+  const status = record.status.trim().toLowerCase();
+  const currency = record.creatorPaymentCurrency.trim();
+
+  score += scoreIdentifier(recordId, 2, -3);
+  if (/^campaign-/i.test(campaignId)) score += 4;
+  else score += scoreIdentifier(campaignId, 1, -3);
+  score += scoreIdentifier(creatorName, 3, -5);
+  if (/^https?:\/\//i.test(creatorLink)) score += 3;
+  if (/^\d{4}-\d{2}$/.test(month)) score += 2;
+  if (/[a-z]/i.test(projectCode) && /\d/.test(projectCode)) score += 2;
+  if (["contract signed", "script", "draft", "posted", "fully paid"].includes(status)) {
+    score += 2;
+  }
+  if (isValidDateValue(record.createdAt)) score += 2;
+  if (isValidDateValue(record.updatedAt)) score += 2;
+  if (/^[A-Z]{3}$/.test(currency)) score += 1;
+
+  return score;
+}
+
+function scoreIdentifier(value: string, validScore: number, numericPenalty: number) {
+  if (!value) return 0;
+  return Number.isFinite(Number(value)) ? numericPenalty : validScore;
+}
+
+function isValidDateValue(value: string) {
+  return Boolean(value.trim()) && Number.isFinite(Date.parse(value));
 }
 
 async function readNormalizedWorksheetRecords<T>(
@@ -1732,10 +1825,9 @@ async function readAppSettingsRows(spreadsheetId: string): Promise<AppSettingRec
   return settingsRows.rows.map((row) => row.record);
 }
 
-async function readAppSettingsRecordsWithRowNumbers(spreadsheetId: string): Promise<{
-  rows: Array<SheetRecordWithRowNumber<AppSettingRecord>>;
-  nextRowNumber: number;
-}> {
+async function readAppSettingsRecordsWithRowNumbers(
+  spreadsheetId: string,
+): Promise<WorksheetRecordsWithRowNumbers<AppSettingRecord>> {
   try {
     return await readWorksheetRecordsWithRowNumbers<AppSettingRecord>(spreadsheetId, "AppSettings");
   } catch (error) {
@@ -1765,6 +1857,7 @@ async function readAppSettingsRecordsWithRowNumbers(spreadsheetId: string): Prom
       return {
         rows: [],
         nextRowNumber: 2,
+        headers: requiredWorksheetHeaders.AppSettings,
       };
     }
   }
@@ -1826,10 +1919,7 @@ async function createWorksheetBackup(
 async function readWorksheetRecordsWithRowNumbers<T>(
   spreadsheetId: string,
   worksheetName: CentralWorksheetName,
-): Promise<{
-  rows: Array<SheetRecordWithRowNumber<T>>;
-  nextRowNumber: number;
-}> {
+): Promise<WorksheetRecordsWithRowNumbers<T>> {
   const values = await readValues(spreadsheetId, `${quoteSheetName(worksheetName)}!A1:Z1000`);
   return parseWorksheetRecordsWithRowNumbersFromValues<T>(worksheetName, values);
 }
@@ -1837,10 +1927,7 @@ async function readWorksheetRecordsWithRowNumbers<T>(
 function parseWorksheetRecordsWithRowNumbersFromValues<T>(
   worksheetName: CentralWorksheetName,
   values: unknown[][],
-): {
-  rows: Array<SheetRecordWithRowNumber<T>>;
-  nextRowNumber: number;
-} {
+): WorksheetRecordsWithRowNumbers<T> {
   const headers = (values[0] ?? []).map(stringValue);
   const headerMap = buildHeaderMap(headers, requiredWorksheetHeaders[worksheetName]);
   const missingHeaders = requiredWorksheetHeaders[worksheetName].filter(
@@ -1852,54 +1939,70 @@ function parseWorksheetRecordsWithRowNumbersFromValues<T>(
 
   const idField = rowIdFields[worksheetName];
   const rows = values.slice(1).flatMap((row, index) => {
-    const record = Object.fromEntries(
-      requiredWorksheetHeaders[worksheetName].map((header) => [
-        header,
-        stringValue(row[headerMap[header] ?? -1]),
-      ]),
-    ) as T;
+    const recovered = recoverWorksheetRecord(
+      worksheetName,
+      row,
+      createRecordFromHeaderMap(worksheetName, row, headerMap),
+    );
+    const record = recovered.record as T;
 
-    return (record as Record<string, unknown>)[idField] ? [{ record, rowNumber: index + 2 }] : [];
+    return (record as Record<string, unknown>)[idField]
+      ? [
+          {
+            record,
+            rowNumber: index + 2,
+            rawValues: row.map(stringValue),
+            needsRepair: recovered.needsRepair,
+          },
+        ]
+      : [];
   });
 
   return {
     rows,
     nextRowNumber: Math.max(values.length + 1, 2),
+    headers,
   };
 }
 
 async function writeChangedWorksheetRows<T>(
   spreadsheetId: string,
   worksheetName: CentralWorksheetName,
-  currentRows: {
-    rows: Array<SheetRecordWithRowNumber<T>>;
-    nextRowNumber: number;
-  },
+  currentRows: WorksheetRecordsWithRowNumbers<T>,
   nextRows: T[],
 ) {
-  const headers = requiredWorksheetHeaders[worksheetName];
+  const canonicalHeaders = requiredWorksheetHeaders[worksheetName];
+  const actualHeaders = currentRows.headers.length ? currentRows.headers : canonicalHeaders;
+  const headerMap = buildHeaderMap(actualHeaders, canonicalHeaders);
   let nextAppendRowNumber = currentRows.nextRowNumber;
 
   for (let index = 0; index < nextRows.length; index += 1) {
     const nextRecord = nextRows[index];
     const currentRow = currentRows.rows[index];
-    const rowValues = headers.map(
-      (header) => (nextRecord as Record<string, unknown>)[header] ?? "",
-    );
+    const rowValues = currentRow
+      ? [...currentRow.rawValues]
+      : Array.from({ length: actualHeaders.length }, () => "");
+    while (rowValues.length < actualHeaders.length) rowValues.push("");
+    for (const header of canonicalHeaders) {
+      const columnIndex = headerMap[header];
+      if (columnIndex === undefined) continue;
+      rowValues[columnIndex] = stringValue((nextRecord as Record<string, unknown>)[header] ?? "");
+    }
 
     if (currentRow) {
       if (
+        !currentRow.needsRepair &&
         !worksheetRecordChanged(
           currentRow.record as Record<string, unknown>,
           nextRecord as Record<string, unknown>,
-          headers,
+          canonicalHeaders,
         )
       ) {
         continue;
       }
       await updateValues(
         spreadsheetId,
-        `${quoteSheetName(worksheetName)}!A${currentRow.rowNumber}:${columnName(headers.length)}${currentRow.rowNumber}`,
+        `${quoteSheetName(worksheetName)}!A${currentRow.rowNumber}:${columnName(actualHeaders.length)}${currentRow.rowNumber}`,
         [rowValues],
       );
       continue;
@@ -1907,7 +2010,7 @@ async function writeChangedWorksheetRows<T>(
 
     await updateValues(
       spreadsheetId,
-      `${quoteSheetName(worksheetName)}!A${nextAppendRowNumber}:${columnName(headers.length)}${nextAppendRowNumber}`,
+      `${quoteSheetName(worksheetName)}!A${nextAppendRowNumber}:${columnName(actualHeaders.length)}${nextAppendRowNumber}`,
       [rowValues],
     );
     nextAppendRowNumber += 1;
@@ -1917,10 +2020,7 @@ async function writeChangedWorksheetRows<T>(
 async function writeCurrentStateWorksheetRows<T>(
   spreadsheetId: string,
   worksheetName: CentralWorksheetName,
-  currentRows: {
-    rows: Array<SheetRecordWithRowNumber<T>>;
-    nextRowNumber: number;
-  },
+  currentRows: WorksheetRecordsWithRowNumbers<T>,
   nextRows: T[],
 ) {
   await writeChangedWorksheetRows(spreadsheetId, worksheetName, currentRows, nextRows);
