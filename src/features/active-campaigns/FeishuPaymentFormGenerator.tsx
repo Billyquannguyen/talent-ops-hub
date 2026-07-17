@@ -194,8 +194,8 @@ export function FeishuPaymentFormGenerator({
       key: "client-quote",
       icon: Hash,
       chineseTitle: "客户报价",
-      englishMeaning: "Client Quote",
-      value: clientQuote || "No client quote entered.",
+      englishMeaning: "Creator Payment Amount",
+      value: clientQuote || "No creator payment amount entered.",
       copyValue: clientQuote,
       instruction: !clientQuote,
     },
@@ -351,7 +351,7 @@ export function FeishuPaymentFormGenerator({
                 placeholder="https://..."
               />
               <TextField
-                label="Client Quote"
+                label="Creator Payment Amount"
                 value={clientQuote}
                 onChange={setClientQuote}
                 inputMode="decimal"

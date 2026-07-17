@@ -156,6 +156,7 @@ export async function loadActiveCampaignRegistryFromGoogleSheetsOnly(
   const bundle = await loadActiveCampaignsBundleFromGoogleSheetsOnly();
   const database = loadAppDatabase();
   database.worksheets.CampaignProfiles = bundle.campaignProfiles;
+  database.worksheets.CampaignBatches = bundle.campaignBatches;
   database.worksheets.ActiveCampaignCreators = bundle.activeCampaignCreators;
   return databaseToCampaignRegistry(database, { includeHidden: options.includeHidden });
 }
@@ -667,9 +668,8 @@ function normalizeCreatorRecord(value: unknown): SelectedCreatorRecord {
     creatorName: stringValue(record.creatorName),
     creatorLink: stringValue(record.creatorLink),
     avgViews: numberValue(record.avgViews),
-    creatorPaymentAmount:
-      numberValue(record.creatorPaymentAmount) || numberValue(record.internalQuote),
-    creatorPaymentCurrency: stringValue(record.creatorPaymentCurrency).toUpperCase() || "USD",
+    creatorPaymentAmount: numberValue(record.creatorPaymentAmount),
+    creatorPaymentCurrency: stringValue(record.creatorPaymentCurrency).toUpperCase(),
     internalQuote: numberValue(record.internalQuote),
     externalQuote: numberValue(record.externalQuote),
     status: normalizeStatus(record.status),

@@ -93,13 +93,32 @@ type SheetRecordWithRowNumber<T> = {
   record: T;
   rowNumber: number;
   rawValues: string[];
-  needsRepair?: boolean;
 };
 
 type WorksheetRecordsWithRowNumbers<T> = {
   rows: Array<SheetRecordWithRowNumber<T>>;
   nextRowNumber: number;
   headers: string[];
+};
+
+type WorksheetMutationPolicy = {
+  reason?: string;
+  allowBulk?: boolean;
+  maxCreates?: number;
+  maxUpdates?: number;
+  maxDeletes?: number;
+};
+
+type PlannedWorksheetWrite = {
+  kind: "create" | "update";
+  rowNumber: number;
+  values: string[];
+};
+
+type WorksheetMutationPlan = {
+  writes: PlannedWorksheetWrite[];
+  deleteRowNumbers: number[];
+  retainedCurrentRowNumbers: Set<number>;
 };
 
 const scopes = [
@@ -120,6 +139,15 @@ const rowIdFields: Record<CentralWorksheetName, string> = {
   CampaignPromptVault: "promptId",
   CampaignProjectInfo: "infoId",
   AppSettings: "settingKey",
+};
+
+const optionalLegacyWorksheetHeaders: Partial<Record<CentralWorksheetName, readonly string[]>> = {
+  ActiveCampaignCreators: [
+    "batchId",
+    "projectCode",
+    "creatorPaymentAmount",
+    "creatorPaymentCurrency",
+  ],
 };
 
 let tokenCache: { accessToken: string; expiresAt: number } | null = null;
@@ -1106,35 +1134,71 @@ export async function listActiveCampaignCreatorsInGoogleSheets() {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
-  await ensureHeaders(spreadsheetId, "ActiveCampaignCreators");
 
   const creatorRows = await readWorksheetRecordsWithRowNumbers<ActiveCampaignCreatorRecord>(
     spreadsheetId,
     "ActiveCampaignCreators",
   );
   const cleanup = cleanupActiveCampaignCreatorRecords(creatorRows.rows.map((row) => row.record));
-  const repairCount = creatorRows.rows.filter((row) => row.needsRepair).length;
   logActiveCampaignCreatorCleanupSummary("list-current-state", cleanup);
 
-  if (repairCount > 0) {
+  if (cleanup.removedCount > 0) {
     console.warn(
-      `[Google Sheets] Repairing ${repairCount} shifted ActiveCampaignCreators row(s) using canonical field positions.`,
+      `[Google Sheets] ActiveCampaignCreators read ignored ${cleanup.removedCount} duplicate or invalid row(s). No sheet rows were changed.`,
     );
-  }
-
-  if (cleanup.removedCount > 0 || repairCount > 0) {
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "ActiveCampaignCreators",
-      creatorRows,
-      cleanup.records,
-    );
-    invalidateDatabaseReadCache("active-campaign-creator-list-cleanup");
   }
 
   return {
     records: cleanup.records,
     report: createActiveCampaignCreatorCleanupReport(creatorRows.rows.length, cleanup),
+  };
+}
+
+export async function ensureActiveCampaignCreatorExtensionHeadersInGoogleSheets() {
+  const config = assertConfigured();
+  const spreadsheetId = await resolveSpreadsheetId(config);
+  const worksheetName = "ActiveCampaignCreators";
+  const range = `${quoteSheetName(worksheetName)}!A1:Z1000`;
+  const valuesBefore = await readValues(spreadsheetId, range);
+  const existingHeaders = (valuesBefore[0] ?? []).map(stringValue);
+
+  if (existingHeaders.length === 0) {
+    throw new Error(`${worksheetName} does not have a header row.`);
+  }
+
+  const extensionHeaders = [
+    "batchId",
+    "projectCode",
+    "creatorPaymentAmount",
+    "creatorPaymentCurrency",
+  ];
+  const headerMap = buildHeaderMap(existingHeaders, extensionHeaders);
+  const addedHeaders = extensionHeaders.filter((header) => headerMap[header] === undefined);
+
+  if (addedHeaders.length > 0) {
+    await updateHeaderRow(spreadsheetId, worksheetName, [...existingHeaders, ...addedHeaders]);
+    ensuredHeaders.delete(`${spreadsheetId}::${worksheetName}`);
+    invalidateDatabaseReadCache("active-campaign-creator-payment-headers-added");
+  }
+
+  const valuesAfter = await readValues(spreadsheetId, range);
+  const headersAfter = (valuesAfter[0] ?? []).map(stringValue);
+  const dataRowsUnchanged =
+    JSON.stringify(valuesBefore.slice(1)) === JSON.stringify(valuesAfter.slice(1));
+
+  if (!dataRowsUnchanged) {
+    throw new Error(`${worksheetName} extension header migration changed one or more data rows.`);
+  }
+
+  return {
+    spreadsheetId,
+    worksheetName,
+    addedHeaders,
+    headersBefore: existingHeaders,
+    headersAfter,
+    dataRowCount: valuesAfter.slice(1).filter((row) => row.some((value) => stringValue(value)))
+      .length,
+    dataRowsUnchanged,
   };
 }
 
@@ -1144,6 +1208,7 @@ export async function upsertActiveCampaignCreatorInGoogleSheets(
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
+  await ensureActiveCampaignCreatorExtensionHeadersInGoogleSheets();
   await ensureHeaders(spreadsheetId, "ActiveCampaignCreators");
 
   const creatorRows = await readWorksheetRecordsWithRowNumbers<ActiveCampaignCreatorRecord>(
@@ -1155,11 +1220,21 @@ export async function upsertActiveCampaignCreatorInGoogleSheets(
     record,
   );
   logActiveCampaignCreatorCleanupSummary("targeted-upsert", cleanup);
-  await writeCurrentStateWorksheetRows(
+  const nextRecord = cleanup.records.find((item) => item.recordId === record.recordId);
+  if (!nextRecord) {
+    throw new Error("ActiveCampaignCreators could not normalize the creator record for saving.");
+  }
+  const matchingRows = creatorRows.rows.filter(
+    (row) => stringValue(row.record.recordId) === nextRecord.recordId,
+  );
+  await writeChangedWorksheetRows(
     spreadsheetId,
     "ActiveCampaignCreators",
-    creatorRows,
-    cleanup.records,
+    {
+      ...creatorRows,
+      rows: matchingRows,
+    },
+    [nextRecord],
   );
 
   invalidateDatabaseReadCache("active-campaign-creator-targeted-write");
@@ -1185,11 +1260,12 @@ export async function deleteActiveCampaignCreatorInGoogleSheets(recordId: string
     recordId,
   );
   logActiveCampaignCreatorCleanupSummary("targeted-delete", cleanup);
-  await writeCurrentStateWorksheetRows(
+  await deleteWorksheetRowNumbers(
     spreadsheetId,
     "ActiveCampaignCreators",
-    creatorRows,
-    cleanup.records,
+    creatorRows.rows
+      .filter((row) => stringValue(row.record.recordId) === recordId)
+      .map((row) => row.rowNumber),
   );
 
   invalidateDatabaseReadCache("active-campaign-creator-targeted-delete");
@@ -1634,7 +1710,7 @@ async function ensureHeaders(spreadsheetId: string, worksheetName: CentralWorksh
   const currentHeaderRow = await readValues(spreadsheetId, `${quoteSheetName(worksheetName)}!1:1`);
   const existingHeaders = (currentHeaderRow[0] ?? []).map(stringValue).filter(Boolean);
   const headerMap = buildHeaderMap(existingHeaders, requiredHeaders);
-  const missingHeaders = requiredHeaders.filter((header) => headerMap[header] === undefined);
+  const missingHeaders = getMissingRequiredHeaders(worksheetName, headerMap);
   if (existingHeaders.length > 0 && missingHeaders.length === 0) {
     ensuredHeaders.add(cacheKey);
     return;
@@ -1689,9 +1765,7 @@ async function readWorksheetRowsBatch(
 function parseWorksheetRowsFromValues(worksheetName: CentralWorksheetName, values: unknown[][]) {
   const headers = (values[0] ?? []).map(stringValue);
   const headerMap = buildHeaderMap(headers, requiredWorksheetHeaders[worksheetName]);
-  const missingHeaders = requiredWorksheetHeaders[worksheetName].filter(
-    (header) => headerMap[header] === undefined,
-  );
+  const missingHeaders = getMissingRequiredHeaders(worksheetName, headerMap);
   if (missingHeaders.length > 0) {
     if (worksheetName === "AppSettings") {
       console.warn("[AppSettingsRepair]", "missing-headers-ignored-for-read", {
@@ -1704,14 +1778,20 @@ function parseWorksheetRowsFromValues(worksheetName: CentralWorksheetName, value
   }
 
   return values.slice(1).flatMap((row) => {
-    const record = recoverWorksheetRecord(
-      worksheetName,
-      row,
-      createRecordFromHeaderMap(worksheetName, row, headerMap),
-    ).record;
+    const record = createRecordFromHeaderMap(worksheetName, row, headerMap);
     const idField = rowIdFields[worksheetName];
     return record[idField] ? [record] : [];
   });
+}
+
+function getMissingRequiredHeaders(
+  worksheetName: CentralWorksheetName,
+  headerMap: Record<string, number | undefined>,
+) {
+  const optionalHeaders = new Set(optionalLegacyWorksheetHeaders[worksheetName] ?? []);
+  return requiredWorksheetHeaders[worksheetName].filter(
+    (header) => headerMap[header] === undefined && !optionalHeaders.has(header),
+  );
 }
 
 function createRecordFromHeaderMap(
@@ -1725,72 +1805,6 @@ function createRecordFromHeaderMap(
       stringValue(row[headerMap[header] ?? -1]),
     ]),
   );
-}
-
-function createRecordFromCanonicalPositions(worksheetName: CentralWorksheetName, row: unknown[]) {
-  return Object.fromEntries(
-    requiredWorksheetHeaders[worksheetName].map((header, index) => [
-      header,
-      stringValue(row[index]),
-    ]),
-  );
-}
-
-function recoverWorksheetRecord(
-  worksheetName: CentralWorksheetName,
-  row: unknown[],
-  mappedRecord: Record<string, string>,
-): { record: Record<string, string>; needsRepair: boolean } {
-  if (worksheetName !== "ActiveCampaignCreators") {
-    return { record: mappedRecord, needsRepair: false };
-  }
-
-  const canonicalRecord = createRecordFromCanonicalPositions(worksheetName, row);
-  const mappedScore = scoreActiveCampaignCreatorRecord(mappedRecord);
-  const canonicalScore = scoreActiveCampaignCreatorRecord(canonicalRecord);
-
-  if (canonicalScore >= mappedScore + 4) {
-    return { record: canonicalRecord, needsRepair: true };
-  }
-
-  return { record: mappedRecord, needsRepair: false };
-}
-
-function scoreActiveCampaignCreatorRecord(record: Record<string, string>) {
-  let score = 0;
-  const creatorName = record.creatorName.trim();
-  const campaignId = record.campaignId.trim();
-  const recordId = record.recordId.trim();
-  const projectCode = record.projectCode.trim();
-  const creatorLink = record.creatorLink.trim();
-  const month = record.month.trim();
-  const status = record.status.trim().toLowerCase();
-  const currency = record.creatorPaymentCurrency.trim();
-
-  score += scoreIdentifier(recordId, 2, -3);
-  if (/^campaign-/i.test(campaignId)) score += 4;
-  else score += scoreIdentifier(campaignId, 1, -3);
-  score += scoreIdentifier(creatorName, 3, -5);
-  if (/^https?:\/\//i.test(creatorLink)) score += 3;
-  if (/^\d{4}-\d{2}$/.test(month)) score += 2;
-  if (/[a-z]/i.test(projectCode) && /\d/.test(projectCode)) score += 2;
-  if (["contract signed", "script", "draft", "posted", "fully paid"].includes(status)) {
-    score += 2;
-  }
-  if (isValidDateValue(record.createdAt)) score += 2;
-  if (isValidDateValue(record.updatedAt)) score += 2;
-  if (/^[A-Z]{3}$/.test(currency)) score += 1;
-
-  return score;
-}
-
-function scoreIdentifier(value: string, validScore: number, numericPenalty: number) {
-  if (!value) return 0;
-  return Number.isFinite(Number(value)) ? numericPenalty : validScore;
-}
-
-function isValidDateValue(value: string) {
-  return Boolean(value.trim()) && Number.isFinite(Date.parse(value));
 }
 
 async function readNormalizedWorksheetRecords<T>(
@@ -1930,21 +1944,14 @@ function parseWorksheetRecordsWithRowNumbersFromValues<T>(
 ): WorksheetRecordsWithRowNumbers<T> {
   const headers = (values[0] ?? []).map(stringValue);
   const headerMap = buildHeaderMap(headers, requiredWorksheetHeaders[worksheetName]);
-  const missingHeaders = requiredWorksheetHeaders[worksheetName].filter(
-    (header) => headerMap[header] === undefined,
-  );
+  const missingHeaders = getMissingRequiredHeaders(worksheetName, headerMap);
   if (missingHeaders.length > 0) {
     throw new Error(`${worksheetName} is missing required headers: ${missingHeaders.join(", ")}`);
   }
 
   const idField = rowIdFields[worksheetName];
   const rows = values.slice(1).flatMap((row, index) => {
-    const recovered = recoverWorksheetRecord(
-      worksheetName,
-      row,
-      createRecordFromHeaderMap(worksheetName, row, headerMap),
-    );
-    const record = recovered.record as T;
+    const record = createRecordFromHeaderMap(worksheetName, row, headerMap) as T;
 
     return (record as Record<string, unknown>)[idField]
       ? [
@@ -1952,7 +1959,6 @@ function parseWorksheetRecordsWithRowNumbersFromValues<T>(
             record,
             rowNumber: index + 2,
             rawValues: row.map(stringValue),
-            needsRepair: recovered.needsRepair,
           },
         ]
       : [];
@@ -1970,15 +1976,62 @@ async function writeChangedWorksheetRows<T>(
   worksheetName: CentralWorksheetName,
   currentRows: WorksheetRecordsWithRowNumbers<T>,
   nextRows: T[],
+  policy: WorksheetMutationPolicy = {},
 ) {
+  const plan = planWorksheetMutations(worksheetName, currentRows, nextRows, false, policy);
+  assertWorksheetMutationAllowed(worksheetName, plan, policy);
+  await executeWorksheetMutationPlan(spreadsheetId, worksheetName, plan);
+  return plan.retainedCurrentRowNumbers;
+}
+
+function planWorksheetMutations<T>(
+  worksheetName: CentralWorksheetName,
+  currentRows: WorksheetRecordsWithRowNumbers<T>,
+  nextRows: T[],
+  deleteStaleRows: boolean,
+  policy: WorksheetMutationPolicy,
+): WorksheetMutationPlan {
   const canonicalHeaders = requiredWorksheetHeaders[worksheetName];
   const actualHeaders = currentRows.headers.length ? currentRows.headers : canonicalHeaders;
   const headerMap = buildHeaderMap(actualHeaders, canonicalHeaders);
+  const idField = rowIdFields[worksheetName];
+  const currentRowsById = new Map<string, SheetRecordWithRowNumber<T>>();
+  const duplicateCurrentIds = new Set<string>();
+  for (const currentRow of currentRows.rows) {
+    const rowId = stringValue((currentRow.record as Record<string, unknown>)[idField]);
+    if (!rowId) continue;
+    if (currentRowsById.has(rowId)) duplicateCurrentIds.add(rowId);
+    else currentRowsById.set(rowId, currentRow);
+  }
+
+  if (duplicateCurrentIds.size > 0 && !policy.allowBulk) {
+    throw new Error(
+      `Blocked unsafe Google Sheets mutation on ${worksheetName}: duplicate ${idField} values already exist (${[
+        ...duplicateCurrentIds,
+      ].join(", ")}). Run an explicit cleanup instead of repairing rows during a normal save.`,
+    );
+  }
+
+  const retainedCurrentRowNumbers = new Set<number>();
+  const nextRecordIds = new Set<string>();
+  const writes: PlannedWorksheetWrite[] = [];
   let nextAppendRowNumber = currentRows.nextRowNumber;
 
-  for (let index = 0; index < nextRows.length; index += 1) {
-    const nextRecord = nextRows[index];
-    const currentRow = currentRows.rows[index];
+  for (const nextRecord of nextRows) {
+    const nextRecordId = stringValue((nextRecord as Record<string, unknown>)[idField]);
+    if (!nextRecordId) {
+      throw new Error(
+        `Blocked unsafe Google Sheets mutation on ${worksheetName}: a record is missing ${idField}.`,
+      );
+    }
+    if (nextRecordIds.has(nextRecordId)) {
+      throw new Error(
+        `Blocked unsafe Google Sheets mutation on ${worksheetName}: the planned data contains duplicate ${idField} ${nextRecordId}.`,
+      );
+    }
+    nextRecordIds.add(nextRecordId);
+
+    const currentRow = nextRecordId ? currentRowsById.get(nextRecordId) : undefined;
     const rowValues = currentRow
       ? [...currentRow.rawValues]
       : Array.from({ length: actualHeaders.length }, () => "");
@@ -1990,8 +2043,8 @@ async function writeChangedWorksheetRows<T>(
     }
 
     if (currentRow) {
+      retainedCurrentRowNumbers.add(currentRow.rowNumber);
       if (
-        !currentRow.needsRepair &&
         !worksheetRecordChanged(
           currentRow.record as Record<string, unknown>,
           nextRecord as Record<string, unknown>,
@@ -2000,20 +2053,76 @@ async function writeChangedWorksheetRows<T>(
       ) {
         continue;
       }
-      await updateValues(
-        spreadsheetId,
-        `${quoteSheetName(worksheetName)}!A${currentRow.rowNumber}:${columnName(actualHeaders.length)}${currentRow.rowNumber}`,
-        [rowValues],
-      );
+      writes.push({ kind: "update", rowNumber: currentRow.rowNumber, values: rowValues });
       continue;
     }
 
+    writes.push({ kind: "create", rowNumber: nextAppendRowNumber, values: rowValues });
+    nextAppendRowNumber += 1;
+  }
+
+  const deleteRowNumbers = deleteStaleRows
+    ? currentRows.rows
+        .filter((row) => !retainedCurrentRowNumbers.has(row.rowNumber))
+        .map((row) => row.rowNumber)
+    : [];
+
+  return { writes, deleteRowNumbers, retainedCurrentRowNumbers };
+}
+
+function assertWorksheetMutationAllowed(
+  worksheetName: CentralWorksheetName,
+  plan: WorksheetMutationPlan,
+  policy: WorksheetMutationPolicy,
+) {
+  const creates = plan.writes.filter((write) => write.kind === "create").length;
+  const updates = plan.writes.filter((write) => write.kind === "update").length;
+  const deletes = new Set(plan.deleteRowNumbers).size;
+  const reason = policy.reason ?? "targeted-row-operation";
+  const limits = policy.allowBulk
+    ? { creates: Number.POSITIVE_INFINITY, updates: Number.POSITIVE_INFINITY, deletes: Number.POSITIVE_INFINITY }
+    : {
+        creates: policy.maxCreates ?? 1,
+        updates: policy.maxUpdates ?? 1,
+        deletes: policy.maxDeletes ?? 1,
+      };
+
+  console.info("[GoogleSheetsMutation]", "planned", {
+    worksheet: worksheetName,
+    reason,
+    creates,
+    updates,
+    deletes,
+    allowBulk: policy.allowBulk === true,
+    at: new Date().toISOString(),
+  });
+
+  if (creates > limits.creates || updates > limits.updates || deletes > limits.deletes) {
+    throw new Error(
+      `Blocked unsafe Google Sheets mutation on ${worksheetName}: ${reason} planned ${creates} create(s), ${updates} update(s), and ${deletes} delete(s). Normal actions may change only one row of each kind.`,
+    );
+  }
+}
+
+async function executeWorksheetMutationPlan(
+  spreadsheetId: string,
+  worksheetName: CentralWorksheetName,
+  plan: WorksheetMutationPlan,
+) {
+  const headers = requiredWorksheetHeaders[worksheetName];
+  for (const write of plan.writes) {
     await updateValues(
       spreadsheetId,
-      `${quoteSheetName(worksheetName)}!A${nextAppendRowNumber}:${columnName(actualHeaders.length)}${nextAppendRowNumber}`,
-      [rowValues],
+      `${quoteSheetName(worksheetName)}!A${write.rowNumber}:${columnName(headers.length)}${write.rowNumber}`,
+      [write.values],
     );
-    nextAppendRowNumber += 1;
+  }
+
+  if (plan.deleteRowNumbers.length > 0) {
+    await deleteWorksheetRowNumbers(spreadsheetId, worksheetName, plan.deleteRowNumbers, {
+      reason: "approved-mutation-plan",
+      allowBulk: true,
+    });
   }
 }
 
@@ -2022,23 +2131,38 @@ async function writeCurrentStateWorksheetRows<T>(
   worksheetName: CentralWorksheetName,
   currentRows: WorksheetRecordsWithRowNumbers<T>,
   nextRows: T[],
+  policy: WorksheetMutationPolicy = {},
 ) {
-  await writeChangedWorksheetRows(spreadsheetId, worksheetName, currentRows, nextRows);
-
-  const staleRows = currentRows.rows.slice(nextRows.length).map((row) => row.rowNumber);
-  if (staleRows.length === 0) return;
-
-  await deleteWorksheetRowNumbers(spreadsheetId, worksheetName, staleRows);
+  const plan = planWorksheetMutations(worksheetName, currentRows, nextRows, true, policy);
+  assertWorksheetMutationAllowed(worksheetName, plan, policy);
+  await executeWorksheetMutationPlan(spreadsheetId, worksheetName, plan);
 }
 
 async function deleteWorksheetRowNumbers(
   spreadsheetId: string,
   worksheetName: CentralWorksheetName,
   rowNumbers: number[],
+  policy: WorksheetMutationPolicy = {},
 ) {
+  const uniqueRowNumbers = [...new Set(rowNumbers)].filter((rowNumber) => rowNumber > 1);
+  const maximumDeletes = policy.allowBulk ? Number.POSITIVE_INFINITY : (policy.maxDeletes ?? 1);
+  if (uniqueRowNumbers.length > maximumDeletes) {
+    throw new Error(
+      `Blocked unsafe Google Sheets deletion on ${worksheetName}: ${policy.reason ?? "targeted-row-delete"} would delete ${uniqueRowNumbers.length} rows.`,
+    );
+  }
+
+  console.info("[GoogleSheetsMutation]", "delete-approved", {
+    worksheet: worksheetName,
+    reason: policy.reason ?? "targeted-row-delete",
+    deletes: uniqueRowNumbers.length,
+    allowBulk: policy.allowBulk === true,
+    at: new Date().toISOString(),
+  });
+
+  if (uniqueRowNumbers.length === 0) return;
   const sheetId = await getWorksheetSheetId(spreadsheetId, worksheetName);
-  const requests = [...new Set(rowNumbers)]
-    .filter((rowNumber) => rowNumber > 1)
+  const requests = uniqueRowNumbers
     .sort((first, second) => second - first)
     .map((rowNumber) => ({
       deleteDimension: {
@@ -2781,9 +2905,8 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
           creatorName: stringValue(row.creatorName),
           creatorLink: stringValue(row.creatorLink),
           avgViews: numberValue(row.avgViews),
-          creatorPaymentAmount:
-            numberValue(row.creatorPaymentAmount) || numberValue(row.internalQuote),
-          creatorPaymentCurrency: stringValue(row.creatorPaymentCurrency).toUpperCase() || "USD",
+          creatorPaymentAmount: numberValue(row.creatorPaymentAmount),
+          creatorPaymentCurrency: stringValue(row.creatorPaymentCurrency).toUpperCase(),
           internalQuote: numberValue(row.internalQuote),
           externalQuote: numberValue(row.externalQuote),
           cpm: numberValue(row.cpm),

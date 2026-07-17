@@ -76,8 +76,8 @@ function normalizeActiveCampaignCreatorRecord(
   const avgViews = numberValue(record.avgViews);
   const internalQuote = numberValue(record.internalQuote);
   const externalQuote = numberValue(record.externalQuote);
-  const creatorPaymentAmount = numberValue(record.creatorPaymentAmount) || internalQuote;
-  const creatorPaymentCurrency = stringValue(record.creatorPaymentCurrency).toUpperCase() || "USD";
+  const creatorPaymentAmount = numberValue(record.creatorPaymentAmount);
+  const creatorPaymentCurrency = stringValue(record.creatorPaymentCurrency).toUpperCase();
   const cpm = avgViews > 0 ? externalQuote / avgViews : 0;
   const profit = externalQuote - internalQuote;
   const profitMargin = externalQuote > 0 ? profit / externalQuote : 0;
