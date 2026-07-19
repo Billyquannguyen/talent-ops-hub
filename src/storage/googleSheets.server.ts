@@ -104,6 +104,7 @@ type WorksheetRecordsWithRowNumbers<T> = {
 type WorksheetMutationPolicy = {
   reason?: string;
   allowBulk?: boolean;
+  skipBackup?: boolean;
   maxCreates?: number;
   maxUpdates?: number;
   maxDeletes?: number;
@@ -119,6 +120,7 @@ type WorksheetMutationPlan = {
   writes: PlannedWorksheetWrite[];
   deleteRowNumbers: number[];
   retainedCurrentRowNumbers: Set<number>;
+  columnCount: number;
 };
 
 const scopes = [
@@ -268,7 +270,10 @@ async function readWorksheetSubsetFromGoogleSheets(
   return rowsToDatabase(rowsBySheet);
 }
 
-export async function writeCentralDatabaseToGoogleSheets(database: CentralAppDatabase) {
+async function writeCentralDatabaseForExplicitMigration(
+  database: CentralAppDatabase,
+  reason: string,
+) {
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
@@ -280,6 +285,21 @@ export async function writeCentralDatabaseToGoogleSheets(database: CentralAppDat
   logSourcingTemplateCleanupSummary("full-database-write", sourcingCleanup);
 
   for (const worksheetName of centralWorksheetNames) {
+    invalidateValuesReadCache(
+      spreadsheetId,
+      `pre-explicit-migration-backup:${reason}`,
+      worksheetName,
+    );
+    const sourceValues = await readValues(
+      spreadsheetId,
+      `${quoteSheetName(worksheetName)}!A1:Z1000`,
+    );
+    await createWorksheetBackup(spreadsheetId, worksheetName, sourceValues);
+    console.warn("[GoogleSheetsMutation]", "explicit-migration-replace", {
+      worksheet: worksheetName,
+      reason,
+      at: new Date().toISOString(),
+    });
     await replaceWorksheetRows(
       spreadsheetId,
       worksheetName,
@@ -394,14 +414,10 @@ export async function listCampaignProfilesInGoogleSheets() {
   const cleanup = cleanupCampaignProfileRecords(profileRows.rows.map((row) => row.record));
 
   if (cleanup.removedCount > 0) {
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "CampaignProfiles",
-      profileRows,
-      cleanup.records,
-    );
-    invalidateDatabaseReadCache("campaign-profile-list-cleanup");
-    invalidateCreatorSourcingReadCache("campaign-profile-list-cleanup");
+    console.warn("[GoogleSheetsReadOnlyDiagnostic]", "CampaignProfiles needs cleanup", {
+      removedRows: cleanup.removedCount,
+      action: "No worksheet rows were changed during this read.",
+    });
   }
 
   return {
@@ -478,13 +494,10 @@ export async function listCampaignBatchesInGoogleSheets() {
   );
   const cleanup = cleanupCampaignBatchRecords(batchRows.rows.map((row) => row.record));
   if (cleanup.removedCount > 0) {
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "CampaignBatches",
-      batchRows,
-      cleanup.records,
-    );
-    invalidateDatabaseReadCache("campaign-batch-list-cleanup");
+    console.warn("[GoogleSheetsReadOnlyDiagnostic]", "CampaignBatches needs cleanup", {
+      removedRows: cleanup.removedCount,
+      action: "No worksheet rows were changed during this read.",
+    });
   }
   return { records: cleanup.records };
 }
@@ -737,20 +750,34 @@ export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTempl
     canonicalRecord,
   );
   logSourcingTemplateCleanupSummary("targeted-upsert", sourcingCleanup);
-  await writeCurrentStateWorksheetRows(
+  await writeChangedWorksheetRows(
     spreadsheetId,
     "SourcingTemplates",
-    sourcingRows,
-    sourcingCleanup.records,
+    selectWorksheetRowsById("SourcingTemplates", sourcingRows, canonicalRecord.id),
+    [canonicalRecord],
+    { reason: "sourcing-template-upsert" },
   );
 
   const appSettingRows = await readAppSettingsRecordsWithRowNumbers(spreadsheetId);
+  const settingKey = `sourcing.activeTemplate.${canonicalRecord.campaignId}`;
   const appSettings = upsertAppSettingRecord(
     appSettingRows.rows.map((row) => row.record),
-    `sourcing.activeTemplate.${canonicalRecord.campaignId}`,
+    settingKey,
     canonicalRecord.id,
   );
-  await writeChangedWorksheetRows(spreadsheetId, "AppSettings", appSettingRows, appSettings);
+  const activeTemplateSetting = appSettings.find(
+    (setting) => setting.settingKey === settingKey,
+  );
+  if (!activeTemplateSetting) {
+    throw new Error(`Could not prepare active template setting ${settingKey}.`);
+  }
+  await writeChangedWorksheetRows(
+    spreadsheetId,
+    "AppSettings",
+    selectWorksheetRowsById("AppSettings", appSettingRows, settingKey),
+    [activeTemplateSetting],
+    { reason: "sourcing-active-template-setting" },
+  );
 
   invalidateDatabaseReadCache("sourcing-template-targeted-write");
   invalidateCreatorSourcingReadCache("sourcing-template-targeted-write");
@@ -780,11 +807,13 @@ export async function deleteSourcingTemplateInGoogleSheets(templateId: string) {
 
   const sourcingCleanup = removeSourcingTemplateRecord(currentTemplates, templateId);
   logSourcingTemplateCleanupSummary("targeted-delete", sourcingCleanup);
-  await writeCurrentStateWorksheetRows(
+  await deleteWorksheetRowNumbers(
     spreadsheetId,
     "SourcingTemplates",
-    sourcingRows,
-    sourcingCleanup.records,
+    sourcingRows.rows
+      .filter((row) => stringValue(row.record.id) === templateId)
+      .map((row) => row.rowNumber),
+    { reason: "sourcing-template-delete" },
   );
 
   const appSettingRows = await readAppSettingsRecordsWithRowNumbers(spreadsheetId);
@@ -801,7 +830,19 @@ export async function deleteSourcingTemplateInGoogleSheets(templateId: string) {
           template.campaignId === existing.campaignId && isActiveSourcingTemplateRecord(template),
       ) ?? null;
     appSettings = upsertAppSettingRecord(appSettings, settingKey, nextTemplate?.id ?? "");
-    await writeChangedWorksheetRows(spreadsheetId, "AppSettings", appSettingRows, appSettings);
+    const activeTemplateSetting = appSettings.find(
+      (setting) => setting.settingKey === settingKey,
+    );
+    if (!activeTemplateSetting) {
+      throw new Error(`Could not prepare active template setting ${settingKey}.`);
+    }
+    await writeChangedWorksheetRows(
+      spreadsheetId,
+      "AppSettings",
+      selectWorksheetRowsById("AppSettings", appSettingRows, settingKey),
+      [activeTemplateSetting],
+      { reason: "sourcing-active-template-reset" },
+    );
   }
 
   invalidateDatabaseReadCache("sourcing-template-targeted-delete");
@@ -832,6 +873,10 @@ export async function cleanupSourcingTemplatesInGoogleSheets() {
     "SourcingTemplates",
     sourcingRows,
     sourcingCleanup.records,
+    {
+      reason: "manual-sourcing-template-cleanup",
+      allowBulk: true,
+    },
   );
 
   invalidateDatabaseReadCache("sourcing-template-manual-cleanup");
@@ -865,13 +910,10 @@ export async function listOutreachTemplatesInGoogleSheets() {
   logOutreachTemplateCleanupSummary("list-current-state", cleanup);
 
   if (cleanup.removedCount > 0) {
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "OutreachTemplates",
-      outreachRows,
-      cleanup.records,
-    );
-    invalidateDatabaseReadCache("outreach-template-list-cleanup");
+    console.warn("[GoogleSheetsReadOnlyDiagnostic]", "OutreachTemplates needs cleanup", {
+      removedRows: cleanup.removedCount,
+      action: "No worksheet rows were changed during this read.",
+    });
   }
 
   return {
@@ -954,6 +996,10 @@ export async function cleanupOutreachTemplatesInGoogleSheets() {
     "OutreachTemplates",
     outreachRows,
     cleanup.records,
+    {
+      reason: "manual-outreach-template-cleanup",
+      allowBulk: true,
+    },
   );
 
   invalidateDatabaseReadCache("outreach-template-manual-cleanup");
@@ -977,13 +1023,11 @@ export async function listCampaignMemoryCardsInGoogleSheets() {
   logCampaignMemoryCardCleanupSummary("list-current-state", cleanup);
 
   if (cleanup.removedCount > 0 || cleanup.duplicateIdReassignedCount > 0) {
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "CampaignMemoryCards",
-      memoryRows,
-      cleanup.records,
-    );
-    invalidateDatabaseReadCache("campaign-memory-card-list-cleanup");
+    console.warn("[GoogleSheetsReadOnlyDiagnostic]", "CampaignMemoryCards needs cleanup", {
+      removedRows: cleanup.removedCount,
+      reassignedDuplicateIds: cleanup.duplicateIdReassignedCount,
+      action: "No worksheet rows were changed during this read.",
+    });
   }
 
   return {
@@ -1081,6 +1125,10 @@ export async function replaceCampaignMemoryCardsForCampaignInGoogleSheets({
     "CampaignMemoryCards",
     memoryRows,
     cleanup.records,
+    {
+      reason: `replace-campaign-memory-cards:${campaignId}`,
+      allowBulk: true,
+    },
   );
 
   const campaignProfiles = updateCampaignPreferredLanguages(
@@ -1120,6 +1168,10 @@ export async function cleanupCampaignMemoryCardsInGoogleSheets() {
     "CampaignMemoryCards",
     memoryRows,
     cleanup.records,
+    {
+      reason: "manual-campaign-memory-card-cleanup",
+      allowBulk: true,
+    },
   );
 
   invalidateDatabaseReadCache("campaign-memory-card-manual-cleanup");
@@ -1298,7 +1350,13 @@ export async function upsertAppSettingInGoogleSheets(record: AppSettingRecord) {
     nextRows[existingIndex] = nextRecord;
   }
 
-  await writeCurrentStateWorksheetRows(spreadsheetId, "AppSettings", settingsRows, nextRows);
+  await writeChangedWorksheetRows(
+    spreadsheetId,
+    "AppSettings",
+    selectWorksheetRowsById("AppSettings", settingsRows, nextRecord.settingKey),
+    [nextRecord],
+    { reason: "app-setting-upsert" },
+  );
   invalidateDatabaseReadCache("app-setting-targeted-write");
 
   return {
@@ -1331,13 +1389,10 @@ export async function listEmployeeProfilesInGoogleSheets() {
   logEmployeeProfileCleanupSummary("list-current-state", cleanup);
 
   if (cleanup.removedCount > 0) {
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "EmployeeProfiles",
-      profileRows,
-      cleanup.records,
-    );
-    invalidateDatabaseReadCache("employee-profile-list-cleanup");
+    console.warn("[GoogleSheetsReadOnlyDiagnostic]", "EmployeeProfiles needs cleanup", {
+      removedRows: cleanup.removedCount,
+      action: "No worksheet rows were changed during this read.",
+    });
   }
 
   return {
@@ -1387,13 +1442,10 @@ export async function listCampaignPromptVaultInGoogleSheets() {
   logCampaignPromptVaultCleanupSummary("list-current-state", cleanup);
 
   if (cleanup.removedCount > 0) {
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "CampaignPromptVault",
-      promptRows,
-      cleanup.records,
-    );
-    invalidateDatabaseReadCache("campaign-prompt-vault-list-cleanup");
+    console.warn("[GoogleSheetsReadOnlyDiagnostic]", "CampaignPromptVault needs cleanup", {
+      removedRows: cleanup.removedCount,
+      action: "No worksheet rows were changed during this read.",
+    });
   }
 
   return {
@@ -1472,13 +1524,10 @@ export async function listCampaignProjectInfoInGoogleSheets() {
   logCampaignProjectInfoCleanupSummary("list-current-state", cleanup);
 
   if (cleanup.removedCount > 0) {
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "CampaignProjectInfo",
-      infoRows,
-      cleanup.records,
-    );
-    invalidateDatabaseReadCache("campaign-project-info-list-cleanup");
+    console.warn("[GoogleSheetsReadOnlyDiagnostic]", "CampaignProjectInfo needs cleanup", {
+      removedRows: cleanup.removedCount,
+      action: "No worksheet rows were changed during this read.",
+    });
   }
 
   return {
@@ -1583,7 +1632,10 @@ export async function cleanupSourcingActiveTemplateSettingsInGoogleSheets() {
   });
 
   if (changedCount > 0) {
-    await writeChangedWorksheetRows(spreadsheetId, "AppSettings", settingsRows, cleanedSettings);
+    await writeChangedWorksheetRows(spreadsheetId, "AppSettings", settingsRows, cleanedSettings, {
+      reason: "manual-sourcing-active-template-settings-cleanup",
+      allowBulk: true,
+    });
     invalidateDatabaseReadCache("sourcing-active-template-settings-cleanup");
     invalidateCreatorSourcingReadCache("sourcing-active-template-settings-cleanup");
   }
@@ -1628,7 +1680,10 @@ export async function mergeCentralDatabaseIntoGoogleSheets(localDatabase: Centra
     setRowsForWorksheet(merged, worksheetName, [...remoteRows, ...missingRows]);
   }
 
-  const saved = await writeCentralDatabaseToGoogleSheets(merged);
+  const saved = await writeCentralDatabaseForExplicitMigration(
+    merged,
+    "explicit-local-database-migration",
+  );
   return { database: saved, report };
 }
 
@@ -1907,9 +1962,10 @@ async function createWorksheetBackup(
   const timestamp = new Date()
     .toISOString()
     .replace(/[-:]/g, "")
-    .replace(/\..+/, "")
-    .replace("T", "_");
-  const backupSheetName = `${sourceWorksheetName}_Backup_${timestamp}`;
+    .replace("T", "_")
+    .replace("Z", "")
+    .replace(".", "_");
+  const backupSheetName = `${sourceWorksheetName}_Backup_${timestamp}`.slice(0, 100);
   await batchUpdate(spreadsheetId, [
     {
       addSheet: {
@@ -1980,8 +2036,24 @@ async function writeChangedWorksheetRows<T>(
 ) {
   const plan = planWorksheetMutations(worksheetName, currentRows, nextRows, false, policy);
   assertWorksheetMutationAllowed(worksheetName, plan, policy);
-  await executeWorksheetMutationPlan(spreadsheetId, worksheetName, plan);
+  await executeWorksheetMutationPlan(spreadsheetId, worksheetName, plan, policy);
   return plan.retainedCurrentRowNumbers;
+}
+
+function selectWorksheetRowsById<T>(
+  worksheetName: CentralWorksheetName,
+  currentRows: WorksheetRecordsWithRowNumbers<T>,
+  recordId: string,
+): WorksheetRecordsWithRowNumbers<T> {
+  const idField = rowIdFields[worksheetName];
+
+  return {
+    ...currentRows,
+    rows: currentRows.rows.filter(
+      (row) =>
+        stringValue((row.record as Record<string, unknown>)[idField]) === recordId,
+    ),
+  };
 }
 
 function planWorksheetMutations<T>(
@@ -2067,7 +2139,12 @@ function planWorksheetMutations<T>(
         .map((row) => row.rowNumber)
     : [];
 
-  return { writes, deleteRowNumbers, retainedCurrentRowNumbers };
+  return {
+    writes,
+    deleteRowNumbers,
+    retainedCurrentRowNumbers,
+    columnCount: actualHeaders.length,
+  };
 }
 
 function assertWorksheetMutationAllowed(
@@ -2080,7 +2157,11 @@ function assertWorksheetMutationAllowed(
   const deletes = new Set(plan.deleteRowNumbers).size;
   const reason = policy.reason ?? "targeted-row-operation";
   const limits = policy.allowBulk
-    ? { creates: Number.POSITIVE_INFINITY, updates: Number.POSITIVE_INFINITY, deletes: Number.POSITIVE_INFINITY }
+    ? {
+        creates: Number.POSITIVE_INFINITY,
+        updates: Number.POSITIVE_INFINITY,
+        deletes: Number.POSITIVE_INFINITY,
+      }
     : {
         creates: policy.maxCreates ?? 1,
         updates: policy.maxUpdates ?? 1,
@@ -2108,20 +2189,33 @@ async function executeWorksheetMutationPlan(
   spreadsheetId: string,
   worksheetName: CentralWorksheetName,
   plan: WorksheetMutationPlan,
+  policy: WorksheetMutationPolicy,
 ) {
-  const headers = requiredWorksheetHeaders[worksheetName];
+  const mutationCount = plan.writes.length + new Set(plan.deleteRowNumbers).size;
+  const needsBackup =
+    !policy.skipBackup &&
+    (plan.deleteRowNumbers.length > 0 || (policy.allowBulk === true && mutationCount > 1));
+  if (needsBackup) {
+    await backupWorksheetBeforeMutation(
+      spreadsheetId,
+      worksheetName,
+      policy.reason ?? "approved-worksheet-mutation",
+    );
+  }
+
   for (const write of plan.writes) {
     await updateValues(
       spreadsheetId,
-      `${quoteSheetName(worksheetName)}!A${write.rowNumber}:${columnName(headers.length)}${write.rowNumber}`,
+      `${quoteSheetName(worksheetName)}!A${write.rowNumber}:${columnName(plan.columnCount)}${write.rowNumber}`,
       [write.values],
     );
   }
 
   if (plan.deleteRowNumbers.length > 0) {
     await deleteWorksheetRowNumbers(spreadsheetId, worksheetName, plan.deleteRowNumbers, {
-      reason: "approved-mutation-plan",
+      reason: policy.reason ?? "approved-mutation-plan",
       allowBulk: true,
+      skipBackup: true,
     });
   }
 }
@@ -2135,7 +2229,7 @@ async function writeCurrentStateWorksheetRows<T>(
 ) {
   const plan = planWorksheetMutations(worksheetName, currentRows, nextRows, true, policy);
   assertWorksheetMutationAllowed(worksheetName, plan, policy);
-  await executeWorksheetMutationPlan(spreadsheetId, worksheetName, plan);
+  await executeWorksheetMutationPlan(spreadsheetId, worksheetName, plan, policy);
 }
 
 async function deleteWorksheetRowNumbers(
@@ -2161,6 +2255,13 @@ async function deleteWorksheetRowNumbers(
   });
 
   if (uniqueRowNumbers.length === 0) return;
+  if (!policy.skipBackup) {
+    await backupWorksheetBeforeMutation(
+      spreadsheetId,
+      worksheetName,
+      policy.reason ?? "targeted-row-delete",
+    );
+  }
   const sheetId = await getWorksheetSheetId(spreadsheetId, worksheetName);
   const requests = uniqueRowNumbers
     .sort((first, second) => second - first)
@@ -2176,6 +2277,23 @@ async function deleteWorksheetRowNumbers(
     }));
 
   await batchUpdate(spreadsheetId, requests);
+}
+
+async function backupWorksheetBeforeMutation(
+  spreadsheetId: string,
+  worksheetName: CentralWorksheetName,
+  reason: string,
+) {
+  invalidateValuesReadCache(spreadsheetId, `pre-mutation-backup:${reason}`, worksheetName);
+  const values = await readValues(spreadsheetId, `${quoteSheetName(worksheetName)}!A1:Z1000`);
+  const backupSheetName = await createWorksheetBackup(spreadsheetId, worksheetName, values);
+  console.warn("[GoogleSheetsMutation]", "backup-created", {
+    worksheet: worksheetName,
+    backupSheetName,
+    reason,
+    at: new Date().toISOString(),
+  });
+  return backupSheetName;
 }
 
 async function getWorksheetSheetId(spreadsheetId: string, worksheetName: CentralWorksheetName) {
@@ -2446,13 +2564,11 @@ async function readCreatorSourcingDatabaseFromGoogleSheetsUncached(
         at: new Date().toISOString(),
       });
     }
-    await writeCurrentStateWorksheetRows(
-      spreadsheetId,
-      "SourcingTemplates",
-      sourcingRows,
-      contactsMigration.records,
-    );
-    invalidateDatabaseReadCache("sourcing-template-load-normalization");
+    console.warn("[GoogleSheetsReadOnlyDiagnostic]", "SourcingTemplates needs cleanup", {
+      removedRows: cleanup.removedCount,
+      contactMappingsToMigrate: contactsMigration.changedTemplateCount,
+      action: "No worksheet rows were changed during this read.",
+    });
   }
 
   const database = createEmptyCentralDatabase();

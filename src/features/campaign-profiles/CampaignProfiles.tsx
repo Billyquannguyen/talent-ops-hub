@@ -311,7 +311,7 @@ export function CampaignProfiles() {
       : createCampaignBatchRecord({
           campaignId: campaign.id,
           projectCode: campaign.campaignCode,
-          batchName: "Initial batch",
+          batchName: "b1",
           isDefault: true,
         });
 
@@ -340,7 +340,7 @@ export function CampaignProfiles() {
         createCampaignBatchRecord({
           campaignId: campaign.id,
           projectCode: campaign.campaignCode,
-          batchName: "Initial batch",
+          batchName: "b1",
           isDefault: true,
         }),
       );
@@ -358,6 +358,11 @@ export function CampaignProfiles() {
     if (!editingBatchCampaign || !editingBatchDraft?.projectCode.trim()) return;
 
     const projectCode = editingBatchDraft.projectCode.trim().toUpperCase();
+    const batchName = editingBatchDraft.batchName.trim().toLowerCase();
+    if (!/^b[1-9]\d*$/.test(batchName)) {
+      setBatchStatus("Batch label must use the format b1, b2, b8, or b9.");
+      return;
+    }
     const campaignRecords = campaignBatches.filter(
       (batch) => batch.campaignId === editingBatchCampaign.id,
     );
@@ -377,7 +382,7 @@ export function CampaignProfiles() {
           batchId: editingBatchDraft.batchId,
           campaignId: editingBatchCampaign.id,
           projectCode,
-          batchName: editingBatchDraft.batchName.trim() || projectCode,
+          batchName,
           isDefault: editingBatchDraft.isDefault || campaignRecords.length === 1 ? "TRUE" : "FALSE",
           status: "active",
           createdAt: editingBatchDraft.createdAt || now,
@@ -386,7 +391,7 @@ export function CampaignProfiles() {
       : createCampaignBatchRecord({
           campaignId: editingBatchCampaign.id,
           projectCode,
-          batchName: editingBatchDraft.batchName,
+          batchName,
           isDefault: editingBatchDraft.isDefault || campaignRecords.length === 0,
         });
 
@@ -1092,7 +1097,8 @@ function CampaignBatchModal({
                 <TextInput
                   label="Batch Label"
                   value={draft.batchName}
-                  placeholder="Batch 2"
+                  placeholder="b2"
+                  required
                   onChange={(batchName) => onDraftChange({ batchName })}
                 />
               </div>

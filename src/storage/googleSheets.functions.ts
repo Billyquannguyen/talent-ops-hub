@@ -681,40 +681,26 @@ export const deleteCreatorDatabaseRecord = createServerFn({ method: "POST" })
 
 export const saveGoogleSheetsDatabase = createServerFn({ method: "POST" })
   .inputValidator(z.object({ database: z.any() }))
-  .handler(async ({ data }) => {
-    const {
-      diagnosticsFromError,
-      getGoogleSheetsServerStatus,
-      writeCentralDatabaseToGoogleSheets,
-    } = await import("./googleSheets.server");
-
-    try {
-      const status = getGoogleSheetsServerStatus();
-      if (!status.configured) {
-        return {
-          ok: false,
-          database: null,
-          status,
-        };
-      }
-
-      return {
-        ok: true,
-        database: await writeCentralDatabaseToGoogleSheets(data.database as CentralAppDatabase),
-        status,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        database: null,
-        status: {
-          source: "googleSheets" as const,
-          shared: true,
-          configured: true,
-          diagnostics: diagnosticsFromError(error),
-        },
-      };
-    }
+  .handler(async () => {
+    const { getGoogleSheetsServerStatus } = await import("./googleSheets.server");
+    const status = getGoogleSheetsServerStatus();
+    console.error("[GoogleSheetsMutation]", "whole-database-save-blocked", {
+      at: new Date().toISOString(),
+    });
+    return {
+      ok: false,
+      database: null,
+      status: {
+        ...status,
+        diagnostics: [
+          ...status.diagnostics,
+          {
+            level: "error" as const,
+            message: "Blocked unsafe whole-database save. Use a targeted worksheet helper instead.",
+          },
+        ],
+      },
+    };
   });
 
 export const saveSourcingTemplateRecord = createServerFn({ method: "POST" })

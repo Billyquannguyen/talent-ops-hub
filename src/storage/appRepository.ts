@@ -41,7 +41,6 @@ import {
   migrateDatabaseToGoogleSheets,
   replaceCampaignMemoryCardsForCampaignInGoogleSheets,
   saveAgencyDatabaseToGoogleSheets,
-  saveDatabaseToGoogleSheets,
   saveAppSettingToGoogleSheets,
   saveCampaignProfileToGoogleSheets,
   saveCampaignBatchToGoogleSheets,
@@ -168,19 +167,17 @@ export async function loadPromptVaultBundleFromGoogleSheetsOnly(): Promise<Promp
 }
 
 export async function saveAppDatabaseToGoogleSheetsOnly(
-  database: CentralAppDatabase,
+  _database: CentralAppDatabase,
   options: { reason?: string } = {},
 ): Promise<CentralAppDatabase> {
-  console.info("[AppRepositoryGoogleSheets]", "save-start", {
-    reason: options.reason ?? "saveAppDatabaseToGoogleSheetsOnly",
+  const reason = options.reason ?? "saveAppDatabaseToGoogleSheetsOnly";
+  console.error("[AppRepositoryGoogleSheets]", "whole-database-save-blocked", {
+    reason,
     at: new Date().toISOString(),
   });
-  const result = await saveDatabaseToGoogleSheets(database);
-  if (!result.ok || !result.database) {
-    throw new Error(getStorageFailureMessage(result.status));
-  }
-  rememberPrimaryDatabase(result.database, result.status);
-  return cloneCentralDatabase(result.database);
+  throw new Error(
+    "Blocked unsafe whole-database save. Use a targeted Google Sheets repository helper.",
+  );
 }
 
 export async function saveSourcingTemplateToGoogleSheetsOnly(
@@ -878,27 +875,11 @@ export async function deleteCampaignProjectInfoFromGoogleSheetsOnly(
 
 export function saveAppDatabase(database: CentralAppDatabase) {
   saveCentralDatabaseToLocalStorage(database);
-  if (typeof window !== "undefined") {
-    void saveDatabaseToGoogleSheets(database)
-      .then((result) => {
-        if (result.ok && result.database) {
-          rememberPrimaryDatabase(result.database, result.status);
-          return;
-        }
-        reportGoogleSheetsWriteFailure(result.status.diagnostics);
-      })
-      .catch((error) => {
-        reportGoogleSheetsWriteFailure([
-          {
-            level: "error",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Google Sheets write failed. Local cache was not promoted to shared storage.",
-          },
-        ]);
-      });
-  }
+  console.warn("[AppRepositoryGoogleSheets]", "whole-database-save-blocked", {
+    action: "saveAppDatabase",
+    note: "Local cache updated. Shared Google Sheets was not changed.",
+    at: new Date().toISOString(),
+  });
 }
 
 export function saveAppDatabaseLocally(database: CentralAppDatabase) {

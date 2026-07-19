@@ -98,7 +98,9 @@ export function FeishuPaymentFormGenerator({
   const [customPaymentDescription, setCustomPaymentDescription] = useState("");
   const [paymentPercentage, setPaymentPercentage] = useState("");
   const [platform, setPlatform] = useState<PlatformCode>(detectedPlatform);
-  const [clientQuote, setClientQuote] = useState(formatNumberForInput(record.creatorPaymentAmount));
+  const [creatorPaymentAmount, setCreatorPaymentAmount] = useState(
+    formatNumberForInput(record.creatorPaymentAmount),
+  );
   const [amountUsd, setAmountUsd] = useState(formatNumberForInput(record.internalQuote));
   const [quoteCurrency, setQuoteCurrency] = useState(record.creatorPaymentCurrency || "USD");
   const matchedBatch =
@@ -109,22 +111,29 @@ export function FeishuPaymentFormGenerator({
   const [projectCode, setProjectCode] = useState(
     record.projectCode || matchedBatch?.projectCode || campaign.campaignCode,
   );
+  const [batchLabel, setBatchLabel] = useState(matchedBatch?.batchName || "b1");
+  const [validationError, setValidationError] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
   const usesPaymentPercentage = paymentType === "Deposit" || paymentType === "Final Payment";
 
-  const amountForOutput = useMemo(
-    () => calculateAmountUsd({ amountUsd, paymentPercentage, paymentType }),
+  const creatorPaymentForOutput = useMemo(
+    () => calculatePaymentAmount({ amount: creatorPaymentAmount, paymentPercentage, paymentType }),
+    [creatorPaymentAmount, paymentPercentage, paymentType],
+  );
+  const amountUsdForOutput = useMemo(
+    () => calculatePaymentAmount({ amount: amountUsd, paymentPercentage, paymentType }),
     [amountUsd, paymentPercentage, paymentType],
   );
   const normalizedProjectCode = projectCode.trim().toUpperCase();
+  const normalizedBatchLabel = normalizeBatchLabel(batchLabel);
   const normalizedCurrency = quoteCurrency.trim().toUpperCase() || "USD";
   const paymentDescription = buildPaymentDescription({
     paymentType,
     paymentPercentage,
     customPaymentDescription,
   });
-  const paymentInformation = `${paymentDescription} ${formatUsdAmount(amountForOutput)} USD`;
-  const formTitle = `${normalizedProjectCode || "PROJECT-CODE"}-${campaign.campaignName} b1 ${platform} Influencer ${
+  const paymentInformation = `${paymentDescription} ${formatPaymentAmount(creatorPaymentForOutput)} ${normalizedCurrency}`;
+  const formTitle = `${normalizedProjectCode || "PROJECT-CODE"}-${campaign.campaignName} ${normalizedBatchLabel || "b1"} ${platform} Influencer ${
     record.creatorName || "Creator"
   }\n${paymentInformation}`;
 
@@ -195,9 +204,11 @@ export function FeishuPaymentFormGenerator({
       icon: Hash,
       chineseTitle: "客户报价",
       englishMeaning: "Creator Payment Amount",
-      value: clientQuote || "No creator payment amount entered.",
-      copyValue: clientQuote,
-      instruction: !clientQuote,
+      value: creatorPaymentAmount
+        ? formatPaymentAmount(creatorPaymentForOutput)
+        : "No creator payment amount entered.",
+      copyValue: creatorPaymentAmount ? formatPaymentAmount(creatorPaymentForOutput) : "",
+      instruction: !creatorPaymentAmount,
     },
     {
       key: "payment-proof",
@@ -240,8 +251,8 @@ export function FeishuPaymentFormGenerator({
       icon: FunctionSquare,
       chineseTitle: "金额USD",
       englishMeaning: "Amount USD",
-      value: `${formatUsdAmount(amountForOutput)} USD`,
-      copyValue: formatUsdAmount(amountForOutput),
+      value: `${formatPaymentAmount(amountUsdForOutput)} USD`,
+      copyValue: formatPaymentAmount(amountUsdForOutput),
     },
     {
       key: "applicant-auto",
@@ -265,6 +276,11 @@ export function FeishuPaymentFormGenerator({
 
   function handleGenerate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!/^b[1-9]\d*$/i.test(normalizedBatchLabel)) {
+      setValidationError("Batch label must use the format b1, b2, b8, or b9.");
+      return;
+    }
+    setValidationError("");
     setStep("output");
   }
 
@@ -352,13 +368,18 @@ export function FeishuPaymentFormGenerator({
               />
               <TextField
                 label="Creator Payment Amount"
-                value={clientQuote}
-                onChange={setClientQuote}
+                value={
+                  usesPaymentPercentage
+                    ? formatPaymentAmount(creatorPaymentForOutput)
+                    : creatorPaymentAmount
+                }
+                onChange={setCreatorPaymentAmount}
                 inputMode="decimal"
+                readOnly={usesPaymentPercentage}
               />
               <TextField
                 label="Amount USD"
-                value={usesPaymentPercentage ? formatUsdAmount(amountForOutput) : amountUsd}
+                value={usesPaymentPercentage ? formatPaymentAmount(amountUsdForOutput) : amountUsd}
                 onChange={setAmountUsd}
                 inputMode="decimal"
                 readOnly={usesPaymentPercentage}
@@ -372,7 +393,13 @@ export function FeishuPaymentFormGenerator({
                 <SelectField
                   label="Project Code / Batch"
                   value={normalizedProjectCode}
-                  onChange={setProjectCode}
+                  onChange={(value) => {
+                    setProjectCode(value);
+                    const selectedBatch = campaignBatches.find(
+                      (batch) => batch.projectCode.toUpperCase() === value.toUpperCase(),
+                    );
+                    setBatchLabel(selectedBatch?.batchName || "b1");
+                  }}
                   options={campaignBatches.map((batch) => batch.projectCode)}
                 />
               ) : (
@@ -383,7 +410,18 @@ export function FeishuPaymentFormGenerator({
                   required
                 />
               )}
+              <TextField
+                label="Batch Label"
+                value={batchLabel}
+                onChange={(value) => setBatchLabel(value.toLowerCase())}
+                placeholder="b2"
+                required
+              />
             </div>
+
+            {validationError ? (
+              <p className="mt-3 text-sm text-red-400">{validationError}</p>
+            ) : null}
 
             <div className="mt-5 rounded-lg border border-border bg-background/70 p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -644,22 +682,22 @@ function buildPaymentDescription({
   return "Additional payment";
 }
 
-function calculateAmountUsd({
-  amountUsd,
+function calculatePaymentAmount({
+  amount,
   paymentPercentage,
   paymentType,
 }: {
-  amountUsd: string;
+  amount: string;
   paymentPercentage: string;
   paymentType: PaymentType;
 }) {
-  const amount = parseNumber(amountUsd);
+  const parsedAmount = parseNumber(amount);
   const usesPaymentPercentage = paymentType === "Deposit" || paymentType === "Final Payment";
-  if (!usesPaymentPercentage) return amount;
+  if (!usesPaymentPercentage) return parsedAmount;
 
   const percentage = parseNumber(paymentPercentage);
-  if (amount > 0 && percentage > 0) return (amount * percentage) / 100;
-  return amount;
+  if (parsedAmount > 0 && percentage > 0) return (parsedAmount * percentage) / 100;
+  return parsedAmount;
 }
 
 function parseNumber(value: string): number {
@@ -672,8 +710,12 @@ function formatNumberForInput(value: number): string {
   return String(value);
 }
 
-function formatUsdAmount(value: number): string {
+function formatPaymentAmount(value: number): string {
   if (!Number.isFinite(value)) return "0";
   if (Number.isInteger(value)) return String(value);
   return value.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function normalizeBatchLabel(value: string): string {
+  return value.trim().toLowerCase();
 }
