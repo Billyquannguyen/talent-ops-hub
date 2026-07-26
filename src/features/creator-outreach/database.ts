@@ -25,6 +25,7 @@ export function loadKatlasBuddyDatabase(): KatlasBuddyDatabase {
           id: record.templateId,
           templateName: record.templateName,
           channelType: record.type,
+          subject: record.subject,
           body: record.body,
           createdAt: record.createdAt,
           updatedAt: record.updatedAt,
@@ -83,6 +84,7 @@ export function outreachTemplateRecordToTemplate(record: OutreachTemplateRecord)
     id: record.templateId,
     templateName: record.templateName,
     channelType: record.type,
+    subject: record.subject,
     body: record.body,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -94,6 +96,7 @@ export function outreachTemplateToRecord(template: OutreachTemplate): OutreachTe
     templateId: template.id,
     templateName: template.templateName,
     type: template.channelType === "Email" ? "Email" : "DM",
+    subject: template.channelType === "Email" ? template.subject : "",
     body: template.body,
     createdAt: template.createdAt,
     updatedAt: template.updatedAt,
@@ -149,6 +152,7 @@ function createStarterTemplates(now: string): OutreachTemplate[] {
       category: "Initial Outreach",
       templateName: "Simple DM Reply",
       channelType: "DM",
+      subject: "",
       body: "Hi {{field}},\n\n{{field_1}}\n\nThank you.",
       requiredFields: [],
     }),
@@ -157,6 +161,7 @@ function createStarterTemplates(now: string): OutreachTemplate[] {
       category: "Follow Up",
       templateName: "Simple DM Follow Up",
       channelType: "DM",
+      subject: "",
       body: "Hi {{field}},\n\nJust following up on this.\n\n{{field_1}}\n\nThank you.",
       requiredFields: [],
     }),
@@ -165,6 +170,7 @@ function createStarterTemplates(now: string): OutreachTemplate[] {
       category: "Initial Outreach",
       templateName: "Simple Email Reply",
       channelType: "Email",
+      subject: "Creator collaboration opportunity",
       body: "Hi {{field}},\n\n{{field_1}}\n\nBest,\n{{field_2}}",
       requiredFields: [],
     }),
@@ -176,6 +182,7 @@ function starterTemplate({
   category,
   templateName,
   channelType,
+  subject,
   body,
   requiredFields,
 }: {
@@ -183,6 +190,7 @@ function starterTemplate({
   category: TemplateCategory;
   templateName: string;
   channelType: ChannelType;
+  subject: string;
   body: string;
   requiredFields: string[];
 }): OutreachTemplate {
@@ -191,6 +199,7 @@ function starterTemplate({
     templateName,
     category,
     channelType,
+    subject,
     body,
     fields: extractTemplateFields(body),
     requiredFields,
@@ -233,6 +242,7 @@ function normalizeTemplate(value: unknown): OutreachTemplate {
       `${category} Template`,
     category,
     channelType,
+    subject: stringValue(template.subject),
     body,
     fields: extractTemplateFields(body),
     requiredFields: [],

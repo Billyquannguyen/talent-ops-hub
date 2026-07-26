@@ -137,6 +137,7 @@ export function CreatorOutreachAssistant() {
   const [detectedLanguage, setDetectedLanguage] = useState("English");
   const [englishTranslation, setEnglishTranslation] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [replySubject, setReplySubject] = useState("");
   const [replyEditor, setReplyEditor] = useState("");
   const [targetLanguage, setTargetLanguage] = useState("Thai");
   const [translatedReply, setTranslatedReply] = useState("");
@@ -316,6 +317,7 @@ export function CreatorOutreachAssistant() {
   function changeCreatorSource(source: CreatorMessageSource) {
     updateSettings({ defaultSource: source });
     changeTargetLanguage(resolveReplyTargetLanguage(detectedLanguage, defaultTargetLanguage));
+    if (source === "DM") setReplySubject("");
 
     const currentTemplate = templates.find((template) => template.id === selectedTemplateId);
     if (currentTemplate && isTemplateCompatibleWithSource(currentTemplate, source)) return;
@@ -342,6 +344,7 @@ export function CreatorOutreachAssistant() {
     const template = replyTemplateOptions.find((item) => item.id === templateId);
     if (!template) return;
     replyTranslationRequestRef.current += 1;
+    setReplySubject(template.channelType === "Email" ? template.subject : "");
     setReplyEditor(template.body);
     setTranslatedReply("");
     setIsTranslatingReply(false);
@@ -366,6 +369,7 @@ export function CreatorOutreachAssistant() {
       ...createBlankTemplate("Initial Outreach"),
       templateName: "",
       channelType: creatorSource as ChannelType,
+      subject: "",
       body: "",
       fields: [],
       requiredFields: [],
@@ -430,11 +434,13 @@ export function CreatorOutreachAssistant() {
     event.preventDefault();
     if (!templateDraft) return;
     if (!templateDraft.templateName.trim() || !templateDraft.body.trim()) return;
+    if (templateDraft.channelType === "Email" && !templateDraft.subject.trim()) return;
 
     const now = new Date().toISOString();
     const savedTemplate = {
       ...templateDraft,
       templateName: templateDraft.templateName.trim(),
+      subject: templateDraft.channelType === "Email" ? templateDraft.subject.trim() : "",
       category: "Initial Outreach" as const,
       fields: extractTemplateFields(templateDraft.body),
       requiredFields: [],
@@ -603,8 +609,10 @@ export function CreatorOutreachAssistant() {
       country: "",
       language: "",
       niche: "",
+      contentTags: "",
       followers: 0,
       avgViews: 0,
+      rate1VideoUsd: 0,
       email: "",
       line: "",
       instagram: "",
@@ -628,20 +636,22 @@ export function CreatorOutreachAssistant() {
     try {
       const now = new Date().toISOString();
       const agencyContacts = normalizeAgencyContactRows(record);
-      const firstContact = agencyContacts[0] ?? {
-        name: "",
-        role: "",
-        contact: "",
-      };
+      const primaryContact = agencyContacts.find((contact) => contact.isPrimary) ??
+        agencyContacts[0] ?? {
+          name: "",
+          role: "",
+          contact: "",
+          isPrimary: true,
+        };
       const savedRecord = {
         ...record,
         agencyName: record.agencyName.trim(),
-        contactName: firstContact.name,
-        contactRole: firstContact.role,
-        contact: firstContact.contact,
+        contactName: primaryContact.name,
+        contactRole: primaryContact.role,
+        contact: primaryContact.contact,
         contactsJson: JSON.stringify(agencyContacts),
-        email: extractEmailFromContact(firstContact.contact),
-        line: extractLineFromContact(firstContact.contact),
+        email: extractEmailFromContact(primaryContact.contact),
+        line: extractLineFromContact(primaryContact.contact),
         niche: "",
         status: record.status || "potential",
         createdAt: record.createdAt || now,
@@ -673,8 +683,10 @@ export function CreatorOutreachAssistant() {
       const savedRecord = {
         ...record,
         creatorName: record.creatorName.trim(),
+        niche: record.contentTags,
         followers: normalizeNumber(record.followers),
         avgViews: normalizeNumber(record.avgViews),
+        rate1VideoUsd: normalizeNumber(record.rate1VideoUsd),
         status: normalizeDatabaseStatus(record.status),
         createdAt: record.createdAt || now,
         updatedAt: now,
@@ -1045,6 +1057,29 @@ export function CreatorOutreachAssistant() {
               </FieldLabel>
             </div>
 
+            {creatorSource === "Email" ? (
+              <div className="mt-3 rounded-lg border border-border/75 bg-background/65 p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="min-w-0 flex-1">
+                    <TextInput
+                      label="Email Subject"
+                      value={replySubject}
+                      onChange={setReplySubject}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyText(replySubject, "Email subject")}
+                    disabled={!replySubject.trim()}
+                    className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Copy className="size-4" />
+                    Copy Subject
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-3 grid min-h-0 flex-1 gap-3 md:grid-cols-2">
               <EditorField
                 label="Original Reply"
@@ -1306,6 +1341,16 @@ function NewTemplateModal({
           </FieldLabel>
         </div>
 
+        {template.channelType === "Email" ? (
+          <div className="mt-4">
+            <TextInput
+              label="Email Subject"
+              value={template.subject}
+              onChange={(subject) => onChange({ ...template, subject })}
+            />
+          </div>
+        ) : null}
+
         <div className="mt-4">
           <div className="flex items-end justify-between gap-3">
             <span className="text-xs font-medium text-muted-foreground">Message Body</span>
@@ -1349,7 +1394,11 @@ function NewTemplateModal({
           </button>
           <button
             type="submit"
-            disabled={!template.templateName.trim() || !template.body.trim()}
+            disabled={
+              !template.templateName.trim() ||
+              !template.body.trim() ||
+              (template.channelType === "Email" && !template.subject.trim())
+            }
             className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Save
@@ -1435,6 +1484,14 @@ function OutreachTemplateManagerModal({
                         <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
                           {template.body}
                         </p>
+                        {template.channelType === "Email" ? (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Subject:{" "}
+                            <span className="text-foreground">
+                              {template.subject || "No subject"}
+                            </span>
+                          </p>
+                        ) : null}
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-2">
                         <button
@@ -1710,7 +1767,7 @@ function normalizeDatabaseStatus(value: unknown) {
 
 function normalizeAgencyContactRows(record: AgencyDatabaseRecord) {
   const parsed = parseAgencyContactsJson(record.contactsJson);
-  if (parsed.length) return parsed;
+  if (parsed.length) return normalizePrimaryAgencyContactRows(parsed);
 
   const legacyContact = [
     record.contact?.trim(),
@@ -1728,6 +1785,7 @@ function normalizeAgencyContactRows(record: AgencyDatabaseRecord) {
       name: record.contactName.trim(),
       role: record.contactRole.trim(),
       contact: legacyContact,
+      isPrimary: true,
     },
   ];
 }
@@ -1745,12 +1803,24 @@ function parseAgencyContactsJson(value: string) {
         name: String(row.name ?? "").trim(),
         role: String(row.role ?? "").trim(),
         contact: String(row.contact ?? row.value ?? "").trim(),
+        isPrimary: Boolean(row.isPrimary),
       };
       return contact.name || contact.role || contact.contact ? [contact] : [];
     });
   } catch {
     return [];
   }
+}
+
+function normalizePrimaryAgencyContactRows<
+  T extends { id: string; name: string; role: string; contact: string; isPrimary: boolean },
+>(contacts: T[]) {
+  const primaryIndex = contacts.findIndex((contact) => contact.isPrimary);
+  const selectedIndex = primaryIndex >= 0 ? primaryIndex : 0;
+  return contacts.map((contact, index) => ({
+    ...contact,
+    isPrimary: index === selectedIndex,
+  }));
 }
 
 function extractEmailFromContact(value: string) {

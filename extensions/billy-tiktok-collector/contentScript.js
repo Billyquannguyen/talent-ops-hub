@@ -1,7 +1,14 @@
+(() => {
+if (window.__KATLAS_BILLY_COLLECTOR_LOADED__) {
+  return;
+}
+
+window.__KATLAS_BILLY_COLLECTOR_LOADED__ = true;
+
 const KATLAS_BILLY_EXTENSION_SOURCE = "katlas-billy-extension";
 const BILLY_EXTENSION_IMPORT_STORAGE_KEY = "katlas-billy-extension-import-v1";
 const SUPPORTED_SOURCE_ERROR =
-  "Open a TikTok, Instagram, or YouTube source page first.";
+  "Open a supported source page first: TikTok hashtag/sound, Instagram hashtag/search/audio, or YouTube search/hashtag/channel.";
 
 const platformLabels = {
   tiktok: "TikTok",
@@ -1376,8 +1383,15 @@ function getTikTokSourceLabel() {
 
 function getInstagramSourceLabel() {
   const parts = window.location.pathname.split("/").filter(Boolean);
-  if (parts[0] === "explore" && parts[1] === "tags" && parts[2]) {
+  if (
+    String(parts[0] || "").toLowerCase() === "explore" &&
+    String(parts[1] || "").toLowerCase() === "tags" &&
+    parts[2]
+  ) {
     return `#${decodeURIComponent(parts[2])}`;
+  }
+  if (isInstagramKeywordSearchPage(parts)) {
+    return getInstagramKeywordSearchLabel(parts);
   }
   if ((parts[0] === "reels" && parts[1] === "audio" && parts[2]) || parts[0] === "audio") {
     return `Instagram audio ${decodeURIComponent(parts[2] || parts[1] || "")}`.trim();
@@ -1422,6 +1436,7 @@ function isSupportedCollectionPage(platform) {
   if (platform === "instagram") {
     return (
       (parts[0] === "explore" && parts[1] === "tags" && Boolean(parts[2])) ||
+      isInstagramKeywordSearchPage(parts) ||
       (parts[0] === "reels" && parts[1] === "audio" && Boolean(parts[2])) ||
       (parts[0] === "audio" && Boolean(parts[1]))
     );
@@ -1439,6 +1454,48 @@ function isSupportedCollectionPage(platform) {
   }
 
   return false;
+}
+
+function isInstagramKeywordSearchPage(parts) {
+  const first = String(parts[0] || "").toLowerCase();
+  const second = String(parts[1] || "").toLowerCase();
+  const third = String(parts[2] || "").toLowerCase();
+  return (
+    first === "explore" &&
+    second === "search" &&
+    ["keyword", "tag", "tags", "hashtag", "hashtags"].includes(third)
+  );
+}
+
+function getInstagramKeywordSearchLabel(parts) {
+  const params = new URLSearchParams(window.location.search);
+  const raw =
+    params.get("q") ||
+    params.get("query") ||
+    params.get("keyword") ||
+    params.get("tag") ||
+    params.get("hashtag") ||
+    parts[3] ||
+    window.location.hash.replace(/^#/, "");
+  const normalized = normalizeInstagramKeywordLabel(raw);
+  return normalized || "Instagram keyword search";
+}
+
+function normalizeInstagramKeywordLabel(value) {
+  let text = String(value || "").trim();
+  if (!text) return "";
+
+  try {
+    text = decodeURIComponent(text);
+  } catch {
+    // URLSearchParams already decodes normal query values.
+  }
+
+  text = text.trim().replace(/^@+/, "");
+  if (!text) return "";
+  if (text.startsWith("#")) return text;
+  if (/^[\p{L}\p{N}_]+$/u.test(text)) return `#${text}`;
+  return text;
 }
 
 function sendBillyImportToKatlasPage(payload, importId) {
@@ -1603,3 +1660,4 @@ function getErrorMessage(error) {
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
+})();

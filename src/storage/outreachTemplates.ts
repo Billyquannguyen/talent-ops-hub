@@ -91,6 +91,7 @@ function normalizeOutreachTemplateRecord(record: OutreachTemplateRecord): Outrea
     templateId: stringValue(record.templateId),
     templateName: stringValue(record.templateName) || "Untitled Template",
     type: record.type === "Email" ? "Email" : "DM",
+    subject: stringValue(record.subject),
     body: stringValue(record.body),
     createdAt,
     updatedAt: stringValue(record.updatedAt) || createdAt,

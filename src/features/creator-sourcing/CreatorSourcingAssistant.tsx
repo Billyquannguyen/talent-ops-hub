@@ -1264,7 +1264,7 @@ export function CreatorSourcingAssistant() {
               <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
                 {assistantPage === "easykol"
                   ? "Upload the EasyKOL export, filter the creators, generate contacts, then preview the exact columns you want to paste into a sourcing sheet."
-                  : "Scrape a TikTok, Instagram, or YouTube source page, dedupe creators, filter the list, then export rows without touching the EasyKOL upload flow."}
+                : "Scrape TikTok with Billy's verified flow. Instagram and YouTube are best-effort browser imports when the page exposes enough creator data."}
               </p>
             </div>
           </div>
@@ -2749,7 +2749,7 @@ function BillyExtensionSessionPanel({
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               {report
                 ? "This data stays temporary on this Billy page until you switch pages, reload, or clear the session."
-                : "Open a TikTok, Instagram, or YouTube source page, run Billy's Chrome extension, then send the session here."}
+                : "Open a TikTok source page, or try an Instagram/YouTube source page as best-effort, run Billy's Chrome extension, then send the session here."}
             </p>
           </div>
           {isImporting ? (

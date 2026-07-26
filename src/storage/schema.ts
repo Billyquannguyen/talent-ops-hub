@@ -56,6 +56,7 @@ export type OutreachTemplateRecord = {
   templateId: string;
   templateName: string;
   type: "DM" | "Email";
+  subject: string;
   body: string;
   createdAt: string;
   updatedAt: string;
@@ -123,8 +124,10 @@ export type CreatorDatabaseRecord = {
   country: string;
   language: string;
   niche: string;
+  contentTags: string;
   followers: number;
   avgViews: number;
+  rate1VideoUsd: number;
   email: string;
   line: string;
   instagram: string;
@@ -246,7 +249,15 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "createdBy",
     "updatedBy",
   ],
-  OutreachTemplates: ["templateId", "templateName", "type", "body", "createdAt", "updatedAt"],
+  OutreachTemplates: [
+    "templateId",
+    "templateName",
+    "type",
+    "subject",
+    "body",
+    "createdAt",
+    "updatedAt",
+  ],
   CampaignMemoryCards: [
     "cardId",
     "campaignId",
@@ -306,8 +317,10 @@ export const requiredWorksheetHeaders: Record<CentralWorksheetName, string[]> = 
     "country",
     "language",
     "niche",
+    "contentTags",
     "followers",
     "avgViews",
+    "rate1VideoUsd",
     "email",
     "line",
     "instagram",
@@ -368,6 +381,7 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   campaignCode: ["campaign code", "campaign id code", "campaign_code"],
   id: ["templateId", "template id", "template_id"],
   templateName: ["template name", "name", "template_name"],
+  subject: ["email subject", "subject line", "email_subject"],
   columnsJson: ["columns", "columns json", "columns_json"],
   isActive: ["active", "is active", "is_active", "status"],
   createdBy: ["created by", "created_by"],
@@ -398,6 +412,14 @@ export const worksheetHeaderAliases: Partial<Record<string, string[]>> = {
   contact: ["contact info", "contact", "contact_info"],
   contactsJson: ["contacts json", "contacts", "contacts_json"],
   profileUrl: ["profile url", "url", "profile_url"],
+  contentTags: ["content tags", "content tag", "tags", "content_tags"],
+  rate1VideoUsd: [
+    "rate for 1 video usd",
+    "rate 1 video usd",
+    "one video rate usd",
+    "rate_1_video_usd",
+    "rate1Video",
+  ],
   profileId: ["profile id", "profile_id", "id"],
   promptId: ["prompt id", "prompt_id", "id"],
   input: ["input", "prompt input", "source input", "attachment input", "context input"],

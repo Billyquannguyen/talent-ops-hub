@@ -102,6 +102,9 @@ export function FeishuPaymentFormGenerator({
     formatNumberForInput(record.creatorPaymentAmount),
   );
   const [amountUsd, setAmountUsd] = useState(formatNumberForInput(record.internalQuote));
+  const [externalQuoteUsd, setExternalQuoteUsd] = useState(
+    formatNumberForInput(record.externalQuote),
+  );
   const [quoteCurrency, setQuoteCurrency] = useState(record.creatorPaymentCurrency || "USD");
   const matchedBatch =
     campaignBatches.find((batch) => batch.batchId === record.batchId) ??
@@ -124,6 +127,15 @@ export function FeishuPaymentFormGenerator({
     () => calculatePaymentAmount({ amount: amountUsd, paymentPercentage, paymentType }),
     [amountUsd, paymentPercentage, paymentType],
   );
+  const externalQuoteUsdForOutput = useMemo(
+    () =>
+      calculatePaymentAmount({
+        amount: externalQuoteUsd,
+        paymentPercentage,
+        paymentType,
+      }),
+    [externalQuoteUsd, paymentPercentage, paymentType],
+  );
   const normalizedProjectCode = projectCode.trim().toUpperCase();
   const normalizedBatchLabel = normalizeBatchLabel(batchLabel);
   const normalizedCurrency = quoteCurrency.trim().toUpperCase() || "USD";
@@ -133,9 +145,18 @@ export function FeishuPaymentFormGenerator({
     customPaymentDescription,
   });
   const paymentInformation = `${paymentDescription} ${formatPaymentAmount(creatorPaymentForOutput)} ${normalizedCurrency}`;
+  const paymentInformationForSubmission = `[Paste creator payment info here before submission]\n\n${paymentInformation}`;
   const formTitle = `${normalizedProjectCode || "PROJECT-CODE"}-${campaign.campaignName} ${normalizedBatchLabel || "b1"} ${platform} Influencer ${
     record.creatorName || "Creator"
   }\n${paymentInformation}`;
+  const atmMessagePrefix = `[Insert payment record here] ${normalizedProjectCode || "PROJECT-CODE"}-${campaign.campaignName} ${
+    normalizedBatchLabel || "b1"
+  } ${platform} Influencer`;
+  const atmMessageSuffix = `${paymentInformation}, many thanks brother @Shuang Wu`;
+  const creatorProfileMarkdown = `[${record.creatorName || "Creator"}](${
+    record.creatorLink || "PASTE-CREATOR-PROFILE-LINK-HERE"
+  })`;
+  const atmMessage = `${atmMessagePrefix} ${creatorProfileMarkdown} ${atmMessageSuffix}`;
 
   const rows: OutputRow[] = [
     {
@@ -160,8 +181,8 @@ export function FeishuPaymentFormGenerator({
       icon: Text,
       chineseTitle: "付款信息",
       englishMeaning: "Payment Information",
-      value: paymentInformation,
-      copyValue: paymentInformation,
+      value: paymentInformationForSubmission,
+      copyValue: paymentInformationForSubmission,
     },
     {
       key: "payment-status",
@@ -203,12 +224,12 @@ export function FeishuPaymentFormGenerator({
       key: "client-quote",
       icon: Hash,
       chineseTitle: "客户报价",
-      englishMeaning: "Creator Payment Amount",
-      value: creatorPaymentAmount
-        ? formatPaymentAmount(creatorPaymentForOutput)
-        : "No creator payment amount entered.",
-      copyValue: creatorPaymentAmount ? formatPaymentAmount(creatorPaymentForOutput) : "",
-      instruction: !creatorPaymentAmount,
+      englishMeaning: "External Quote",
+      value: externalQuoteUsd
+        ? formatPaymentAmount(externalQuoteUsdForOutput)
+        : "No external quote entered.",
+      copyValue: externalQuoteUsd ? formatPaymentAmount(externalQuoteUsdForOutput) : "",
+      instruction: !externalQuoteUsd,
     },
     {
       key: "payment-proof",
@@ -288,6 +309,33 @@ export function FeishuPaymentFormGenerator({
     if (!value.trim()) return;
     await navigator.clipboard.writeText(value);
     setCopiedKey(key);
+    window.setTimeout(() => setCopiedKey(""), 1400);
+  }
+
+  async function copyAtmMessage() {
+    const creatorName = record.creatorName || "Creator";
+    const creatorLink = record.creatorLink.trim();
+    const linkedCreatorHtml = creatorLink
+      ? `<a href="${escapeHtml(creatorLink)}">${escapeHtml(creatorName)}</a>`
+      : escapeHtml(creatorName);
+    const richMessage = `${escapeHtml(atmMessagePrefix)} ${linkedCreatorHtml} ${escapeHtml(atmMessageSuffix)}`;
+
+    try {
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": new Blob([atmMessage], { type: "text/plain" }),
+            "text/html": new Blob([richMessage], { type: "text/html" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(atmMessage);
+      }
+    } catch {
+      await navigator.clipboard.writeText(atmMessage);
+    }
+
+    setCopiedKey("atm-message");
     window.setTimeout(() => setCopiedKey(""), 1400);
   }
 
@@ -381,6 +429,17 @@ export function FeishuPaymentFormGenerator({
                 label="Amount USD"
                 value={usesPaymentPercentage ? formatPaymentAmount(amountUsdForOutput) : amountUsd}
                 onChange={setAmountUsd}
+                inputMode="decimal"
+                readOnly={usesPaymentPercentage}
+              />
+              <TextField
+                label="External Quote USD"
+                value={
+                  usesPaymentPercentage
+                    ? formatPaymentAmount(externalQuoteUsdForOutput)
+                    : externalQuoteUsd
+                }
+                onChange={setExternalQuoteUsd}
                 inputMode="decimal"
                 readOnly={usesPaymentPercentage}
               />
@@ -483,6 +542,36 @@ export function FeishuPaymentFormGenerator({
                   onCopy={() => void copyValue(row.key, row.copyValue)}
                 />
               ))}
+            </div>
+
+            <div className="mt-4 rounded-lg border border-border bg-background/70 p-4">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Send this message to "Katlas 红人 ATM"
+                  </p>
+                  <p className="mt-2 break-words text-sm leading-6 text-foreground">
+                    {atmMessagePrefix}{" "}
+                    {record.creatorLink ? (
+                      <a
+                        href={record.creatorLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium text-primary underline underline-offset-2"
+                      >
+                        {record.creatorName || "Creator"}
+                      </a>
+                    ) : (
+                      <span>{record.creatorName || "Creator"}</span>
+                    )}{" "}
+                    {atmMessageSuffix}
+                  </p>
+                </div>
+                <CopyButton
+                  copied={copiedKey === "atm-message"}
+                  onClick={() => void copyAtmMessage()}
+                />
+              </div>
             </div>
 
             <div className="mt-5 flex justify-end gap-2">
@@ -718,4 +807,18 @@ function formatPaymentAmount(value: number): string {
 
 function normalizeBatchLabel(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      })[character] ?? character,
+  );
 }

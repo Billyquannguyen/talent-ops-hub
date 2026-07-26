@@ -13,6 +13,7 @@ export function createBlankTemplate(category: TemplateCategory): OutreachTemplat
     templateName: "New Template",
     category,
     channelType: "DM",
+    subject: "",
     body: "Hi {{field}},\n\n{{field_1}}\n\nThank you.",
     fields: ["field", "field_1"],
     requiredFields: [],

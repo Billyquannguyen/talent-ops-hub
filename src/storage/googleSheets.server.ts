@@ -144,6 +144,8 @@ const rowIdFields: Record<CentralWorksheetName, string> = {
 };
 
 const optionalLegacyWorksheetHeaders: Partial<Record<CentralWorksheetName, readonly string[]>> = {
+  OutreachTemplates: ["subject"],
+  CreatorDatabase: ["contentTags", "rate1VideoUsd"],
   ActiveCampaignCreators: [
     "batchId",
     "projectCode",
@@ -439,11 +441,14 @@ export async function upsertCampaignProfileInGoogleSheets(record: CampaignProfil
     record,
   );
 
-  await writeCurrentStateWorksheetRows(
+  const nextProfile =
+    cleanup.records.find((item) => item.campaignId === profile.campaignId) ?? profile;
+  await writeChangedWorksheetRows(
     spreadsheetId,
     "CampaignProfiles",
-    profileRows,
-    cleanup.records,
+    selectWorksheetRowsById("CampaignProfiles", profileRows, profile.campaignId),
+    [nextProfile],
+    { reason: "campaign-profile-targeted-upsert" },
   );
 
   invalidateDatabaseReadCache("campaign-profile-targeted-write");
@@ -468,11 +473,11 @@ export async function deleteCampaignProfileInGoogleSheets(campaignId: string) {
     campaignId,
   );
 
-  await writeCurrentStateWorksheetRows(
+  await deleteWorksheetRowNumbers(
     spreadsheetId,
     "CampaignProfiles",
-    profileRows,
-    cleanup.records,
+    selectWorksheetRowNumbersById("CampaignProfiles", profileRows, campaignId),
+    { reason: "campaign-profile-targeted-delete" },
   );
 
   invalidateDatabaseReadCache("campaign-profile-targeted-delete");
@@ -515,11 +520,13 @@ export async function upsertCampaignBatchInGoogleSheets(record: CampaignBatchRec
     batchRows.rows.map((row) => row.record),
     record,
   );
-  await writeCurrentStateWorksheetRows(
+  const nextBatch = cleanup.records.find((item) => item.batchId === batch.batchId) ?? batch;
+  await writeChangedWorksheetRows(
     spreadsheetId,
     "CampaignBatches",
-    batchRows,
-    cleanup.records,
+    selectWorksheetRowsById("CampaignBatches", batchRows, batch.batchId),
+    [nextBatch],
+    { reason: "campaign-batch-targeted-upsert" },
   );
   invalidateDatabaseReadCache("campaign-batch-targeted-write");
   return { records: cleanup.records };
@@ -538,11 +545,11 @@ export async function deleteCampaignBatchInGoogleSheets(batchId: string) {
     batchRows.rows.map((row) => row.record),
     batchId,
   );
-  await writeCurrentStateWorksheetRows(
+  await deleteWorksheetRowNumbers(
     spreadsheetId,
     "CampaignBatches",
-    batchRows,
-    cleanup.records,
+    selectWorksheetRowNumbersById("CampaignBatches", batchRows, batchId),
+    { reason: "campaign-batch-targeted-delete" },
   );
   invalidateDatabaseReadCache("campaign-batch-targeted-delete");
   return { records: cleanup.records };
@@ -644,7 +651,13 @@ export async function upsertAgencyDatabaseInGoogleSheets(record: AgencyDatabaseR
       ? [nextRecord, ...records]
       : records.map((item, index) => (index === existingIndex ? nextRecord : item));
 
-  await writeCurrentStateWorksheetRows(spreadsheetId, "AgencyDatabase", agencyRows, nextRows);
+  await writeChangedWorksheetRows(
+    spreadsheetId,
+    "AgencyDatabase",
+    selectWorksheetRowsById("AgencyDatabase", agencyRows, nextRecord.id),
+    [nextRecord],
+    { reason: "agency-database-targeted-upsert" },
+  );
   invalidateDatabaseReadCache("agency-database-targeted-write");
 
   return { records: nextRows };
@@ -665,7 +678,12 @@ export async function deleteAgencyDatabaseInGoogleSheets(recordId: string) {
   ) as AgencyDatabaseRecord[];
   const nextRows = records.filter((record) => record.id !== recordId);
 
-  await writeCurrentStateWorksheetRows(spreadsheetId, "AgencyDatabase", agencyRows, nextRows);
+  await deleteWorksheetRowNumbers(
+    spreadsheetId,
+    "AgencyDatabase",
+    selectWorksheetRowNumbersById("AgencyDatabase", agencyRows, recordId),
+    { reason: "agency-database-targeted-delete" },
+  );
   invalidateDatabaseReadCache("agency-database-targeted-delete");
 
   return { records: nextRows };
@@ -688,6 +706,7 @@ export async function upsertCreatorDatabaseInGoogleSheets(record: CreatorDatabas
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
+  await ensureHeaders(spreadsheetId, "CreatorDatabase");
 
   const creatorRows = await readWorksheetRecordsWithRowNumbers<CreatorDatabaseRecord>(
     spreadsheetId,
@@ -708,7 +727,13 @@ export async function upsertCreatorDatabaseInGoogleSheets(record: CreatorDatabas
       ? [nextRecord, ...records]
       : records.map((item, index) => (index === existingIndex ? nextRecord : item));
 
-  await writeCurrentStateWorksheetRows(spreadsheetId, "CreatorDatabase", creatorRows, nextRows);
+  await writeChangedWorksheetRows(
+    spreadsheetId,
+    "CreatorDatabase",
+    selectWorksheetRowsById("CreatorDatabase", creatorRows, nextRecord.id),
+    [nextRecord],
+    { reason: "creator-database-targeted-upsert" },
+  );
   invalidateDatabaseReadCache("creator-database-targeted-write");
 
   return { records: nextRows };
@@ -729,7 +754,12 @@ export async function deleteCreatorDatabaseInGoogleSheets(recordId: string) {
   ) as CreatorDatabaseRecord[];
   const nextRows = records.filter((record) => record.id !== recordId);
 
-  await writeCurrentStateWorksheetRows(spreadsheetId, "CreatorDatabase", creatorRows, nextRows);
+  await deleteWorksheetRowNumbers(
+    spreadsheetId,
+    "CreatorDatabase",
+    selectWorksheetRowNumbersById("CreatorDatabase", creatorRows, recordId),
+    { reason: "creator-database-targeted-delete" },
+  );
   invalidateDatabaseReadCache("creator-database-targeted-delete");
 
   return { records: nextRows };
@@ -765,9 +795,7 @@ export async function upsertSourcingTemplateInGoogleSheets(record: SourcingTempl
     settingKey,
     canonicalRecord.id,
   );
-  const activeTemplateSetting = appSettings.find(
-    (setting) => setting.settingKey === settingKey,
-  );
+  const activeTemplateSetting = appSettings.find((setting) => setting.settingKey === settingKey);
   if (!activeTemplateSetting) {
     throw new Error(`Could not prepare active template setting ${settingKey}.`);
   }
@@ -830,9 +858,7 @@ export async function deleteSourcingTemplateInGoogleSheets(templateId: string) {
           template.campaignId === existing.campaignId && isActiveSourcingTemplateRecord(template),
       ) ?? null;
     appSettings = upsertAppSettingRecord(appSettings, settingKey, nextTemplate?.id ?? "");
-    const activeTemplateSetting = appSettings.find(
-      (setting) => setting.settingKey === settingKey,
-    );
+    const activeTemplateSetting = appSettings.find((setting) => setting.settingKey === settingKey);
     if (!activeTemplateSetting) {
       throw new Error(`Could not prepare active template setting ${settingKey}.`);
     }
@@ -926,6 +952,7 @@ export async function upsertOutreachTemplateInGoogleSheets(record: OutreachTempl
   const config = assertConfigured();
   const spreadsheetId = await resolveSpreadsheetId(config);
   await ensureDatabaseShape(spreadsheetId);
+  await ensureHeaders(spreadsheetId, "OutreachTemplates");
 
   const outreachRows = await readWorksheetRecordsWithRowNumbers<OutreachTemplateRecord>(
     spreadsheetId,
@@ -936,11 +963,15 @@ export async function upsertOutreachTemplateInGoogleSheets(record: OutreachTempl
     record,
   );
   logOutreachTemplateCleanupSummary("targeted-upsert", cleanup);
-  await writeCurrentStateWorksheetRows(
+  const nextRecord =
+    cleanup.records.find((item) => item.templateId === record.templateId) ?? record;
+
+  await writeChangedWorksheetRows(
     spreadsheetId,
     "OutreachTemplates",
-    outreachRows,
-    cleanup.records,
+    selectWorksheetRowsById("OutreachTemplates", outreachRows, record.templateId),
+    [nextRecord],
+    { reason: "outreach-template-targeted-upsert" },
   );
 
   invalidateDatabaseReadCache("outreach-template-targeted-write");
@@ -965,11 +996,11 @@ export async function deleteOutreachTemplateInGoogleSheets(templateId: string) {
     templateId,
   );
   logOutreachTemplateCleanupSummary("targeted-delete", cleanup);
-  await writeCurrentStateWorksheetRows(
+  await deleteWorksheetRowNumbers(
     spreadsheetId,
     "OutreachTemplates",
-    outreachRows,
-    cleanup.records,
+    selectWorksheetRowNumbersById("OutreachTemplates", outreachRows, templateId),
+    { reason: "outreach-template-targeted-delete" },
   );
 
   invalidateDatabaseReadCache("outreach-template-targeted-delete");
@@ -1050,11 +1081,14 @@ export async function upsertCampaignMemoryCardInGoogleSheets(record: CampaignMem
     record,
   );
   logCampaignMemoryCardCleanupSummary("targeted-upsert", cleanup);
-  await writeCurrentStateWorksheetRows(
+  const nextRecord = cleanup.records.find((item) => item.cardId === record.cardId) ?? record;
+
+  await writeChangedWorksheetRows(
     spreadsheetId,
     "CampaignMemoryCards",
-    memoryRows,
-    cleanup.records,
+    selectWorksheetRowsById("CampaignMemoryCards", memoryRows, record.cardId),
+    [nextRecord],
+    { reason: "campaign-memory-card-targeted-upsert" },
   );
 
   invalidateDatabaseReadCache("campaign-memory-card-targeted-write");
@@ -1079,11 +1113,11 @@ export async function deleteCampaignMemoryCardInGoogleSheets(cardId: string) {
     cardId,
   );
   logCampaignMemoryCardCleanupSummary("targeted-delete", cleanup);
-  await writeCurrentStateWorksheetRows(
+  await deleteWorksheetRowNumbers(
     spreadsheetId,
     "CampaignMemoryCards",
-    memoryRows,
-    cleanup.records,
+    selectWorksheetRowNumbersById("CampaignMemoryCards", memoryRows, cardId),
+    { reason: "campaign-memory-card-targeted-delete" },
   );
 
   invalidateDatabaseReadCache("campaign-memory-card-targeted-delete");
@@ -1415,11 +1449,14 @@ export async function upsertEmployeeProfileInGoogleSheets(record: EmployeeProfil
   );
   logEmployeeProfileCleanupSummary("targeted-upsert", cleanup);
 
-  await writeCurrentStateWorksheetRows(
+  const nextRecord = cleanup.records.find((item) => item.profileId === record.profileId) ?? record;
+
+  await writeChangedWorksheetRows(
     spreadsheetId,
     "EmployeeProfiles",
-    profileRows,
-    cleanup.records,
+    selectWorksheetRowsById("EmployeeProfiles", profileRows, record.profileId),
+    [nextRecord],
+    { reason: "employee-profile-targeted-upsert" },
   );
 
   invalidateDatabaseReadCache("employee-profile-targeted-write");
@@ -1468,11 +1505,14 @@ export async function upsertCampaignPromptVaultInGoogleSheets(record: CampaignPr
   );
   logCampaignPromptVaultCleanupSummary("targeted-upsert", cleanup);
 
-  await writeCurrentStateWorksheetRows(
+  const nextRecord = cleanup.records.find((item) => item.promptId === record.promptId) ?? record;
+
+  await writeChangedWorksheetRows(
     spreadsheetId,
     "CampaignPromptVault",
-    promptRows,
-    cleanup.records,
+    selectWorksheetRowsById("CampaignPromptVault", promptRows, record.promptId),
+    [nextRecord],
+    { reason: "campaign-prompt-vault-targeted-upsert" },
   );
 
   invalidateDatabaseReadCache("campaign-prompt-vault-targeted-write");
@@ -1497,11 +1537,11 @@ export async function deleteCampaignPromptVaultInGoogleSheets(promptId: string) 
   );
   logCampaignPromptVaultCleanupSummary("targeted-delete", cleanup);
 
-  await writeCurrentStateWorksheetRows(
+  await deleteWorksheetRowNumbers(
     spreadsheetId,
     "CampaignPromptVault",
-    promptRows,
-    cleanup.records,
+    selectWorksheetRowNumbersById("CampaignPromptVault", promptRows, promptId),
+    { reason: "campaign-prompt-vault-targeted-delete" },
   );
 
   invalidateDatabaseReadCache("campaign-prompt-vault-targeted-delete");
@@ -1550,11 +1590,14 @@ export async function upsertCampaignProjectInfoInGoogleSheets(record: CampaignPr
   );
   logCampaignProjectInfoCleanupSummary("targeted-upsert", cleanup);
 
-  await writeCurrentStateWorksheetRows(
+  const nextRecord = cleanup.records.find((item) => item.infoId === record.infoId) ?? record;
+
+  await writeChangedWorksheetRows(
     spreadsheetId,
     "CampaignProjectInfo",
-    infoRows,
-    cleanup.records,
+    selectWorksheetRowsById("CampaignProjectInfo", infoRows, record.infoId),
+    [nextRecord],
+    { reason: "campaign-project-info-targeted-upsert" },
   );
 
   invalidateDatabaseReadCache("campaign-project-info-targeted-write");
@@ -1579,11 +1622,11 @@ export async function deleteCampaignProjectInfoInGoogleSheets(infoId: string) {
   );
   logCampaignProjectInfoCleanupSummary("targeted-delete", cleanup);
 
-  await writeCurrentStateWorksheetRows(
+  await deleteWorksheetRowNumbers(
     spreadsheetId,
     "CampaignProjectInfo",
-    infoRows,
-    cleanup.records,
+    selectWorksheetRowNumbersById("CampaignProjectInfo", infoRows, infoId),
+    { reason: "campaign-project-info-targeted-delete" },
   );
 
   invalidateDatabaseReadCache("campaign-project-info-targeted-delete");
@@ -2050,10 +2093,21 @@ function selectWorksheetRowsById<T>(
   return {
     ...currentRows,
     rows: currentRows.rows.filter(
-      (row) =>
-        stringValue((row.record as Record<string, unknown>)[idField]) === recordId,
+      (row) => stringValue((row.record as Record<string, unknown>)[idField]) === recordId,
     ),
   };
+}
+
+function selectWorksheetRowNumbersById<T>(
+  worksheetName: CentralWorksheetName,
+  currentRows: WorksheetRecordsWithRowNumbers<T>,
+  recordId: string,
+) {
+  const idField = rowIdFields[worksheetName];
+
+  return currentRows.rows
+    .filter((row) => stringValue((row.record as Record<string, unknown>)[idField]) === recordId)
+    .map((row) => row.rowNumber);
 }
 
 function planWorksheetMutations<T>(
@@ -2995,6 +3049,7 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
           templateId: stringValue(row.templateId),
           templateName: stringValue(row.templateName),
           type: stringValue(row.type) === "Email" ? "Email" : "DM",
+          subject: stringValue(row.subject),
           body: stringValue(row.body),
           createdAt: stringValue(row.createdAt),
           updatedAt: stringValue(row.updatedAt),
@@ -3063,8 +3118,10 @@ function rowsToDatabase(rowsBySheet: Record<CentralWorksheetName, SheetRows>): C
         country: stringValue(row.country),
         language: stringValue(row.language),
         niche: stringValue(row.niche),
+        contentTags: stringValue(row.contentTags) || stringValue(row.niche),
         followers: numberValue(row.followers),
         avgViews: numberValue(row.avgViews),
+        rate1VideoUsd: numberValue(row.rate1VideoUsd ?? row.rate1Video),
         email: stringValue(row.email),
         line: stringValue(row.line),
         instagram: stringValue(row.instagram),

@@ -50,7 +50,7 @@ async function beginScrapingSession() {
   }
 
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { type: "START_BILLY_SESSION" });
+    const response = await sendCollectorMessageToTab(tab.id, { type: "START_BILLY_SESSION" });
     if (!response?.ok) throw new Error(response?.error || "Collector did not respond.");
     sessionActive = true;
     sessionTabId = tab.id;
@@ -117,7 +117,7 @@ async function syncActiveSourceSession() {
   }
 
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { type: "GET_BILLY_SESSION_STATE" });
+    const response = await sendCollectorMessageToTab(tab.id, { type: "GET_BILLY_SESSION_STATE" });
     if (!response?.ok) return;
     sessionActive = Boolean(response.active);
     if (!sessionActive) {
@@ -151,7 +151,7 @@ async function finishActiveSession(targetTabId) {
   if (!targetTabId) return undefined;
 
   try {
-    const response = await chrome.tabs.sendMessage(targetTabId, { type: "STOP_BILLY_SESSION" });
+    const response = await sendCollectorMessageToTab(targetTabId, { type: "STOP_BILLY_SESSION" });
     if (!response?.ok) throw new Error(response?.error || "Collector did not respond.");
     sessionActive = false;
     sessionTabId = undefined;
@@ -197,7 +197,7 @@ async function refreshActiveSession() {
   if (!targetTabId) return;
 
   try {
-    const response = await chrome.tabs.sendMessage(targetTabId, {
+    const response = await sendCollectorMessageToTab(targetTabId, {
       type: "GET_BILLY_SESSION_STATE",
     });
     if (!response?.ok) return;
@@ -225,6 +225,34 @@ async function refreshActiveSession() {
   } catch {
     // Keep the current numbers visible. The popup will retry while it is open.
   }
+}
+
+async function sendCollectorMessageToTab(tabId, message) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch (error) {
+    if (!shouldInjectCollector(error)) throw error;
+  }
+
+  if (!chrome.scripting?.executeScript) {
+    throw new Error("Reload the Billy extension so it can attach to this page.");
+  }
+
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["contentScript.js"],
+  });
+  await wait(150);
+  return await chrome.tabs.sendMessage(tabId, message);
+}
+
+function shouldInjectCollector(error) {
+  const message = getError(error);
+  return (
+    message.includes("Receiving end does not exist") ||
+    message.includes("Could not establish connection") ||
+    message.includes("The message port closed before a response was received")
+  );
 }
 
 async function openBillyTabInBackground(appUrl) {

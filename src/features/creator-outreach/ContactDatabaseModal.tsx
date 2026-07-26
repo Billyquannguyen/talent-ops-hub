@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Star,
   Trash2,
   Users,
   X,
@@ -17,7 +18,39 @@ import {
 
 import type { AgencyDatabaseRecord, CreatorDatabaseRecord } from "@/storage/schema";
 
-const databaseStatusOptions = ["potential", "contacted", "interested", "rejected", "saved"];
+const creatorContentTags = [
+  "Lifestyle",
+  "Beauty",
+  "Fashion",
+  "Fitness & Wellness",
+  "Food & Cooking",
+  "Travel",
+  "Gaming",
+  "Tech",
+  "Family & Parenting",
+  "Home & DIY",
+  "Finance & Business",
+  "Education",
+  "Entertainment & Comedy",
+  "Pets",
+  "Sports",
+] as const;
+
+const followerTierOptions = [
+  { value: "nano", label: "Nano (<10K)", min: 0, maxExclusive: 10_000 },
+  { value: "micro", label: "Micro (10K–100K)", min: 10_000, maxExclusive: 100_000 },
+  { value: "mid-tier", label: "Mid-tier (100K–500K)", min: 100_000, maxExclusive: 500_000 },
+  { value: "macro", label: "Macro (500K–1M)", min: 500_000, maxExclusive: 1_000_000 },
+  { value: "mega", label: "Mega (1M+)", min: 1_000_000 },
+] as const;
+
+const avgViewsRangeOptions = [
+  { value: "under-10k", label: "<10K", min: 0, maxExclusive: 10_000 },
+  { value: "10k-50k", label: "10K–50K", min: 10_000, maxExclusive: 50_000 },
+  { value: "50k-100k", label: "50K–100K", min: 50_000, maxExclusive: 100_000 },
+  { value: "100k-1m", label: "100K–1M", min: 100_000, maxExclusive: 1_000_000 },
+  { value: "over-1m", label: ">1M", min: 1_000_000 },
+] as const;
 
 type DatabaseViewType = "agency" | "creator";
 type AgencyContact = {
@@ -25,6 +58,7 @@ type AgencyContact = {
   name: string;
   role: string;
   contact: string;
+  isPrimary: boolean;
 };
 
 export function DatabaseViewModal({
@@ -252,6 +286,7 @@ function AgencyDatabaseTable({
           </div>
 
           <div className="flex shrink-0 flex-wrap gap-2 pl-12 sm:pl-0">
+            <CopyAllRecipientsButton contacts={contacts} onCopy={onCopy} />
             <button
               type="button"
               onClick={() => onEdit(selectedAgency)}
@@ -288,7 +323,16 @@ function AgencyDatabaseTable({
                       index ? "border-t border-border" : ""
                     }`}
                   >
-                    <p className="truncate text-sm font-medium">{contact.name || "Contact"}</p>
+                    <p className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium">
+                      {contact.isPrimary ? (
+                        <Star
+                          className="size-3.5 shrink-0 text-amber-300"
+                          fill="currentColor"
+                          aria-label="Primary contact"
+                        />
+                      ) : null}
+                      <span className="truncate">{contact.name || "Contact"}</span>
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {contact.role || "No role"}
                     </p>
@@ -350,7 +394,7 @@ function AgencyDatabaseTable({
       </DatabaseToolbar>
 
       <div className="mt-4 overflow-hidden rounded-lg border border-border bg-background/30">
-        <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_120px_110px_36px] gap-4 border-b border-border bg-background/60 px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground md:grid">
+        <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_170px_110px_36px] gap-4 border-b border-border bg-background/60 px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground md:grid">
           <span>Agency</span>
           <span>Primary contact</span>
           <span>Contacts</span>
@@ -364,18 +408,18 @@ function AgencyDatabaseTable({
         ) : filteredRecords.length ? (
           filteredRecords.map((record, index) => {
             const contacts = getAgencyContacts(record).filter(hasAgencyContactContent);
-            const primaryContact = contacts[0];
+            const primaryContact = getPrimaryAgencyContact(contacts);
             return (
               <div
                 key={record.id}
-                className={`group grid w-full gap-2 px-4 py-3 text-left transition hover:bg-cyan-300/[0.045] md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_120px_110px_36px] md:items-center md:gap-4 ${
+                className={`group grid w-full gap-2 px-4 py-3 text-left transition hover:bg-cyan-300/[0.045] md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_170px_110px_36px] md:items-center md:gap-4 ${
                   index ? "border-t border-border" : ""
                 }`}
               >
                 <button
                   type="button"
                   onClick={() => setSelectedAgencyId(record.id)}
-                  className="grid min-w-0 gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50 md:col-span-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_120px] md:items-center md:gap-4"
+                  className="grid min-w-0 gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50 md:col-span-2 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] md:items-center md:gap-4"
                   aria-label={`Open ${record.agencyName || "agency"}`}
                 >
                   <span className="min-w-0">
@@ -401,11 +445,14 @@ function AgencyDatabaseTable({
                       </span>
                     ) : null}
                   </span>
+                </button>
+                <span className="flex items-center gap-2">
                   <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
                     <Users className="size-3.5" />
                     {formatContactCount(contacts.length)}
                   </span>
-                </button>
+                  <CopyAllRecipientsButton contacts={contacts} onCopy={onCopy} compact />
+                </span>
                 <span className="flex items-center gap-2">
                   <AgencyExternalLinks record={record} compact />
                 </span>
@@ -491,8 +538,11 @@ function CreatorDatabaseTable({
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState("");
   const [countryFilter, setCountryFilter] = useState("");
-  const [nicheFilter, setNicheFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [contentTagFilter, setContentTagFilter] = useState("");
+  const [followerTier, setFollowerTier] = useState("");
+  const [avgViewsRange, setAvgViewsRange] = useState("");
+  const [minRateUsd, setMinRateUsd] = useState("");
+  const [maxRateUsd, setMaxRateUsd] = useState("");
 
   const filteredRecords = useMemo(
     () =>
@@ -502,24 +552,33 @@ function CreatorDatabaseTable({
             "creatorName",
             "handle",
             "platform",
-            "profileUrl",
             "country",
-            "language",
-            "niche",
+            "contentTags",
             "email",
             "line",
             "instagram",
             "whatsapp",
-            "agencyName",
+            "rate1VideoUsd",
             "notes",
-            "status",
           ]) &&
           matchesFilter(record.platform, platformFilter) &&
           matchesFilter(record.country, countryFilter) &&
-          matchesFilter(record.niche, nicheFilter) &&
-          matchesFilter(record.status, statusFilter),
+          matchesContentTag(record.contentTags, contentTagFilter) &&
+          matchesPresetRange(record.followers, followerTier, followerTierOptions) &&
+          matchesPresetRange(record.avgViews, avgViewsRange, avgViewsRangeOptions) &&
+          matchesNumberRange(record.rate1VideoUsd, minRateUsd, maxRateUsd),
       ),
-    [countryFilter, nicheFilter, platformFilter, records, search, statusFilter],
+    [
+      avgViewsRange,
+      contentTagFilter,
+      countryFilter,
+      maxRateUsd,
+      minRateUsd,
+      followerTier,
+      platformFilter,
+      records,
+      search,
+    ],
   );
 
   return (
@@ -544,41 +603,56 @@ function CreatorDatabaseTable({
           onChange={setCountryFilter}
         />
         <DatabaseFilter
-          label="Niche"
-          value={nicheFilter}
-          values={getUniqueValues(records.map((record) => record.niche))}
-          onChange={setNicheFilter}
+          label="Content Tags"
+          value={contentTagFilter}
+          values={[...creatorContentTags]}
+          onChange={setContentTagFilter}
         />
-        <DatabaseFilter
-          label="Status"
-          value={statusFilter}
-          values={databaseStatusOptions}
-          onChange={setStatusFilter}
+        <DatabasePresetRangeFilter
+          label="Followers"
+          value={followerTier}
+          options={followerTierOptions}
+          onChange={setFollowerTier}
+        />
+        <DatabasePresetRangeFilter
+          label="Avg Views"
+          value={avgViewsRange}
+          options={avgViewsRangeOptions}
+          onChange={setAvgViewsRange}
+        />
+        <DatabaseNumberRangeFilter
+          label="Rate USD"
+          min={minRateUsd}
+          max={maxRateUsd}
+          onMinChange={setMinRateUsd}
+          onMaxChange={setMaxRateUsd}
         />
       </DatabaseToolbar>
 
+      <p className="mt-3 text-xs text-muted-foreground">
+        Showing {filteredRecords.length.toLocaleString()} of {records.length.toLocaleString()}{" "}
+        creators. All active filters apply together.
+      </p>
+
       <div className="katlas-table-shell mt-4">
-        <table className="min-w-[1360px] w-full text-left text-sm">
+        <table className="min-w-[1120px] w-full text-left text-sm">
           <thead className="bg-background text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-3 py-3">Creator</th>
               <th className="px-3 py-3">Platform</th>
-              <th className="px-3 py-3">Profile</th>
               <th className="px-3 py-3">Country</th>
-              <th className="px-3 py-3">Language</th>
-              <th className="px-3 py-3">Niche</th>
+              <th className="px-3 py-3">Content Tags</th>
               <th className="px-3 py-3">Followers</th>
               <th className="px-3 py-3">Avg Views</th>
+              <th className="px-3 py-3">Rate / 1 Video (USD)</th>
               <th className="px-3 py-3">Contacts</th>
-              <th className="px-3 py-3">Agency</th>
-              <th className="px-3 py-3">Status</th>
               <th className="px-3 py-3">Notes</th>
               <th className="px-3 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <DatabaseLoadingRow colSpan={13} />
+              <DatabaseLoadingRow colSpan={10} />
             ) : filteredRecords.length ? (
               filteredRecords.map((record) => (
                 <tr key={record.id} className="border-t border-border align-top">
@@ -589,23 +663,16 @@ function CreatorDatabaseTable({
                     ) : null}
                   </td>
                   <td className="px-3 py-3">{record.platform || "-"}</td>
-                  <td className="px-3 py-3">
-                    <ContactValue value={record.profileUrl} label="Profile URL" onCopy={onCopy} />
-                  </td>
                   <td className="px-3 py-3">{record.country || "-"}</td>
-                  <td className="px-3 py-3">{record.language || "-"}</td>
-                  <td className="px-3 py-3">{record.niche || "-"}</td>
+                  <td className="px-3 py-3">{record.contentTags || "-"}</td>
                   <td className="px-3 py-3">{formatInteger(record.followers)}</td>
                   <td className="px-3 py-3">{formatInteger(record.avgViews)}</td>
+                  <td className="px-3 py-3">{formatUsd(record.rate1VideoUsd)}</td>
                   <td className="space-y-1 px-3 py-3">
                     <ContactValue value={record.email} label="Email" onCopy={onCopy} />
                     <ContactValue value={record.line} label="LINE" onCopy={onCopy} />
                     <ContactValue value={record.instagram} label="Instagram" onCopy={onCopy} />
                     <ContactValue value={record.whatsapp} label="WhatsApp" onCopy={onCopy} />
-                  </td>
-                  <td className="px-3 py-3">{record.agencyName || "-"}</td>
-                  <td className="px-3 py-3">
-                    <DatabaseStatusBadge status={record.status} />
                   </td>
                   <td className="max-w-[220px] px-3 py-3 text-xs leading-5 text-muted-foreground">
                     {record.notes || "-"}
@@ -619,7 +686,7 @@ function CreatorDatabaseTable({
                 </tr>
               ))
             ) : (
-              <DatabaseEmptyRow colSpan={13} label="No creators found." />
+              <DatabaseEmptyRow colSpan={10} label="No creators found." />
             )}
           </tbody>
         </table>
@@ -658,7 +725,7 @@ function DatabaseToolbar({
             />
           </div>
         </label>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
+        <div className="flex flex-wrap gap-2">{children}</div>
         <button
           type="button"
           onClick={onAdd}
@@ -696,6 +763,76 @@ function DatabaseFilter({
         {values.map((item) => (
           <option key={item} value={item}>
             {item}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function DatabaseNumberRangeFilter({
+  label,
+  min,
+  max,
+  onMinChange,
+  onMaxChange,
+}: {
+  label: string;
+  min: string;
+  max: string;
+  onMinChange: (value: string) => void;
+  onMaxChange: (value: string) => void;
+}) {
+  return (
+    <fieldset className="min-w-48">
+      <legend className="text-xs font-medium text-muted-foreground">{label}</legend>
+      <div className="mt-1 grid grid-cols-2 gap-1.5">
+        <input
+          type="number"
+          min="0"
+          value={min}
+          onChange={(event) => onMinChange(event.target.value)}
+          placeholder="Min"
+          aria-label={`Minimum ${label}`}
+          className="h-10 min-w-0 rounded-md border border-input bg-card px-2.5 text-sm outline-none ring-ring focus:ring-2"
+        />
+        <input
+          type="number"
+          min="0"
+          value={max}
+          onChange={(event) => onMaxChange(event.target.value)}
+          placeholder="Max"
+          aria-label={`Maximum ${label}`}
+          className="h-10 min-w-0 rounded-md border border-input bg-card px-2.5 text-sm outline-none ring-ring focus:ring-2"
+        />
+      </div>
+    </fieldset>
+  );
+}
+
+function DatabasePresetRangeFilter({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block min-w-40">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none ring-ring focus:ring-2"
+      >
+        <option value="">All</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
           </option>
         ))}
       </select>
@@ -744,6 +881,40 @@ function ContactValue({
   );
 }
 
+function CopyAllRecipientsButton({
+  contacts,
+  onCopy,
+  compact = false,
+}: {
+  contacts: AgencyContact[];
+  onCopy: (text: string, label: string) => void | Promise<void>;
+  compact?: boolean;
+}) {
+  const recipients = getAgencyRecipientEmails(contacts);
+  const label = recipients.length === 1 ? "1 recipient" : `${recipients.length} recipients`;
+
+  return (
+    <button
+      type="button"
+      disabled={!recipients.length}
+      onClick={(event) => {
+        event.stopPropagation();
+        void onCopy(recipients.join(", "), label);
+      }}
+      className={
+        compact
+          ? "inline-flex size-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+          : "inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+      }
+      aria-label={`Copy all ${label}`}
+      title={recipients.length ? `Copy all ${label}` : "No email recipients to copy"}
+    >
+      <Copy className="size-4" />
+      {compact ? null : "Copy All Recipients"}
+    </button>
+  );
+}
+
 function RecordActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
   return (
     <div className="flex gap-2">
@@ -783,15 +954,17 @@ function AgencyRecordEditor({
   const contacts = getAgencyContacts(record);
 
   function updateContacts(nextContacts: AgencyContact[]) {
-    const normalized = nextContacts.length ? nextContacts : [createBlankAgencyContact()];
-    const firstContact = normalized[0] ?? createBlankAgencyContact();
+    const normalized = normalizePrimaryAgencyContacts(
+      nextContacts.length ? nextContacts : [createBlankAgencyContact(true)],
+    );
+    const primaryContact = getPrimaryAgencyContact(normalized) ?? createBlankAgencyContact(true);
     onChange({
       ...record,
-      contactName: firstContact.name,
-      contactRole: firstContact.role,
-      contact: firstContact.contact,
-      email: extractEmail(firstContact.contact),
-      line: extractLine(firstContact.contact),
+      contactName: primaryContact.name,
+      contactRole: primaryContact.role,
+      contact: primaryContact.contact,
+      email: extractEmail(primaryContact.contact),
+      line: extractLine(primaryContact.contact),
       contactsJson: serializeAgencyContacts(normalized),
       niche: "",
       status: record.status || "potential",
@@ -863,6 +1036,10 @@ function AgencyContactsEditor({
     onChange(rows.filter((contact) => contact.id !== id));
   }
 
+  function setPrimaryContact(id: string) {
+    onChange(rows.map((contact) => ({ ...contact, isPrimary: contact.id === id })));
+  }
+
   return (
     <section className="rounded-xl border border-border bg-background/40 p-4">
       <div className="flex items-center justify-between gap-3">
@@ -887,9 +1064,30 @@ function AgencyContactsEditor({
         {rows.map((contact, index) => (
           <div key={contact.id} className="rounded-lg border border-border/80 bg-card/70 p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">
-                Contact {index + 1}
-              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPrimaryContact(contact.id)}
+                  className={`inline-flex size-8 items-center justify-center rounded-md border transition ${
+                    contact.isPrimary
+                      ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                      : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                  aria-label={
+                    contact.isPrimary
+                      ? `Contact ${index + 1} is the primary contact`
+                      : `Set contact ${index + 1} as primary`
+                  }
+                  aria-pressed={contact.isPrimary}
+                  title={contact.isPrimary ? "Primary contact" : "Set as primary contact"}
+                >
+                  <Star className="size-4" fill={contact.isPrimary ? "currentColor" : "none"} />
+                </button>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">
+                  Contact {index + 1}
+                  {contact.isPrimary ? " · Primary" : ""}
+                </p>
+              </div>
               {rows.length > 1 ? (
                 <button
                   type="button"
@@ -967,38 +1165,37 @@ function CreatorRecordEditor({
           onChange={(platform) => onChange({ ...record, platform })}
         />
         <DatabaseInput
-          label="Profile URL"
-          value={record.profileUrl}
-          onChange={(profileUrl) => onChange({ ...record, profileUrl })}
-        />
-        <DatabaseInput
           label="Country"
           value={record.country}
           onChange={(country) => onChange({ ...record, country })}
         />
-        <DatabaseInput
-          label="Language"
-          value={record.language}
-          onChange={(language) => onChange({ ...record, language })}
+        <DatabaseSelect
+          label="Content Tags"
+          value={record.contentTags}
+          values={[...creatorContentTags]}
+          onChange={(contentTags) => onChange({ ...record, contentTags })}
         />
         <DatabaseInput
-          label="Niche"
-          value={record.niche}
-          onChange={(niche) => onChange({ ...record, niche })}
-        />
-        <DatabaseStatusSelect
-          value={record.status}
-          onChange={(status) => onChange({ ...record, status })}
+          label="Followers (K/M accepted)"
+          value={formatCompactInput(record.followers)}
+          onChange={(followers) =>
+            onChange({ ...record, followers: normalizeCompactNumber(followers) })
+          }
         />
         <DatabaseInput
-          label="Followers"
-          value={String(record.followers || "")}
-          onChange={(followers) => onChange({ ...record, followers: normalizeNumber(followers) })}
+          label="Avg Views (K/M accepted)"
+          value={formatCompactInput(record.avgViews)}
+          onChange={(avgViews) =>
+            onChange({ ...record, avgViews: normalizeCompactNumber(avgViews) })
+          }
         />
         <DatabaseInput
-          label="Avg Views"
-          value={String(record.avgViews || "")}
-          onChange={(avgViews) => onChange({ ...record, avgViews: normalizeNumber(avgViews) })}
+          label="Rate / 1 Video (USD)"
+          value={String(record.rate1VideoUsd || "")}
+          type="number"
+          onChange={(rate1VideoUsd) =>
+            onChange({ ...record, rate1VideoUsd: normalizeNumber(rate1VideoUsd) })
+          }
         />
         <DatabaseInput
           label="Email"
@@ -1019,11 +1216,6 @@ function CreatorRecordEditor({
           label="WhatsApp"
           value={record.whatsapp}
           onChange={(whatsapp) => onChange({ ...record, whatsapp })}
-        />
-        <DatabaseInput
-          label="Agency Name"
-          value={record.agencyName}
-          onChange={(agencyName) => onChange({ ...record, agencyName })}
         />
       </div>
       <DatabaseTextarea
@@ -1093,20 +1285,57 @@ function RecordEditorShell({
 function DatabaseInput({
   label,
   value,
+  type = "text",
   onChange,
 }: {
   label: string;
   value: string;
+  type?: "text" | "number";
   onChange: (value: string) => void;
 }) {
   return (
     <label className="block">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <input
+        type={type}
+        min={type === "number" ? 0 : undefined}
+        step={type === "number" ? "any" : undefined}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
       />
+    </label>
+  );
+}
+
+function DatabaseSelect({
+  label,
+  value,
+  values,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  values: string[];
+  onChange: (value: string) => void;
+}) {
+  const options = value && !values.includes(value) ? [value, ...values] : values;
+
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+      >
+        <option value="">Select a tag</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -1130,39 +1359,6 @@ function DatabaseTextarea({
         className="mt-1 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 outline-none ring-ring focus:ring-2"
       />
     </label>
-  );
-}
-
-function DatabaseStatusSelect({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-muted-foreground">Status</span>
-      <select
-        value={normalizeDatabaseStatus(value)}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-      >
-        {databaseStatusOptions.map((status) => (
-          <option key={status} value={status}>
-            {formatStatusLabel(status)}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function DatabaseStatusBadge({ status }: { status: string }) {
-  return (
-    <span className="inline-flex rounded-full border border-border bg-card px-2 py-1 text-xs font-medium text-muted-foreground">
-      {formatStatusLabel(status)}
-    </span>
   );
 }
 
@@ -1205,6 +1401,33 @@ function matchesFilter(value: string, filter: string) {
   return value.trim().toLowerCase() === filter.trim().toLowerCase();
 }
 
+function matchesContentTag(value: string, filter: string) {
+  if (!filter) return true;
+  return value
+    .split(",")
+    .map((tag) => tag.trim().toLowerCase())
+    .includes(filter.trim().toLowerCase());
+}
+
+function matchesNumberRange(value: number, min: string, max: string) {
+  const minValue = min.trim() ? normalizeNumber(min) : null;
+  const maxValue = max.trim() ? normalizeNumber(max) : null;
+  if (minValue !== null && value < minValue) return false;
+  if (maxValue !== null && value > maxValue) return false;
+  return true;
+}
+
+function matchesPresetRange(
+  value: number,
+  selected: string,
+  options: ReadonlyArray<{ value: string; min: number; maxExclusive?: number }>,
+) {
+  if (!selected) return true;
+  const range = options.find((option) => option.value === selected);
+  if (!range) return true;
+  return value >= range.min && (range.maxExclusive === undefined || value < range.maxExclusive);
+}
+
 function getUniqueValues(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b),
@@ -1213,7 +1436,7 @@ function getUniqueValues(values: string[]) {
 
 function getAgencyContacts(record: AgencyDatabaseRecord): AgencyContact[] {
   const parsedContacts = parseAgencyContacts(record.contactsJson);
-  if (parsedContacts.length) return parsedContacts;
+  if (parsedContacts.length) return normalizePrimaryAgencyContacts(parsedContacts);
 
   const legacyContactParts = [
     record.contact?.trim(),
@@ -1228,11 +1451,12 @@ function getAgencyContacts(record: AgencyDatabaseRecord): AgencyContact[] {
         name: record.contactName,
         role: record.contactRole,
         contact: legacyContactParts.join("\n"),
+        isPrimary: true,
       },
     ];
   }
 
-  return [createBlankAgencyContact()];
+  return [createBlankAgencyContact(true)];
 }
 
 function addBlankContactToAgencyRecord(record: AgencyDatabaseRecord): AgencyDatabaseRecord {
@@ -1261,6 +1485,7 @@ function parseAgencyContacts(value: string): AgencyContact[] {
         name: String(row.name ?? ""),
         role: String(row.role ?? ""),
         contact: String(row.contact ?? row.value ?? ""),
+        isPrimary: Boolean(row.isPrimary),
       };
       return contact.name || contact.role || contact.contact ? [contact] : [];
     });
@@ -1270,24 +1495,50 @@ function parseAgencyContacts(value: string): AgencyContact[] {
 }
 
 function serializeAgencyContacts(contacts: AgencyContact[]) {
+  const normalized = normalizePrimaryAgencyContacts(contacts.filter(hasAgencyContactContent));
   return JSON.stringify(
-    contacts
-      .map((contact) => ({
-        id: contact.id || createAgencyContactId(),
-        name: contact.name.trim(),
-        role: contact.role.trim(),
-        contact: contact.contact.trim(),
-      }))
-      .filter((contact) => contact.name || contact.role || contact.contact),
+    normalized.map((contact) => ({
+      id: contact.id || createAgencyContactId(),
+      name: contact.name.trim(),
+      role: contact.role.trim(),
+      contact: contact.contact.trim(),
+      isPrimary: contact.isPrimary,
+    })),
   );
 }
 
-function createBlankAgencyContact(): AgencyContact {
+function normalizePrimaryAgencyContacts(contacts: AgencyContact[]) {
+  const primaryIndex = contacts.findIndex((contact) => contact.isPrimary);
+  const selectedIndex = primaryIndex >= 0 ? primaryIndex : 0;
+  return contacts.map((contact, index) => ({
+    ...contact,
+    isPrimary: index === selectedIndex,
+  }));
+}
+
+function getPrimaryAgencyContact(contacts: AgencyContact[]) {
+  return contacts.find((contact) => contact.isPrimary) ?? contacts[0];
+}
+
+function getAgencyRecipientEmails(contacts: AgencyContact[]) {
+  const recipients = contacts.flatMap((contact) =>
+    Array.from(
+      contact.contact.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi),
+      (match) => match[0],
+    ),
+  );
+  return Array.from(
+    new Map(recipients.map((recipient) => [recipient.toLowerCase(), recipient])).values(),
+  );
+}
+
+function createBlankAgencyContact(isPrimary = false): AgencyContact {
   return {
     id: createAgencyContactId(),
     name: "",
     role: "",
     contact: "",
+    isPrimary,
   };
 }
 
@@ -1304,25 +1555,42 @@ function extractLine(value: string) {
   return lineMatch?.[1] ?? "";
 }
 
-function normalizeDatabaseStatus(value: unknown) {
-  const status = String(value ?? "").toLowerCase();
-  return databaseStatusOptions.includes(status) ? status : "potential";
-}
-
 function normalizeNumber(value: unknown) {
   const parsed = Number(String(value ?? "").replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatStatusLabel(status: string) {
-  return normalizeDatabaseStatus(status)
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+function normalizeCompactNumber(value: unknown) {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/,/g, "")
+    .toUpperCase();
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*([KM])?$/);
+  if (!match) return 0;
+  const amount = Number(match[1]);
+  const multiplier = match[2] === "M" ? 1_000_000 : match[2] === "K" ? 1_000 : 1;
+  return Number.isFinite(amount) ? amount * multiplier : 0;
+}
+
+function formatCompactInput(value: number) {
+  if (!value) return "";
+  if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(2))}M`;
+  if (value >= 1_000) return `${Number((value / 1_000).toFixed(2))}K`;
+  return String(value);
 }
 
 function formatInteger(value: number) {
   return value > 0 ? Math.round(value).toLocaleString() : "-";
+}
+
+function formatUsd(value: number) {
+  return value > 0
+    ? new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 2,
+      }).format(value)
+    : "-";
 }
 
 function formatExternalUrl(value: string) {

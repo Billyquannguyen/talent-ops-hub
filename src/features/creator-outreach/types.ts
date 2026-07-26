@@ -33,6 +33,7 @@ export type OutreachTemplate = {
   templateName: string;
   category: TemplateCategory;
   channelType: ChannelType;
+  subject: string;
   body: string;
   fields: string[];
   requiredFields: string[];
