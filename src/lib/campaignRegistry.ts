@@ -28,6 +28,7 @@ export const selectedCreatorStatuses = [
   "Script",
   "Draft",
   "Posted",
+  "Invoicing",
   "Fully paid",
 ] as const;
 
@@ -94,6 +95,7 @@ export type CampaignSummary = {
   script: number;
   draft: number;
   posted: number;
+  invoicing: number;
   paymentPending: number;
   fullyPaid: number;
   totalSpend: number;
@@ -493,8 +495,9 @@ export function calculateCampaignSummary(records: SelectedCreatorRecord[]): Camp
   const script = count("Script");
   const draft = count("Draft");
   const posted = count("Posted");
+  const invoicing = count("Invoicing");
   const fullyPaid = count("Fully paid");
-  const paymentPending = posted;
+  const paymentPending = invoicing;
 
   return {
     totalCreators: records.length,
@@ -502,6 +505,7 @@ export function calculateCampaignSummary(records: SelectedCreatorRecord[]): Camp
     script,
     draft,
     posted,
+    invoicing,
     paymentPending,
     fullyPaid,
     totalSpend,
@@ -513,6 +517,7 @@ export function calculateCampaignSummary(records: SelectedCreatorRecord[]): Camp
       script,
       draft,
       posted,
+      invoicing,
       fullyPaid,
     }),
   };
@@ -684,6 +689,7 @@ function normalizeCreatorRecord(value: unknown): SelectedCreatorRecord {
 function buildStatusSummary(counts: Record<string, number>): string {
   const visible = [
     ["Fully paid", counts.fullyPaid],
+    ["Invoicing", counts.invoicing],
     ["Posted", counts.posted],
     ["Draft", counts.draft],
     ["Script", counts.script],
@@ -703,6 +709,7 @@ function normalizeStatus(value: unknown): SelectedCreatorStatus {
   }
 
   const status = stringValue(value).toLowerCase();
+  if (status.includes("invoic")) return "Invoicing";
   if (status.includes("paid") || status.includes("payment")) return "Fully paid";
   if (status.includes("posted") || status.includes("live") || status.includes("completed")) {
     return "Posted";

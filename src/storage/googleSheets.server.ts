@@ -442,11 +442,11 @@ export async function upsertCampaignProfileInGoogleSheets(record: CampaignProfil
   );
 
   const nextProfile =
-    cleanup.records.find((item) => item.campaignId === profile.campaignId) ?? profile;
+    cleanup.records.find((item) => item.campaignId === record.campaignId) ?? record;
   await writeChangedWorksheetRows(
     spreadsheetId,
     "CampaignProfiles",
-    selectWorksheetRowsById("CampaignProfiles", profileRows, profile.campaignId),
+    selectWorksheetRowsById("CampaignProfiles", profileRows, record.campaignId),
     [nextProfile],
     { reason: "campaign-profile-targeted-upsert" },
   );
@@ -520,11 +520,11 @@ export async function upsertCampaignBatchInGoogleSheets(record: CampaignBatchRec
     batchRows.rows.map((row) => row.record),
     record,
   );
-  const nextBatch = cleanup.records.find((item) => item.batchId === batch.batchId) ?? batch;
+  const nextBatch = cleanup.records.find((item) => item.batchId === record.batchId) ?? record;
   await writeChangedWorksheetRows(
     spreadsheetId,
     "CampaignBatches",
-    selectWorksheetRowsById("CampaignBatches", batchRows, batch.batchId),
+    selectWorksheetRowsById("CampaignBatches", batchRows, record.batchId),
     [nextBatch],
     { reason: "campaign-batch-targeted-upsert" },
   );

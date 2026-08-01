@@ -31,6 +31,7 @@ const statusSelectStyles: Record<SelectedCreatorStatus, string> = {
   Script: "border-violet-400/40 bg-violet-400/10 text-violet-200",
   Draft: "border-amber-400/40 bg-amber-400/10 text-amber-200",
   Posted: "border-cyan-400/40 bg-cyan-400/10 text-cyan-100",
+  Invoicing: "border-orange-400/40 bg-orange-400/10 text-orange-200",
   "Fully paid": "border-emerald-400/40 bg-emerald-400/10 text-emerald-200",
 };
 
@@ -170,6 +171,7 @@ export function ActiveCampaignManagement({
 
     try {
       const exists = registry.creatorRecords.some((record) => record.id === savedRecord.id);
+      const previousRecord = registry.creatorRecords.find((record) => record.id === savedRecord.id);
       const nextCreatorRecords = exists
         ? await updateSelectedCreatorRecordInGoogleSheets(savedRecord)
         : await saveSelectedCreatorRecordToGoogleSheets(savedRecord);
@@ -179,6 +181,9 @@ export function ActiveCampaignManagement({
       }));
       setEditingRecord(null);
       setStorageMessage("Creator record saved.");
+      if (savedRecord.status === "Invoicing" && previousRecord?.status !== "Invoicing") {
+        setPaymentFormContext({ record: savedRecord, campaign });
+      }
     } catch (error) {
       setStorageMessage(
         error instanceof Error
@@ -215,7 +220,7 @@ export function ActiveCampaignManagement({
     record: SelectedCreatorRecord,
     status: SelectedCreatorStatus,
     liveLink = record.liveLink,
-  ) {
+  ): Promise<SelectedCreatorRecord | null> {
     const updatedRecord = {
       ...record,
       status,
@@ -230,12 +235,14 @@ export function ActiveCampaignManagement({
         creatorRecords: filterCreatorRecordsByCampaigns(nextCreatorRecords, current.campaigns),
       }));
       setStorageMessage(`Status updated to ${status}.`);
+      return updatedRecord;
     } catch (error) {
       setStorageMessage(
         error instanceof Error
           ? error.message
           : "Google Sheets save failed. Status was not updated.",
       );
+      return null;
     }
   }
 
@@ -243,6 +250,13 @@ export function ActiveCampaignManagement({
     if (record.status === status) return;
     if (status === "Posted") {
       setPostedStatusRequest({ record, liveLink: record.liveLink });
+      return;
+    }
+    if (status === "Invoicing") {
+      void (async () => {
+        const updatedRecord = await updateCreatorRecordStatus(record, status);
+        if (updatedRecord) openPaymentForm(updatedRecord);
+      })();
       return;
     }
     void updateCreatorRecordStatus(record, status);
@@ -255,6 +269,36 @@ export function ActiveCampaignManagement({
       return;
     }
     setPaymentFormContext({ record, campaign });
+  }
+
+  async function savePaymentFormLiveLink(record: SelectedCreatorRecord, liveLink: string) {
+    const normalizedLiveLink = liveLink.trim();
+    if (normalizedLiveLink === record.liveLink.trim()) return;
+
+    const updatedRecord = {
+      ...record,
+      liveLink: normalizedLiveLink,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      const nextCreatorRecords = await updateSelectedCreatorRecordInGoogleSheets(updatedRecord);
+      setRegistry((current) => ({
+        ...current,
+        creatorRecords: filterCreatorRecordsByCampaigns(nextCreatorRecords, current.campaigns),
+      }));
+      setPaymentFormContext((current) =>
+        current?.record.id === updatedRecord.id ? { ...current, record: updatedRecord } : current,
+      );
+      setStorageMessage("Live link saved to the creator record.");
+    } catch (error) {
+      setStorageMessage(
+        error instanceof Error
+          ? error.message
+          : "Google Sheets save failed. Live link was not updated.",
+      );
+      throw error;
+    }
   }
 
   return (
@@ -396,6 +440,9 @@ export function ActiveCampaignManagement({
           record={paymentFormContext.record}
           campaign={paymentFormContext.campaign}
           campaignBatches={batchesByCampaignId.get(paymentFormContext.campaign.id) ?? []}
+          onSaveLiveLink={(liveLink) =>
+            savePaymentFormLiveLink(paymentFormContext.record, liveLink)
+          }
           onClose={() => setPaymentFormContext(null)}
         />
       ) : null}

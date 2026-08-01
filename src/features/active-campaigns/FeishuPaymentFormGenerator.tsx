@@ -26,6 +26,7 @@ type FeishuPaymentFormGeneratorProps = {
   record: SelectedCreatorRecord;
   campaign: GlobalCampaign;
   campaignBatches: CampaignBatchRecord[];
+  onSaveLiveLink: (liveLink: string) => Promise<void>;
   onClose: () => void;
 };
 
@@ -87,6 +88,7 @@ export function FeishuPaymentFormGenerator({
   record,
   campaign,
   campaignBatches,
+  onSaveLiveLink,
   onClose,
 }: FeishuPaymentFormGeneratorProps) {
   const detectedPlatform = detectPlatform(record.creatorLink || record.liveLink);
@@ -116,6 +118,7 @@ export function FeishuPaymentFormGenerator({
   );
   const [batchLabel, setBatchLabel] = useState(matchedBatch?.batchName || "b1");
   const [validationError, setValidationError] = useState("");
+  const [isSavingLiveLink, setIsSavingLiveLink] = useState(false);
   const [copiedKey, setCopiedKey] = useState("");
   const usesPaymentPercentage = paymentType === "Deposit" || paymentType === "Final Payment";
 
@@ -127,15 +130,7 @@ export function FeishuPaymentFormGenerator({
     () => calculatePaymentAmount({ amount: amountUsd, paymentPercentage, paymentType }),
     [amountUsd, paymentPercentage, paymentType],
   );
-  const externalQuoteUsdForOutput = useMemo(
-    () =>
-      calculatePaymentAmount({
-        amount: externalQuoteUsd,
-        paymentPercentage,
-        paymentType,
-      }),
-    [externalQuoteUsd, paymentPercentage, paymentType],
-  );
+  const fixedExternalQuoteUsd = parseNumber(externalQuoteUsd);
   const normalizedProjectCode = projectCode.trim().toUpperCase();
   const normalizedBatchLabel = normalizeBatchLabel(batchLabel);
   const normalizedCurrency = quoteCurrency.trim().toUpperCase() || "USD";
@@ -226,9 +221,9 @@ export function FeishuPaymentFormGenerator({
       chineseTitle: "客户报价",
       englishMeaning: "External Quote",
       value: externalQuoteUsd
-        ? formatPaymentAmount(externalQuoteUsdForOutput)
+        ? formatPaymentAmount(fixedExternalQuoteUsd)
         : "No external quote entered.",
-      copyValue: externalQuoteUsd ? formatPaymentAmount(externalQuoteUsdForOutput) : "",
+      copyValue: externalQuoteUsd ? formatPaymentAmount(fixedExternalQuoteUsd) : "",
       instruction: !externalQuoteUsd,
     },
     {
@@ -295,14 +290,23 @@ export function FeishuPaymentFormGenerator({
     },
   ];
 
-  function handleGenerate(event: FormEvent<HTMLFormElement>) {
+  async function handleGenerate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!/^b[1-9]\d*$/i.test(normalizedBatchLabel)) {
       setValidationError("Batch label must use the format b1, b2, b8, or b9.");
       return;
     }
-    setValidationError("");
-    setStep("output");
+
+    try {
+      setValidationError("");
+      setIsSavingLiveLink(true);
+      await onSaveLiveLink(creatorPublishedLink);
+      setStep("output");
+    } catch {
+      setValidationError("The live link could not be saved to the creator record. Try again.");
+    } finally {
+      setIsSavingLiveLink(false);
+    }
   }
 
   async function copyValue(key: string, value: string) {
@@ -436,7 +440,7 @@ export function FeishuPaymentFormGenerator({
                 label="External Quote USD"
                 value={
                   usesPaymentPercentage
-                    ? formatPaymentAmount(externalQuoteUsdForOutput)
+                    ? formatPaymentAmount(fixedExternalQuoteUsd)
                     : externalQuoteUsd
                 }
                 onChange={setExternalQuoteUsd}
@@ -501,9 +505,10 @@ export function FeishuPaymentFormGenerator({
               </button>
               <button
                 type="submit"
+                disabled={isSavingLiveLink}
                 className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
               >
-                Generate Feishu Form
+                {isSavingLiveLink ? "Saving live link..." : "Generate Feishu Form"}
               </button>
             </div>
           </form>

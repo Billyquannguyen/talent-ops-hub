@@ -2037,7 +2037,7 @@ function BillyScraperSystem({
           ? `Done. Added personal-provider emails to ${result.emailCount.toLocaleString()} blank Contacts cells. Existing Contacts values were preserved. No AI call used.`
           : mode === "all-emails"
             ? `Done. Added public emails to ${result.emailCount.toLocaleString()} blank Contacts cells. Existing Contacts values were preserved. No AI call used.`
-            : `Done. Copied ${result.bioCount.toLocaleString()} full bios and added ${result.bioLinkCount.toLocaleString()} direct bio links. Existing email-only Contacts values were preserved. No AI call used.`,
+            : `Done. Copied ${result.bioCount.toLocaleString()} full bios and added ${result.bioLinkCount.toLocaleString()} direct bio links. Existing Contacts values were preserved and links were appended when available. No AI call used.`,
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
@@ -3348,7 +3348,8 @@ function PreviewModal({
               {selectedRowIds.length.toLocaleString()} selected
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Click a row, then Shift-click another to select the range. Ctrl or Cmd toggles rows.
+              Click the first row, then Shift-click the last to select a range. Use Ctrl+Shift or
+              Cmd+Shift to add that range to your current selection.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -3873,13 +3874,13 @@ function PreviewTable({
   headers,
   rows,
   selectedRowIds,
-  onSetSelectedRowIds,
+  onToggleRow,
   onToggleAll,
 }: {
   headers: string[];
   rows: PreviewRow[];
   selectedRowIds: string[];
-  onSetSelectedRowIds: (
+  onToggleRow: (
     rowId: string,
     modifiers: { shiftKey: boolean; additiveKey: boolean },
   ) => void;
@@ -3928,7 +3929,7 @@ function PreviewTable({
               onClick={(event) => {
                 const target = event.target as HTMLElement;
                 if (target.closest("a, button, input, select, textarea")) return;
-                onSetSelectedRowIds(row.id, {
+                onToggleRow(row.id, {
                   shiftKey: event.shiftKey,
                   additiveKey: event.ctrlKey || event.metaKey,
                 });
@@ -3943,7 +3944,7 @@ function PreviewTable({
                   checked={selectedRowIds.includes(row.id)}
                   onClick={(event) => {
                     event.stopPropagation();
-                    onSetSelectedRowIds(row.id, {
+                    onToggleRow(row.id, {
                       shiftKey: event.shiftKey,
                       additiveKey: event.ctrlKey || event.metaKey,
                     });
@@ -5176,14 +5177,14 @@ function fillBlankContacts({
 
     const emailColumnValue = getCell(data, columnMap, "Email");
     const bio = getCell(data, columnMap, "Description");
-    const bioLink = getDirectBioLink(data);
+    const bioLink = getDirectBioLink(data, bio);
     const existingContacts = stringValue(data[initialized.contactsHeader]).trim();
 
     if (existingContacts) {
       const existingIsCopiedBio = Boolean(
         mode === "bio-only" && bio.trim() && existingContacts === bio.trim(),
       );
-      if (existingIsCopiedBio && bioLink && !existingContacts.includes(bioLink)) {
+      if (mode === "bio-only" && bioLink && !existingContacts.includes(bioLink)) {
         bioLinkCount += 1;
         return {
           ...creator,
@@ -5193,6 +5194,7 @@ function fillBlankContacts({
           },
         };
       }
+      if (existingIsCopiedBio) return { ...creator, data };
       return { ...creator, data };
     }
 
@@ -5239,7 +5241,7 @@ function fillBlankContacts({
   };
 }
 
-function getDirectBioLink(data: UploadedCreator["data"]): string {
+function getDirectBioLink(data: UploadedCreator["data"], fallbackText = ""): string {
   const acceptedHeaders = new Set([
     "bio link",
     "link in bio",
@@ -5250,11 +5252,46 @@ function getDirectBioLink(data: UploadedCreator["data"]): string {
 
   for (const [header, value] of Object.entries(data)) {
     if (!acceptedHeaders.has(normalizeFieldLookupValue(header))) continue;
-    const candidate = stringValue(value).trim();
-    if (/^https?:\/\/\S+$/i.test(candidate)) return candidate;
+    const candidate = normalizeContactUrl(stringValue(value));
+    if (candidate) return candidate;
+  }
+
+  return extractDirectBioLinkFromText(fallbackText);
+}
+
+function extractDirectBioLinkFromText(value: string): string {
+  const candidates = stringValue(value).match(/(?:https?:\/\/|www\.)[^\s<>"'|]+/gi) ?? [];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeContactUrl(candidate);
+    if (normalized) return normalized;
   }
 
   return "";
+}
+
+function normalizeContactUrl(value: string): string {
+  const trimmed = value.trim().replace(/[),.;]+$/, "");
+  if (!trimmed) return "";
+
+  try {
+    const url = new URL(/^www\./i.test(trimmed) ? `https://${trimmed}` : trimmed);
+    if (!/^https?:$/.test(url.protocol)) return "";
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (
+      hostname === "tiktok.com" ||
+      hostname.endsWith(".tiktok.com") ||
+      hostname === "instagram.com" ||
+      hostname.endsWith(".instagram.com") ||
+      hostname === "youtube.com" ||
+      hostname.endsWith(".youtube.com")
+    ) {
+      return "";
+    }
+    return url.toString();
+  } catch {
+    return "";
+  }
 }
 
 function createContactInfoMap(creators: UploadedCreator[], contactsHeader: string) {
