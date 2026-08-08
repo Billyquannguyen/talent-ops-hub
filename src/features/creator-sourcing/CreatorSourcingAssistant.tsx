@@ -59,7 +59,11 @@ import {
   createEmptyContactInfo,
   hasContactInfo,
 } from "./enrichment";
-import { exportPreviewSpreadsheet, parseSpreadsheet } from "./excel";
+import {
+  easyKolDirectBioLinkField,
+  exportPreviewSpreadsheet,
+  parseSpreadsheet,
+} from "./excel";
 import {
   emptyFilters,
   filterCreators,
@@ -866,6 +870,7 @@ export function CreatorSourcingAssistant() {
         headers,
         columnMap,
         mode: "bio-only",
+        includeDirectBioLink: true,
       });
       setHeaders(result.headers);
       setCreators(result.creators);
@@ -879,7 +884,7 @@ export function CreatorSourcingAssistant() {
         ),
       );
       setStatusMessage(
-        `Done. Copied ${result.bioCount.toLocaleString()} full bios into blank Contacts cells. Existing Contacts values were preserved. No AI call used.`,
+        `Done. Copied ${result.bioCount.toLocaleString()} full bios and added ${result.bioLinkCount.toLocaleString()} direct bio links into blank Contacts cells. Existing Contacts values were preserved. No AI call used.`,
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
@@ -2012,7 +2017,7 @@ function BillyScraperSystem({
               ]
             : [
                 "Finding rows without Contacts values...",
-                "Copying complete collected bios and direct profile links without opening them...",
+                "Copying complete collected bios into blank Contacts cells...",
                 "Updating Contacts cells...",
               ];
 
@@ -2037,7 +2042,7 @@ function BillyScraperSystem({
           ? `Done. Added personal-provider emails to ${result.emailCount.toLocaleString()} blank Contacts cells. Existing Contacts values were preserved. No AI call used.`
           : mode === "all-emails"
             ? `Done. Added public emails to ${result.emailCount.toLocaleString()} blank Contacts cells. Existing Contacts values were preserved. No AI call used.`
-            : `Done. Copied ${result.bioCount.toLocaleString()} full bios and added ${result.bioLinkCount.toLocaleString()} direct bio links. Existing Contacts values were preserved and links were appended when available. No AI call used.`,
+            : `Done. Copied ${result.bioCount.toLocaleString()} full bios into blank Contacts cells. Existing Contacts values were preserved. No AI call used.`,
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Contact enrichment failed.");
@@ -2388,7 +2393,7 @@ function BillyScraperSystem({
                         <span>
                           <span className="block text-sm font-medium">Copy Full Bios</span>
                           <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                            Preserve the complete bio and the single direct link shown beneath it.
+                              Preserve the complete bio in blank Contacts cells without AI.
                           </span>
                         </span>
                       </button>
@@ -5156,12 +5161,14 @@ function fillBlankContacts({
   headers,
   columnMap,
   mode,
+  includeDirectBioLink = false,
 }: {
   creators: UploadedCreator[];
   targetCreatorIds: Set<string>;
   headers: string[];
   columnMap: ReturnType<typeof inferColumnMap>;
   mode: ContactFillMode;
+  includeDirectBioLink?: boolean;
 }) {
   const initialized = ensureContactsColumn(
     headers,
@@ -5177,26 +5184,13 @@ function fillBlankContacts({
 
     const emailColumnValue = getCell(data, columnMap, "Email");
     const bio = getCell(data, columnMap, "Description");
-    const bioLink = getDirectBioLink(data, bio);
+    const bioLink =
+      mode === "bio-only" && includeDirectBioLink
+        ? getDirectBioLink(data, bio)
+        : "";
     const existingContacts = stringValue(data[initialized.contactsHeader]).trim();
 
-    if (existingContacts) {
-      const existingIsCopiedBio = Boolean(
-        mode === "bio-only" && bio.trim() && existingContacts === bio.trim(),
-      );
-      if (mode === "bio-only" && bioLink && !existingContacts.includes(bioLink)) {
-        bioLinkCount += 1;
-        return {
-          ...creator,
-          data: {
-            ...data,
-            [initialized.contactsHeader]: `${existingContacts}\n${bioLink}`,
-          },
-        };
-      }
-      if (existingIsCopiedBio) return { ...creator, data };
-      return { ...creator, data };
-    }
+    if (existingContacts) return { ...creator, data };
 
     const discoveredEmails =
       mode === "bio-only"
@@ -5242,12 +5236,22 @@ function fillBlankContacts({
 }
 
 function getDirectBioLink(data: UploadedCreator["data"], fallbackText = ""): string {
+  const preservedHyperlink = normalizeContactUrl(
+    stringValue(data[easyKolDirectBioLinkField]),
+  );
+  if (preservedHyperlink) return preservedHyperlink;
+
   const acceptedHeaders = new Set([
     "bio link",
     "link in bio",
     "external link",
     "external url",
+    "website",
     "website link",
+    "homepage",
+    "linktree",
+    "bio url",
+    "bio link url",
   ]);
 
   for (const [header, value] of Object.entries(data)) {

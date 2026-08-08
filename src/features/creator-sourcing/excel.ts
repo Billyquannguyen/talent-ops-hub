@@ -1,5 +1,7 @@
 import type { CreatorRow } from "./types";
 
+export const easyKolDirectBioLinkField = "__easyKolDirectBioLink";
+
 export async function parseSpreadsheet(
   file: File,
 ): Promise<{ headers: string[]; rows: CreatorRow[]; sheetName: string }> {
@@ -33,13 +35,26 @@ export async function parseSpreadsheet(
 
   const rows = rawRows
     .slice(headerIndex + 1)
-    .filter((row) => row.some((cell) => String(cell ?? "").trim()))
-    .map((row) =>
-      headers.reduce<CreatorRow>((record, header, index) => {
-        record[header] = normalizeCell(row[index]);
-        return record;
-      }, {}),
-    );
+    .map((row, rowOffset) => ({
+      row,
+      worksheetRowNumber: headerIndex + rowOffset + 2,
+    }))
+    .filter(({ row }) => row.some((cell) => String(cell ?? "").trim()))
+    .map(({ row, worksheetRowNumber }) => {
+      const record = headers.reduce<CreatorRow>((nextRecord, header, index) => {
+        nextRecord[header] = normalizeCell(row[index]);
+        return nextRecord;
+      }, {});
+      const directBioLink = findDirectBioHyperlink(
+        worksheet,
+        headers,
+        worksheetRowNumber,
+      );
+      if (directBioLink) {
+        record[easyKolDirectBioLinkField] = directBioLink;
+      }
+      return record;
+    });
 
   return { headers, rows, sheetName };
 }
@@ -71,6 +86,51 @@ export async function exportPreviewSpreadsheet({
 }
 
 type WorkSheet = Record<string, unknown> & { "!cols"?: Array<{ wch: number }> };
+type WorkSheetCell = { l?: { Target?: string } };
+
+function findDirectBioHyperlink(
+  worksheet: WorkSheet,
+  headers: string[],
+  rowNumber: number,
+) {
+  const acceptedHeaders = new Set([
+    "bio link",
+    "link in bio",
+    "external link",
+    "external url",
+    "website",
+    "website link",
+    "homepage",
+    "linktree",
+    "bio url",
+    "bio link url",
+  ]);
+  for (let index = 0; index < headers.length; index += 1) {
+    if (!acceptedHeaders.has(normalizeSpreadsheetHeader(headers[index]))) continue;
+    const cell = worksheet[`${toColumnName(index)}${rowNumber}`] as
+      | WorkSheetCell
+      | undefined;
+    const target = cell?.l?.Target?.trim() ?? "";
+    if (/^https?:\/\//i.test(target)) return target;
+  }
+  return "";
+}
+
+function normalizeSpreadsheetHeader(value: string) {
+  return value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+}
+
+function toColumnName(index: number) {
+  let result = "";
+  for (
+    let value = index + 1;
+    value > 0;
+    value = Math.floor((value - 1) / 26)
+  ) {
+    result = String.fromCharCode(65 + ((value - 1) % 26)) + result;
+  }
+  return result;
+}
 type WorkBook = { SheetNames: string[]; Sheets: Record<string, WorkSheet> };
 type SheetJsModule = {
   read: (buffer: ArrayBuffer, options: Record<string, unknown>) => WorkBook;
