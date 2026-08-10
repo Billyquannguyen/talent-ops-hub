@@ -24,7 +24,7 @@ export const workflowCards: WorkflowCard[] = [
     id: "creator-outreach",
     title: "Creator Outreach Assistant",
     description:
-      "Translate creator messages, apply campaign templates, and copy ready-to-send replies.",
+      "Create personalized Gmail drafts in bulk, translate creator messages, and build ready-to-use replies.",
     status: "ready",
     route: "/creator-outreach",
     icon: MessageSquareText,

@@ -1,61 +1,53 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
-  AlignLeft,
   Bell,
-  Bold,
   CalendarDays,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
   Copy,
-  Italic,
-  Link,
-  List,
-  ListOrdered,
-  MapPin,
-  Minus,
+  Link2,
+  LoaderCircle,
   Plus,
-  Route as RouteIcon,
+  RefreshCw,
   ShieldCheck,
-  TextCursorInput,
-  Trash2,
-  Users,
-  Video,
+  Unplug,
   X,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/calendar")({
   component: EventAssistant,
 });
 
-type CalendarId = "work" | "personal" | "content" | "team";
-type EventOrigin = "assistant" | "external";
+type CalendarId = string;
 type EventKind = "event" | "blocker";
 
 type ConnectedCalendar = {
   id: CalendarId;
   name: string;
   account: string;
-  owner: string;
-  role: string;
   colorClass: string;
   ringClass: string;
-  hex: string;
+  backgroundColor?: string;
+  primary?: boolean;
+  writable?: boolean;
+};
+
+type CalendarConnectionState = {
+  loading: boolean;
+  configured: boolean;
+  connected: boolean;
+  account: string;
+  calendars: ConnectedCalendar[];
+  redirectUri: string;
+  error: string;
 };
 
 type RoutedEvent = {
@@ -65,10 +57,9 @@ type RoutedEvent = {
   start: string;
   end: string;
   calendars: CalendarId[];
-  origin: EventOrigin;
+  origin: "assistant" | "external";
   kind: EventKind;
   source: string;
-  note?: string;
   routed?: boolean;
 };
 
@@ -85,50 +76,37 @@ type QueueItem = {
   note: string;
 };
 
-const connectedCalendars: ConnectedCalendar[] = [
+const demoCalendars: ConnectedCalendar[] = [
   {
     id: "work",
     name: "Work",
     account: "work@company.com",
-    owner: "Billy Quan",
-    role: "Booked calls",
     colorClass: "bg-sky-400",
     ringClass: "ring-sky-400/40",
-    hex: "#38bdf8",
   },
   {
     id: "personal",
     name: "Personal",
     account: "personal@gmail.com",
-    owner: "Personal",
-    role: "Life blockers",
     colorClass: "bg-amber-300",
     ringClass: "ring-amber-300/40",
-    hex: "#fcd34d",
   },
   {
     id: "content",
     name: "Content",
     account: "content@katlas.media",
-    owner: "Content",
-    role: "Shoots and posts",
     colorClass: "bg-emerald-400",
     ringClass: "ring-emerald-400/40",
-    hex: "#34d399",
   },
   {
     id: "team",
     name: "Team Ops",
     account: "ops@katlas.media",
-    owner: "Team Ops",
-    role: "Shared visibility",
     colorClass: "bg-violet-400",
     ringClass: "ring-violet-400/40",
-    hex: "#a78bfa",
   },
 ];
 
-const weekDays = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const today = new Date();
 const todayKey = toDateKey(today);
 
@@ -179,17 +157,6 @@ const seedEvents: RoutedEvent[] = [
     source: "Event Assistant",
     routed: true,
   },
-  {
-    id: "evt-5",
-    title: "Subscribed: Beauty Expo",
-    date: toDateKey(addDays(today, 8)),
-    start: "12:00",
-    end: "13:00",
-    calendars: ["content"],
-    origin: "external",
-    kind: "event",
-    source: "Industry calendar",
-  },
 ];
 
 const seedQueue: QueueItem[] = [
@@ -205,18 +172,6 @@ const seedQueue: QueueItem[] = [
     recommendedTargets: ["personal", "team"],
     note: "External booking found on Work.",
   },
-  {
-    id: "queue-2",
-    sourceEventId: "evt-5",
-    title: "Subscribed: Beauty Expo",
-    sourceCalendarId: "content",
-    date: toDateKey(addDays(today, 8)),
-    start: "12:00",
-    end: "13:00",
-    source: "Industry calendar",
-    recommendedTargets: ["work", "team"],
-    note: "Subscription event may affect campaign planning.",
-  },
 ];
 
 function EventAssistant() {
@@ -225,36 +180,119 @@ function EventAssistant() {
   const [events, setEvents] = useState<RoutedEvent[]>(seedEvents);
   const [queue, setQueue] = useState<QueueItem[]>(seedQueue);
   const [visibleCalendars, setVisibleCalendars] = useState<CalendarId[]>(
-    connectedCalendars.map((calendar) => calendar.id),
+    demoCalendars.map((calendar) => calendar.id),
   );
-  const [title, setTitle] = useState("");
-  const [eventTab, setEventTab] = useState<"details" | "time">("details");
-  const [eventType, setEventType] = useState("Event");
-  const [startDate, setStartDate] = useState(todayKey);
-  const [endDate, setEndDate] = useState(todayKey);
+  const [blockerTitle, setBlockerTitle] = useState("Busy");
+  const [blockerDate, setBlockerDate] = useState(todayKey);
   const [startTime, setStartTime] = useState("13:30");
   const [endTime, setEndTime] = useState("14:30");
   const [allDay, setAllDay] = useState(false);
-  const [repeat, setRepeat] = useState("Does not repeat");
-  const [videoEnabled, setVideoEnabled] = useState(true);
-  const [location, setLocation] = useState("");
-  const [notificationAmount, setNotificationAmount] = useState("30");
-  const [notificationUnit, setNotificationUnit] = useState("minutes");
-  const [calendarOwner, setCalendarOwner] = useState<CalendarId>("work");
-  const [availability, setAvailability] = useState("Busy");
-  const [visibility, setVisibility] = useState("Default visibility");
-  const [description, setDescription] = useState("");
-  const [guests, setGuests] = useState("");
-  const [allowModify, setAllowModify] = useState(false);
-  const [allowInvite, setAllowInvite] = useState(true);
-  const [allowGuestList, setAllowGuestList] = useState(true);
   const [targetCalendars, setTargetCalendars] = useState<CalendarId[]>(["work"]);
   const [queueTargets, setQueueTargets] = useState<Record<string, CalendarId[]>>(() =>
     Object.fromEntries(seedQueue.map((item) => [item.id, item.recommendedTargets])),
   );
-  const [status, setStatus] = useState("Ready to route.");
+  const [status, setStatus] = useState("Ready to protect your time.");
+  const [isCreating, setIsCreating] = useState(false);
+  const [connection, setConnection] = useState<CalendarConnectionState>({
+    loading: true,
+    configured: false,
+    connected: false,
+    account: "",
+    calendars: [],
+    redirectUri: "",
+    error: "",
+  });
 
-  const secondMonth = useMemo(() => addMonths(activeMonth, 1), [activeMonth]);
+  const activeCalendars = connection.connected ? connection.calendars : demoCalendars;
+  const writableCalendars = connection.calendars.filter((calendar) => calendar.writable);
+
+  useEffect(() => {
+    const result = new URLSearchParams(window.location.search).get("calendar");
+    if (result === "denied") setStatus("Google Calendar access was not approved.");
+    if (result === "failed") setStatus("Google Calendar connection failed. Try connecting again.");
+    if (result === "invalid-state") setStatus("The connection expired. Try connecting again.");
+    if (result === "not-configured") setStatus("Google Calendar OAuth setup is still required.");
+    if (result) window.history.replaceState({}, "", window.location.pathname);
+    void loadCalendarConnection();
+  }, []);
+
+  async function loadCalendarConnection() {
+    setConnection((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const response = await fetch("/api/calendar/connection");
+      const body = (await response.json()) as {
+        configured?: boolean;
+        connected?: boolean;
+        account?: string;
+        calendars?: Array<{
+          id: string;
+          name: string;
+          account: string;
+          primary: boolean;
+          writable: boolean;
+          backgroundColor: string;
+        }>;
+        redirectUri?: string;
+        error?: string;
+      };
+      const calendars = (body.calendars ?? []).map(
+        (calendar) =>
+          ({
+            ...calendar,
+            colorClass: "bg-blue-400",
+            ringClass: "ring-blue-400/40",
+          }) satisfies ConnectedCalendar,
+      );
+      const nextConnection: CalendarConnectionState = {
+        loading: false,
+        configured: Boolean(body.configured),
+        connected: Boolean(body.connected),
+        account: body.account ?? "",
+        calendars,
+        redirectUri: body.redirectUri ?? "",
+        error: body.error ?? (response.ok ? "" : "Could not load the calendar connection."),
+      };
+      setConnection(nextConnection);
+
+      if (nextConnection.connected) {
+        const writable = calendars.filter((calendar) => calendar.writable);
+        const defaultCalendar = writable.find((calendar) => calendar.primary) ?? writable[0];
+        setVisibleCalendars(calendars.map((calendar) => calendar.id));
+        setTargetCalendars(defaultCalendar ? [defaultCalendar.id] : []);
+        setStatus(`Connected ${nextConnection.account || "Google Calendar"}.`);
+      }
+    } catch (error) {
+      setConnection((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "Could not load the calendar connection.",
+      }));
+    }
+  }
+
+  async function disconnectGoogleCalendar() {
+    setConnection((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      await fetch("/api/calendar/connection", { method: "DELETE" });
+      setConnection((current) => ({
+        ...current,
+        loading: false,
+        connected: false,
+        account: "",
+        calendars: [],
+      }));
+      setVisibleCalendars(demoCalendars.map((calendar) => calendar.id));
+      setTargetCalendars([]);
+      setStatus("Google Calendar disconnected.");
+    } catch (error) {
+      setConnection((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "Could not disconnect Google Calendar.",
+      }));
+    }
+  }
+
   const selectedDayEvents = useMemo(
     () =>
       events
@@ -266,14 +304,11 @@ function EventAssistant() {
     [events, selectedDate, visibleCalendars],
   );
 
-  const routedCount = events.filter((event) => event.routed).length;
   const blockerCount = events.filter((event) => event.kind === "blocker").length;
-  const currentCalendar = getCalendar(calendarOwner);
 
   function selectDate(dateKey: string) {
     setSelectedDate(dateKey);
-    setStartDate(dateKey);
-    setEndDate(dateKey);
+    setBlockerDate(dateKey);
   }
 
   function toggleVisibleCalendar(calendarId: CalendarId) {
@@ -304,47 +339,74 @@ function EventAssistant() {
     });
   }
 
-  function saveEvent(event: React.FormEvent<HTMLFormElement>) {
+  async function createBlocker(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const finalTargets = targetCalendars.includes(calendarOwner)
-      ? targetCalendars
-      : [calendarOwner, ...targetCalendars];
-    const eventTitle = title.trim() || "Untitled event";
-
-    if (finalTargets.length === 0) {
+    if (!connection.connected) {
+      setStatus("Connect Google Calendar first.");
+      return;
+    }
+    if (targetCalendars.length === 0) {
       setStatus("Choose at least one calendar.");
       return;
     }
+    if (!allDay && startTime >= endTime) {
+      setStatus("End time must be after start time.");
+      return;
+    }
 
-    const nextEvent: RoutedEvent = {
-      id: `evt-${crypto.randomUUID()}`,
-      title: eventTitle,
-      date: startDate,
-      start: allDay ? "All day" : startTime,
-      end: allDay ? "All day" : endTime,
-      calendars: finalTargets,
-      origin: "assistant",
-      kind: eventType === "Private blocker" ? "blocker" : "event",
-      source: "Event Assistant",
-      note: description.trim() || undefined,
-      routed: true,
-    };
+    const title = blockerTitle.trim() || "Busy";
+    setIsCreating(true);
+    setStatus("Creating blocker in Google Calendar...");
+    try {
+      const response = await fetch("/api/calendar/connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create-blocker",
+          calendarIds: targetCalendars,
+          title,
+          date: blockerDate,
+          startTime,
+          endTime,
+          allDay,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        }),
+      });
+      const body = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !body.ok) throw new Error(body.error || "Blocker creation failed.");
 
-    setEvents((current) => [...current, nextEvent]);
-    setSelectedDate(startDate);
-    setActiveMonth(startOfMonth(parseDateKey(startDate)));
-    setTitle("");
-    setDescription("");
-    setGuests("");
-    setStatus(
-      `${eventTitle} saved to ${finalTargets.length} calendar${finalTargets.length > 1 ? "s" : ""}.`,
-    );
+      setEvents((current) => [
+        ...current,
+        {
+          id: `evt-${crypto.randomUUID()}`,
+          title,
+          date: blockerDate,
+          start: allDay ? "All day" : startTime,
+          end: allDay ? "All day" : endTime,
+          calendars: targetCalendars,
+          origin: "assistant",
+          kind: "blocker",
+          source: "Google Calendar",
+          routed: true,
+        },
+      ]);
+      setSelectedDate(blockerDate);
+      setActiveMonth(startOfMonth(parseDateKey(blockerDate)));
+      setBlockerTitle("Busy");
+      setStatus(
+        `${title} blocked on ${targetCalendars.length} calendar${targetCalendars.length > 1 ? "s" : ""}.`,
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Blocker creation failed.");
+    } finally {
+      setIsCreating(false);
+    }
   }
 
   function routeQueueItem(item: QueueItem, mode: EventKind) {
     const targets = queueTargets[item.id] ?? [];
     if (targets.length === 0) {
-      setStatus("Choose at least one target calendar for the queue item.");
+      setStatus("Choose at least one target calendar.");
       return;
     }
 
@@ -352,11 +414,7 @@ function EventAssistant() {
       setEvents((current) =>
         current.map((event) =>
           event.id === item.sourceEventId
-            ? {
-                ...event,
-                calendars: mergeCalendarIds(event.calendars, targets),
-                routed: true,
-              }
+            ? { ...event, calendars: mergeCalendarIds(event.calendars, targets), routed: true }
             : event,
         ),
       );
@@ -365,7 +423,7 @@ function EventAssistant() {
         ...current,
         {
           id: `evt-${crypto.randomUUID()}`,
-          title: `Blocked: ${item.title}`,
+          title: `Busy`,
           date: item.date,
           start: item.start,
           end: item.end,
@@ -373,7 +431,6 @@ function EventAssistant() {
           origin: "assistant",
           kind: "blocker",
           source: `${item.source} review`,
-          note: `Created from ${item.title}`,
           routed: true,
         },
       ]);
@@ -393,36 +450,42 @@ function EventAssistant() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <TopBar />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-hero-glow" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-hero-glow" />
 
-      <main className="katlas-page max-w-[1500px] gap-5 py-5">
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="rounded-lg border border-border/80 bg-[#050607]/88 p-4 shadow-[0_24px_100px_rgba(0,0,0,0.28)] backdrop-blur-xl md:p-6">
-            <div className="flex flex-col gap-4 border-b border-border/70 pb-4 lg:flex-row lg:items-center lg:justify-between">
+      <main className="katlas-page max-w-[1400px] gap-4 py-5">
+        <header className="katlas-panel flex flex-col gap-4 rounded-lg p-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="grid size-9 place-items-center rounded-lg bg-blue-600 text-white">
+              <CalendarDays className="size-4" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight">Event Assistant</h1>
+              <p className="text-xs text-muted-foreground">
+                Protect your time and route outside bookings.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <StatusPill
+              label="Connected"
+              value={connection.connected ? connection.calendars.length.toString() : "0"}
+            />
+            <StatusPill label="Needs review" value={queue.length.toString()} tone="amber" />
+            <StatusPill label="Blockers" value={blockerCount.toString()} tone="emerald" />
+          </div>
+        </header>
+
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="katlas-panel rounded-lg p-4">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-3">
-                  <div className="grid size-10 place-items-center rounded-lg bg-blue-600 text-white shadow-[0_0_34px_rgba(37,99,235,0.28)]">
-                    <CalendarDays className="size-5" />
-                  </div>
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                      Event Assistant
-                    </p>
-                    <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
-                      Calendar Planner
-                    </h1>
-                  </div>
-                </div>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  Select a date, review routed events, and send new meetings to the calendars that
-                  need them.
-                </p>
+                <h2 className="text-base font-semibold">{formatMonth(activeMonth)}</h2>
+                <p className="text-xs text-muted-foreground">Select a day to create a blocker.</p>
               </div>
-
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="icon"
                   aria-label="Previous month"
                   onClick={() => setActiveMonth(addMonths(activeMonth, -1))}
@@ -442,7 +505,7 @@ function EventAssistant() {
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="icon"
                   aria-label="Next month"
                   onClick={() => setActiveMonth(addMonths(activeMonth, 1))}
@@ -452,508 +515,217 @@ function EventAssistant() {
               </div>
             </div>
 
-            <div className="mt-6 rounded-2xl border border-border/80 bg-black/28 p-4 shadow-inner md:p-6">
+            <MonthGrid
+              month={activeMonth}
+              selectedDate={selectedDate}
+              events={events}
+              visibleCalendars={visibleCalendars}
+              calendars={activeCalendars}
+              onSelectDate={selectDate}
+            />
+
+            <div className="mt-4 border-t border-border/70 pt-4">
               <div className="flex items-center justify-between gap-3">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Previous month"
-                  onClick={() => setActiveMonth(addMonths(activeMonth, -1))}
-                  className="rounded-full"
-                >
-                  <ChevronLeft className="size-5" />
-                </Button>
-                <h2 className="text-center text-xl font-semibold tracking-tight">
-                  {formatMonth(activeMonth)}
-                </h2>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Next month"
-                  onClick={() => setActiveMonth(addMonths(activeMonth, 1))}
-                  className="rounded-full"
-                >
-                  <ChevronRight className="size-5" />
-                </Button>
+                <div>
+                  <h3 className="text-sm font-semibold">
+                    {formatFullDate(parseDateKey(selectedDate))}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedDayEvents.length} visible item
+                    {selectedDayEvents.length === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <Clock className="size-4 text-muted-foreground" />
               </div>
-
-              <div className="mt-7 grid gap-6 lg:grid-cols-2">
-                <LargeMonth
-                  month={activeMonth}
-                  selectedDate={selectedDate}
-                  events={events}
-                  visibleCalendars={visibleCalendars}
-                  onSelectDate={selectDate}
-                />
-                <LargeMonth
-                  month={secondMonth}
-                  selectedDate={selectedDate}
-                  events={events}
-                  visibleCalendars={visibleCalendars}
-                  onSelectDate={selectDate}
-                />
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {selectedDayEvents.length ? (
+                  selectedDayEvents.map((event) => (
+                    <EventCard key={event.id} event={event} calendars={activeCalendars} />
+                  ))
+                ) : (
+                  <div className="rounded-lg border border-dashed border-border/70 px-3 py-4 text-sm text-muted-foreground sm:col-span-2 xl:col-span-3">
+                    Nothing scheduled on the visible calendars.
+                  </div>
+                )}
               </div>
-
-              <p className="mt-6 text-center text-xs font-medium text-muted-foreground">
-                Minimal planner view - built for calendar routing
-              </p>
             </div>
           </div>
 
-          <aside className="grid gap-4">
-            <div className="katlas-panel rounded-lg">
-              <div className="grid grid-cols-3 gap-2">
-                <MetricCard label="Connected" value={connectedCalendars.length.toString()} />
-                <MetricCard label="Queue" value={queue.length.toString()} tone="amber" />
-                <MetricCard label="Routed" value={routedCount.toString()} tone="emerald" />
+          <aside className="grid content-start gap-4">
+            <CalendarConnectionCard
+              connection={connection}
+              onRefresh={() => void loadCalendarConnection()}
+              onDisconnect={() => void disconnectGoogleCalendar()}
+            />
+
+            <form onSubmit={createBlocker} className="katlas-panel rounded-lg p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold">Create blocker</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Details stay private. Only “busy” time is shared.
+                  </p>
+                </div>
+                <div className="katlas-panel-icon rounded-md">
+                  <ShieldCheck className="size-4" />
+                </div>
               </div>
-              <div className="mt-4 space-y-2">
-                {connectedCalendars.map((calendar) => {
+
+              <div className="mt-4 space-y-3">
+                <label className="block text-xs font-medium text-muted-foreground">
+                  Label
+                  <Input
+                    className="mt-1 bg-background/70"
+                    value={blockerTitle}
+                    onChange={(event) => setBlockerTitle(event.target.value)}
+                    placeholder="Busy"
+                  />
+                </label>
+
+                <label className="block text-xs font-medium text-muted-foreground">
+                  Date
+                  <Input
+                    className="mt-1 bg-background/70"
+                    type="date"
+                    value={blockerDate}
+                    onChange={(event) => {
+                      setBlockerDate(event.target.value);
+                      setSelectedDate(event.target.value);
+                    }}
+                  />
+                </label>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block text-xs font-medium text-muted-foreground">
+                    Starts
+                    <Input
+                      className="mt-1 bg-background/70"
+                      type="time"
+                      value={startTime}
+                      disabled={allDay}
+                      onChange={(event) => setStartTime(event.target.value)}
+                    />
+                  </label>
+                  <label className="block text-xs font-medium text-muted-foreground">
+                    Ends
+                    <Input
+                      className="mt-1 bg-background/70"
+                      type="time"
+                      value={endTime}
+                      disabled={allDay}
+                      onChange={(event) => setEndTime(event.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={allDay}
+                    onChange={(event) => setAllDay(event.target.checked)}
+                    className="size-4 accent-primary"
+                  />
+                  Block the full day
+                </label>
+
+                <fieldset>
+                  <legend className="text-xs font-medium text-muted-foreground">Block on</legend>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {writableCalendars.map((calendar) => {
+                      const selected = targetCalendars.includes(calendar.id);
+                      return (
+                        <button
+                          key={calendar.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => toggleTargetCalendar(calendar.id)}
+                          className={cn(
+                            "flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            selected
+                              ? "border-ring/50 bg-accent/55"
+                              : "border-border/70 bg-background/35 text-muted-foreground hover:bg-accent/25",
+                          )}
+                        >
+                          <CalendarColor calendar={calendar} />
+                          <span className="truncate">{calendar.name}</span>
+                          {selected ? <Check className="ml-auto size-3.5" /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {!connection.connected ? (
+                    <p className="mt-2 text-xs text-amber-200/80">
+                      Connect Google Calendar to choose where the blocker should go.
+                    </p>
+                  ) : null}
+                </fieldset>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={!connection.connected || isCreating || writableCalendars.length === 0}
+                >
+                  {isCreating ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : (
+                    <Plus className="size-4" />
+                  )}
+                  {connection.connected ? "Create blocker" : "Connect calendar first"}
+                </Button>
+                <p aria-live="polite" className="min-h-4 text-xs text-muted-foreground">
+                  {status}
+                </p>
+              </div>
+            </form>
+
+            <div className="katlas-panel rounded-lg p-4">
+              <h2 className="text-sm font-semibold">Visible calendars</h2>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {activeCalendars.map((calendar) => {
                   const selected = visibleCalendars.includes(calendar.id);
                   return (
                     <button
                       key={calendar.id}
                       type="button"
+                      aria-pressed={selected}
                       onClick={() => toggleVisibleCalendar(calendar.id)}
                       className={cn(
-                        "flex w-full cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 text-left transition",
+                        "flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         selected
-                          ? "border-ring/40 bg-background/70"
-                          : "border-border/70 bg-background/35 opacity-60 hover:opacity-100",
+                          ? "border-border bg-background/65"
+                          : "border-border/60 bg-background/25 opacity-55",
                       )}
                     >
-                      <span
-                        className={cn(
-                          "size-2.5 shrink-0 rounded-full ring-4",
-                          calendar.colorClass,
-                          calendar.ringClass,
-                        )}
-                      />
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium">{calendar.name}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {calendar.account}
-                        </span>
-                      </span>
-                      {selected ? <Check className="ml-auto size-4 text-muted-foreground" /> : null}
+                      <CalendarColor calendar={calendar} ring />
+                      <span className="truncate">{calendar.name}</span>
+                      {selected ? <Check className="ml-auto size-3.5" /> : null}
                     </button>
                   );
                 })}
               </div>
             </div>
-
-            <div className="katlas-panel rounded-lg">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold tracking-tight">Selected day</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {formatFullDate(parseDateKey(selectedDate))}
-                  </p>
-                </div>
-                <Clock className="size-4 text-muted-foreground" />
-              </div>
-              <div className="mt-4 space-y-2">
-                {selectedDayEvents.length > 0 ? (
-                  selectedDayEvents.map((event) => (
-                    <SelectedEventCard key={event.id} event={event} />
-                  ))
-                ) : (
-                  <div className="rounded-lg border border-dashed border-border/70 bg-background/35 p-4 text-sm text-muted-foreground">
-                    No visible events.
-                  </div>
-                )}
-              </div>
-            </div>
           </aside>
         </section>
 
-        <form
-          onSubmit={saveEvent}
-          className="rounded-2xl border border-border/80 bg-[#f7f9fd] p-0 text-[#202124] shadow-[0_24px_100px_rgba(0,0,0,0.26)]"
-        >
-          <div className="flex flex-col gap-4 border-b border-[#e2e6ef] px-5 py-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex min-w-0 flex-1 items-start gap-4">
-              <button
-                type="button"
-                aria-label="Clear title"
-                onClick={() => setTitle("")}
-                className="mt-3 grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-[#5f6368] transition hover:bg-[#e8eef8]"
-              >
-                <X className="size-5" />
-              </button>
-              <label className="min-w-0 flex-1">
-                <span className="sr-only">Event title</span>
-                <Input
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Add title"
-                  className="h-14 rounded-none border-0 border-b-4 border-[#1a73e8] bg-transparent px-0 text-3xl font-normal text-[#202124] shadow-none placeholder:text-[#3c4043] focus-visible:ring-0"
-                />
-              </label>
-            </div>
-            <Button
-              type="submit"
-              className="h-11 rounded-full bg-[#0b57d0] px-8 text-sm font-semibold text-white hover:bg-[#174ea6]"
-            >
-              Save
-            </Button>
-          </div>
-
-          <div className="grid gap-8 px-6 py-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <div className="space-y-5">
-              <div className="flex flex-wrap items-center gap-3 pl-10">
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => {
-                    setStartDate(event.target.value);
-                    setEndDate(event.target.value);
-                    setSelectedDate(event.target.value);
-                    setActiveMonth(startOfMonth(parseDateKey(event.target.value)));
-                  }}
-                  className="h-12 rounded-md border-0 bg-[#e9eef6] px-4 text-sm text-[#202124] outline-none"
-                />
-                <input
-                  type="time"
-                  value={startTime}
-                  disabled={allDay}
-                  onChange={(event) => setStartTime(event.target.value)}
-                  className="h-12 rounded-md border-0 bg-[#e9eef6] px-4 text-sm text-[#202124] outline-none disabled:opacity-50"
-                />
-                <span className="text-sm text-[#3c4043]">to</span>
-                <input
-                  type="time"
-                  value={endTime}
-                  disabled={allDay}
-                  onChange={(event) => setEndTime(event.target.value)}
-                  className="h-12 rounded-md border-0 bg-[#e9eef6] px-4 text-sm text-[#202124] outline-none disabled:opacity-50"
-                />
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  className="h-12 rounded-md border-0 bg-[#e9eef6] px-4 text-sm text-[#202124] outline-none"
-                />
-                <button
-                  type="button"
-                  className="h-10 rounded-md px-3 text-sm font-semibold text-[#0b57d0] transition hover:bg-[#e8f0fe]"
-                >
-                  Time zone
-                </button>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3 pl-10">
-                <label className="inline-flex cursor-pointer items-center gap-3 text-sm text-[#3c4043]">
-                  <input
-                    type="checkbox"
-                    checked={allDay}
-                    onChange={(event) => setAllDay(event.target.checked)}
-                    className="size-5 accent-[#0b57d0]"
-                  />
-                  All day
-                </label>
-                <Select value={repeat} onValueChange={setRepeat}>
-                  <SelectTrigger className="h-12 w-[220px] border-0 bg-[#e9eef6] text-[#202124] shadow-none">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Does not repeat">Does not repeat</SelectItem>
-                    <SelectItem value="Daily">Daily</SelectItem>
-                    <SelectItem value="Weekly on this day">Weekly on this day</SelectItem>
-                    <SelectItem value="Monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="rounded-3xl bg-white p-5 shadow-[0_18px_60px_rgba(60,64,67,0.12)]">
-                <div className="flex border-b border-[#dadce0] text-sm font-medium">
-                  <button
-                    type="button"
-                    onClick={() => setEventTab("details")}
-                    className={cn(
-                      "relative px-3 pb-4 text-[#3c4043]",
-                      eventTab === "details" && "text-[#0b57d0]",
-                    )}
-                  >
-                    Event details
-                    {eventTab === "details" ? (
-                      <span className="absolute inset-x-0 bottom-0 h-1 rounded-t-full bg-[#0b57d0]" />
-                    ) : null}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEventTab("time")}
-                    className={cn(
-                      "relative px-5 pb-4 text-[#3c4043]",
-                      eventTab === "time" && "text-[#0b57d0]",
-                    )}
-                  >
-                    Find a time
-                    {eventTab === "time" ? (
-                      <span className="absolute inset-x-0 bottom-0 h-1 rounded-t-full bg-[#0b57d0]" />
-                    ) : null}
-                  </button>
-                </div>
-
-                {eventTab === "details" ? (
-                  <div className="mt-5 space-y-4">
-                    <EditorRow icon={<Video className="size-5 text-[#fbbc04]" />}>
-                      <button
-                        type="button"
-                        onClick={() => setVideoEnabled((current) => !current)}
-                        className={cn(
-                          "w-full rounded-md px-4 py-3 text-left text-sm transition",
-                          videoEnabled
-                            ? "bg-[#e8f0fe] text-[#0b57d0]"
-                            : "bg-transparent text-[#3c4043]",
-                        )}
-                      >
-                        {videoEnabled ? "Video conferencing added" : "Add video conferencing"}
-                      </button>
-                    </EditorRow>
-
-                    <EditorRow icon={<MapPin className="size-5 text-[#5f6368]" />}>
-                      <Input
-                        value={location}
-                        onChange={(event) => setLocation(event.target.value)}
-                        placeholder="Add location"
-                        className="h-12 border-0 bg-[#e9eef6] text-[#202124] shadow-none placeholder:text-[#5f6368] focus-visible:ring-1 focus-visible:ring-[#1a73e8]"
-                      />
-                    </EditorRow>
-
-                    <EditorRow icon={<Bell className="size-5 text-[#5f6368]" />}>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Select value="Notification">
-                          <SelectTrigger className="h-12 w-[180px] border-0 bg-[#e9eef6] text-[#202124] shadow-none">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Notification">Notification</SelectItem>
-                            <SelectItem value="Email">Email</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          value={notificationAmount}
-                          onChange={(event) => setNotificationAmount(event.target.value)}
-                          className="h-12 w-24 border-0 bg-[#e9eef6] text-[#202124] shadow-none"
-                        />
-                        <Select value={notificationUnit} onValueChange={setNotificationUnit}>
-                          <SelectTrigger className="h-12 w-[150px] border-0 bg-[#e9eef6] text-[#202124] shadow-none">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="minutes">minutes</SelectItem>
-                            <SelectItem value="hours">hours</SelectItem>
-                            <SelectItem value="days">days</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <button
-                          type="button"
-                          className="grid size-10 cursor-pointer place-items-center rounded-full text-[#5f6368] transition hover:bg-[#eef2f7]"
-                          aria-label="Remove notification"
-                        >
-                          <X className="size-5" />
-                        </button>
-                      </div>
-                    </EditorRow>
-
-                    <EditorRow icon={<CalendarDays className="size-5 text-[#5f6368]" />}>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Select
-                          value={calendarOwner}
-                          onValueChange={(value) => {
-                            const nextCalendar = value as CalendarId;
-                            setCalendarOwner(nextCalendar);
-                            if (!targetCalendars.includes(nextCalendar)) {
-                              setTargetCalendars((current) => [...current, nextCalendar]);
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="h-12 w-[180px] border-0 bg-transparent text-[#202124] shadow-none">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {connectedCalendars.map((calendar) => (
-                              <SelectItem key={calendar.id} value={calendar.id}>
-                                {calendar.owner}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <button
-                          type="button"
-                          className="inline-flex h-12 cursor-pointer items-center gap-3 rounded-md bg-[#e9eef6] px-4 text-sm text-[#202124]"
-                        >
-                          <span
-                            className="size-5 rounded-full"
-                            style={{ backgroundColor: currentCalendar.hex }}
-                          />
-                          <ChevronDown className="size-4 text-[#5f6368]" />
-                        </button>
-                      </div>
-                    </EditorRow>
-
-                    <EditorRow icon={<TextCursorInput className="size-5 text-[#5f6368]" />}>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <Select value={availability} onValueChange={setAvailability}>
-                          <SelectTrigger className="h-12 border-0 bg-[#e9eef6] text-[#202124] shadow-none">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Busy">Busy</SelectItem>
-                            <SelectItem value="Free">Free</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Select value={visibility} onValueChange={setVisibility}>
-                          <SelectTrigger className="h-12 border-0 bg-[#e9eef6] text-[#202124] shadow-none">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Default visibility">Default visibility</SelectItem>
-                            <SelectItem value="Public">Public</SelectItem>
-                            <SelectItem value="Private">Private</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </EditorRow>
-
-                    <EditorRow icon={<AlignLeft className="size-5 text-[#5f6368]" />}>
-                      <div className="rounded-md bg-[#e9eef6]">
-                        <div className="flex flex-wrap items-center gap-1 border-b border-[#d2d8e2] px-3 py-2 text-[#3c4043]">
-                          <IconButton label="Attach file" icon={<RouteIcon className="size-4" />} />
-                          <IconButton label="Bold" icon={<Bold className="size-4" />} />
-                          <IconButton label="Italic" icon={<Italic className="size-4" />} />
-                          <IconButton label="Underline" icon={<Minus className="size-4" />} />
-                          <IconButton
-                            label="Numbered list"
-                            icon={<ListOrdered className="size-4" />}
-                          />
-                          <IconButton label="Bulleted list" icon={<List className="size-4" />} />
-                          <IconButton label="Link" icon={<Link className="size-4" />} />
-                          <IconButton
-                            label="Remove formatting"
-                            icon={<Trash2 className="size-4" />}
-                          />
-                        </div>
-                        <textarea
-                          value={description}
-                          onChange={(event) => setDescription(event.target.value)}
-                          placeholder="Add description"
-                          className="min-h-[210px] w-full resize-y rounded-b-md border-0 bg-transparent px-4 py-4 text-sm text-[#202124] outline-none placeholder:text-[#5f6368]"
-                        />
-                      </div>
-                    </EditorRow>
-                  </div>
-                ) : (
-                  <div className="mt-5 rounded-lg border border-[#dadce0] bg-[#f8fafd] p-5 text-sm text-[#5f6368]">
-                    Availability preview will compare selected calendars once Google accounts are
-                    connected.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <aside className="space-y-5">
-              <div>
-                <h3 className="border-b-2 border-[#dadce0] pb-4 text-sm font-semibold text-[#0b57d0]">
-                  Guests
-                </h3>
-                <Input
-                  value={guests}
-                  onChange={(event) => setGuests(event.target.value)}
-                  placeholder="Add guests"
-                  className="mt-4 h-12 border-0 bg-[#e9eef6] text-[#202124] shadow-none placeholder:text-[#5f6368]"
-                />
-              </div>
-
-              <div>
-                <p className="text-sm font-medium text-[#202124]">Guest permissions</p>
-                <div className="mt-4 space-y-4">
-                  <PermissionCheck
-                    label="Modify event"
-                    checked={allowModify}
-                    onChange={setAllowModify}
-                  />
-                  <PermissionCheck
-                    label="Invite others"
-                    checked={allowInvite}
-                    onChange={setAllowInvite}
-                  />
-                  <PermissionCheck
-                    label="See guest list"
-                    checked={allowGuestList}
-                    onChange={setAllowGuestList}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-[#e0e5ee] bg-white p-4">
-                <div className="flex items-center gap-2">
-                  <Users className="size-4 text-[#5f6368]" />
-                  <h3 className="text-sm font-semibold text-[#202124]">Put on calendars</h3>
-                </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                  {connectedCalendars.map((calendar) => {
-                    const selected = targetCalendars.includes(calendar.id);
-                    return (
-                      <button
-                        key={calendar.id}
-                        type="button"
-                        onClick={() => toggleTargetCalendar(calendar.id)}
-                        className={cn(
-                          "flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition",
-                          selected
-                            ? "border-[#1a73e8]/50 bg-[#e8f0fe] text-[#202124]"
-                            : "border-[#e0e5ee] bg-white text-[#5f6368] hover:bg-[#f2f6fc]",
-                        )}
-                      >
-                        <span
-                          className={cn("size-2.5 shrink-0 rounded-full", calendar.colorClass)}
-                        />
-                        <span className="min-w-0 truncate">{calendar.name}</span>
-                        {selected ? <Check className="ml-auto size-4 text-[#0b57d0]" /> : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-[#e0e5ee] bg-white p-4">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="size-4 text-[#0b57d0]" />
-                  <h3 className="text-sm font-semibold text-[#202124]">Routing status</h3>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-[#5f6368]">{status}</p>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#5f6368]">
-                  <span className="rounded-md bg-[#f1f4f9] px-3 py-2">{queue.length} pending</span>
-                  <span className="rounded-md bg-[#f1f4f9] px-3 py-2">{blockerCount} blockers</span>
-                </div>
-              </div>
-            </aside>
-          </div>
-        </form>
-
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="katlas-panel rounded-lg">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="katlas-panel rounded-lg p-4">
+            <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
                   <Bell className="size-4 text-amber-200" />
-                  <h2 className="text-base font-semibold tracking-tight">Notification queue</h2>
+                  <h2 className="text-base font-semibold">Needs your attention</h2>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Outside events waiting for a routing decision.
+                  Outside bookings waiting for a routing decision.
                 </p>
               </div>
-              <span className="w-fit rounded-full border border-border/70 bg-background/50 px-3 py-1 text-xs text-muted-foreground">
+              <span className="rounded-full border border-border/70 bg-background/50 px-3 py-1 text-xs text-muted-foreground">
                 {queue.length} pending
               </span>
             </div>
 
             <div className="mt-4 grid gap-3 xl:grid-cols-2">
-              {queue.length > 0 ? (
+              {queue.length ? (
                 queue.map((item) => (
                   <QueueCard
                     key={item.id}
@@ -966,22 +738,21 @@ function EventAssistant() {
                   />
                 ))
               ) : (
-                <div className="rounded-lg border border-dashed border-border/70 bg-background/35 p-5 text-sm text-muted-foreground xl:col-span-2">
-                  Queue cleared.
+                <div className="rounded-lg border border-dashed border-border/70 p-5 text-sm text-muted-foreground xl:col-span-2">
+                  All caught up.
                 </div>
               )}
             </div>
           </div>
 
-          <div className="katlas-panel rounded-lg">
+          <div className="katlas-panel rounded-lg p-4">
             <div className="flex items-center gap-2">
               <ShieldCheck className="size-4 text-emerald-200" />
-              <h2 className="text-base font-semibold tracking-tight">Routing health</h2>
+              <h2 className="text-sm font-semibold">Routing health</h2>
             </div>
             <div className="mt-4 space-y-3">
-              <HealthRow label="External events" value={queue.length ? "Needs review" : "Clear"} />
+              <HealthRow label="Outside bookings" value={queue.length ? "Review" : "Clear"} />
               <HealthRow label="Private blockers" value={blockerCount.toString()} />
-              <HealthRow label="Last action" value={status} />
             </div>
           </div>
         </section>
@@ -990,203 +761,184 @@ function EventAssistant() {
   );
 }
 
-function LargeMonth({
+function CalendarConnectionCard({
+  connection,
+  onRefresh,
+  onDisconnect,
+}: {
+  connection: CalendarConnectionState;
+  onRefresh: () => void;
+  onDisconnect: () => void;
+}) {
+  return (
+    <section className="katlas-panel rounded-lg p-4">
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "grid size-9 shrink-0 place-items-center rounded-lg",
+            connection.connected
+              ? "bg-emerald-400/15 text-emerald-200"
+              : "bg-blue-500/15 text-blue-200",
+          )}
+        >
+          {connection.loading ? (
+            <LoaderCircle className="size-4 animate-spin" />
+          ) : connection.connected ? (
+            <Check className="size-4" />
+          ) : (
+            <Link2 className="size-4" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold">Google Calendar</h2>
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            {connection.loading
+              ? "Checking connection..."
+              : connection.connected
+                ? connection.account || "Connected"
+                : connection.configured
+                  ? "Ready to connect"
+                  : "OAuth setup required"}
+          </p>
+        </div>
+        {connection.connected ? (
+          <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-1 text-[10px] font-medium text-emerald-100">
+            Connected
+          </span>
+        ) : null}
+      </div>
+
+      {connection.error ? (
+        <p className="mt-3 rounded-md border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-100">
+          {connection.error}
+        </p>
+      ) : null}
+
+      {!connection.loading && !connection.configured ? (
+        <div className="mt-3 rounded-md border border-amber-400/20 bg-amber-400/10 p-3">
+          <p className="text-xs leading-5 text-amber-100/90">
+            Add the four Google Calendar variables from <code>.env.example</code>, then register
+            this redirect URI in Google Cloud:
+          </p>
+          <code className="mt-2 block break-all rounded bg-black/25 px-2 py-1.5 text-[10px] text-amber-50">
+            {connection.redirectUri}
+          </code>
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex gap-2">
+        {connection.connected ? (
+          <>
+            <Button type="button" size="sm" variant="outline" onClick={onRefresh}>
+              <RefreshCw className="size-3.5" />
+              Refresh
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={onDisconnect}>
+              <Unplug className="size-3.5" />
+              Disconnect
+            </Button>
+          </>
+        ) : connection.configured ? (
+          <Button asChild size="sm" className="w-full">
+            <a href="/api/calendar/oauth/start">
+              <Link2 className="size-3.5" />
+              Connect Google Calendar
+            </a>
+          </Button>
+        ) : (
+          <Button type="button" size="sm" className="w-full" disabled>
+            Setup required
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MonthGrid({
   month,
   selectedDate,
   events,
   visibleCalendars,
+  calendars,
   onSelectDate,
 }: {
   month: Date;
   selectedDate: string;
   events: RoutedEvent[];
   visibleCalendars: CalendarId[];
+  calendars: ConnectedCalendar[];
   onSelectDate: (dateKey: string) => void;
 }) {
-  const monthDays = buildVisibleMonthGrid(month);
-
+  const days = buildVisibleMonthGrid(month);
   return (
-    <section>
-      <h3 className="text-center text-lg font-semibold tracking-tight">{formatMonth(month)}</h3>
-      <div className="mt-5 grid grid-cols-7 gap-2 text-center text-sm font-semibold text-muted-foreground">
-        {weekDays.map((day) => (
+    <div className="mt-4">
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
           <div key={day}>{day}</div>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-7 gap-2">
-        {monthDays.map((day, index) => {
-          if (!day)
-            return <div key={`empty-${month.getMonth()}-${index}`} className="h-16 sm:h-[72px]" />;
-
+      <div className="mt-2 grid grid-cols-7 gap-1">
+        {days.map((day, index) => {
+          if (!day) return <div key={`empty-${index}`} className="h-12 sm:h-14" />;
           const key = toDateKey(day);
-          const dayEvents = events
-            .filter((event) => event.date === key)
-            .filter((event) =>
+          const dayEvents = events.filter(
+            (event) =>
+              event.date === key &&
               event.calendars.some((calendarId) => visibleCalendars.includes(calendarId)),
-            )
-            .sort(sortByStart);
+          );
           const selected = selectedDate === key;
           const isToday = key === todayKey;
-
           return (
             <button
               key={key}
               type="button"
               onClick={() => onSelectDate(key)}
               className={cn(
-                "h-16 cursor-pointer rounded-lg border border-border/75 bg-black/30 p-2 text-left transition hover:border-ring/50 hover:bg-accent/25 sm:h-[72px]",
-                selected && "border-ring/60 bg-accent/45 shadow-[0_0_0_1px_var(--ring)]",
+                "flex h-12 cursor-pointer flex-col items-center justify-center rounded-md border border-transparent text-xs transition hover:border-border hover:bg-accent/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-14",
+                selected && "border-ring/60 bg-accent/55",
               )}
             >
-              <span className="flex h-full flex-col items-center justify-center gap-1 text-center">
-                <span
-                  className={cn(
-                    "grid size-8 place-items-center rounded-full text-lg font-semibold",
-                    isToday && "bg-foreground text-background",
-                  )}
-                >
-                  {day.getDate()}
-                </span>
-                <span className="min-h-4 text-[11px] font-medium leading-none text-muted-foreground">
-                  {dayEvents.length > 0
-                    ? dayEvents.length === 1
-                      ? "Event"
-                      : `${dayEvents.length} Events`
-                    : "-"}
-                </span>
+              <span
+                className={cn(
+                  "grid size-6 place-items-center rounded-full",
+                  isToday && "bg-foreground font-semibold text-background",
+                )}
+              >
+                {day.getDate()}
+              </span>
+              <span className="mt-1 flex h-1.5 items-center gap-0.5">
+                {dayEvents.slice(0, 3).map((event) => (
+                  <CalendarColor
+                    key={event.id}
+                    calendar={getCalendar(event.calendars[0], calendars)}
+                    small
+                  />
+                ))}
               </span>
             </button>
           );
         })}
       </div>
-    </section>
-  );
-}
-
-function EditorRow({ icon, children }: { icon: ReactNode; children: ReactNode }) {
-  return (
-    <div className="grid gap-4 md:grid-cols-[28px_minmax(0,1fr)] md:items-start">
-      <div className="mt-3 hidden justify-center md:flex">{icon}</div>
-      <div>{children}</div>
     </div>
   );
 }
 
-function IconButton({ label, icon }: { label: string; icon: ReactNode }) {
+function EventCard({ event, calendars }: { event: RoutedEvent; calendars: ConnectedCalendar[] }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      className="grid size-8 cursor-pointer place-items-center rounded-md transition hover:bg-[#dce3ed]"
-    >
-      {icon}
-    </button>
-  );
-}
-
-function PermissionCheck({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="flex cursor-pointer items-center gap-3 text-sm text-[#3c4043]">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        className="size-5 accent-[#0b57d0]"
-      />
-      {label}
-    </label>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  tone?: "default" | "amber" | "emerald";
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-lg border border-border/80 bg-background/55 p-3",
-        tone === "amber" && "border-amber-300/25 bg-amber-300/10",
-        tone === "emerald" && "border-emerald-300/25 bg-emerald-300/10",
-      )}
-    >
-      <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-xl font-semibold tracking-tight">{value}</p>
-    </div>
-  );
-}
-
-function SelectedEventCard({ event }: { event: RoutedEvent }) {
-  return (
-    <div className="rounded-lg border border-border/70 bg-background/55 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{event.title}</p>
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Clock className="size-3.5" />
-            {event.start} - {event.end}
-          </p>
-        </div>
+    <div className="rounded-lg border border-border/70 bg-background/40 p-3">
+      <div className="flex items-center gap-2">
+        <CalendarColor calendar={getCalendar(event.calendars[0], calendars)} small />
+        <span className="min-w-0 truncate text-sm font-medium">{event.title}</span>
         {event.kind === "blocker" ? (
-          <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] text-amber-100">
-            Block
-          </span>
+          <ShieldCheck className="ml-auto size-3.5 text-emerald-200" />
         ) : null}
       </div>
-      <CalendarDots calendarIds={event.calendars} className="mt-3" />
+      <p className="mt-1 text-xs text-muted-foreground">
+        {event.start}
+        {event.start !== "All day" ? `–${event.end}` : ""}
+      </p>
     </div>
-  );
-}
-
-function CalendarToggleGroup({
-  label,
-  selected,
-  onToggle,
-}: {
-  label: string;
-  selected: CalendarId[];
-  onToggle: (calendarId: CalendarId) => void;
-}) {
-  return (
-    <fieldset>
-      <legend className="text-xs font-medium text-muted-foreground">{label}</legend>
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {connectedCalendars.map((calendar) => {
-          const isSelected = selected.includes(calendar.id);
-          return (
-            <button
-              key={calendar.id}
-              type="button"
-              onClick={() => onToggle(calendar.id)}
-              className={cn(
-                "flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-left text-xs transition",
-                isSelected
-                  ? "border-ring/40 bg-accent/55 text-foreground"
-                  : "border-border/70 bg-background/40 text-muted-foreground hover:bg-accent/30 hover:text-foreground",
-              )}
-            >
-              <span className={cn("size-2.5 shrink-0 rounded-full", calendar.colorClass)} />
-              <span className="min-w-0 truncate">{calendar.name}</span>
-              {isSelected ? <Check className="ml-auto size-3.5 shrink-0" /> : null}
-            </button>
-          );
-        })}
-      </div>
-    </fieldset>
   );
 }
 
@@ -1206,93 +958,125 @@ function QueueCard({
   onIgnore: () => void;
 }) {
   const sourceCalendar = getCalendar(item.sourceCalendarId);
-
   return (
-    <article className="rounded-lg border border-border/70 bg-background/55 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className={cn("size-2.5 rounded-full", sourceCalendar.colorClass)} />
-            <span className="truncate">{item.source}</span>
-          </div>
-          <h3 className="mt-2 truncate text-sm font-semibold">{item.title}</h3>
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Clock className="size-3.5" />
-            {formatShortDate(parseDateKey(item.date))} - {item.start} to {item.end}
+    <article className="rounded-lg border border-border/70 bg-background/40 p-4">
+      <div className="flex items-start gap-3">
+        <span className={cn("mt-1 size-2.5 rounded-full", sourceCalendar.colorClass)} />
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-semibold">{item.title}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {formatShortDate(parseDateKey(item.date))} · {item.start}–{item.end} · {item.source}
           </p>
+          <p className="mt-2 text-xs text-muted-foreground">{item.note}</p>
         </div>
-        <button
-          type="button"
-          aria-label="Ignore queue item"
-          onClick={onIgnore}
-          className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md border border-border/70 bg-card/60 text-muted-foreground transition hover:bg-card hover:text-foreground"
-        >
-          <X className="size-3.5" />
-        </button>
       </div>
-
-      <p className="mt-3 rounded-md border border-border/60 bg-card/55 px-3 py-2 text-xs leading-5 text-muted-foreground">
-        {item.note}
-      </p>
-
-      <div className="mt-3">
-        <CalendarToggleGroup
-          label="Target calendars"
-          selected={selectedTargets}
-          onToggle={onToggleTarget}
-        />
+      <div className="mt-3 flex flex-wrap gap-2">
+        {demoCalendars
+          .filter((calendar) => calendar.id !== item.sourceCalendarId)
+          .map((calendar) => {
+            const selected = selectedTargets.includes(calendar.id);
+            return (
+              <button
+                key={calendar.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => onToggleTarget(calendar.id)}
+                className={cn(
+                  "flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  selected
+                    ? "border-ring/50 bg-accent/55"
+                    : "border-border/70 text-muted-foreground",
+                )}
+              >
+                <span className={cn("size-1.5 rounded-full", calendar.colorClass)} />
+                {calendar.name}
+              </button>
+            );
+          })}
       </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={onBlock}>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button type="button" size="sm" onClick={onBlock}>
           <ShieldCheck className="size-3.5" />
-          Block
+          Create blockers
         </Button>
-        <Button type="button" size="sm" onClick={onCopy}>
+        <Button type="button" size="sm" variant="outline" onClick={onCopy}>
           <Copy className="size-3.5" />
-          Copy
+          Copy details
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="ml-auto" onClick={onIgnore}>
+          <X className="size-3.5" />
+          Ignore
         </Button>
       </div>
     </article>
   );
 }
 
-function CalendarDots({
-  calendarIds,
-  className,
+function StatusPill({
+  label,
+  value,
+  tone = "default",
 }: {
-  calendarIds: CalendarId[];
-  className?: string;
+  label: string;
+  value: string;
+  tone?: "default" | "amber" | "emerald";
 }) {
   return (
-    <span className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      {calendarIds.map((calendarId) => {
-        const calendar = getCalendar(calendarId);
-        return (
-          <span
-            key={calendarId}
-            className="flex items-center gap-1 rounded-full bg-background/50 px-1.5 py-0.5"
-          >
-            <span className={cn("size-1.5 rounded-full", calendar.colorClass)} />
-            <span className="text-[10px] text-muted-foreground">{calendar.name}</span>
-          </span>
-        );
-      })}
+    <span
+      className={cn(
+        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5",
+        tone === "amber" && "border-amber-400/25 bg-amber-400/10",
+        tone === "emerald" && "border-emerald-400/25 bg-emerald-400/10",
+        tone === "default" && "border-border/70 bg-background/45",
+      )}
+    >
+      <span className="text-muted-foreground">{label}</span>
+      <strong>{value}</strong>
     </span>
   );
 }
 
 function HealthRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-border/70 bg-background/50 p-3">
-      <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="mt-1 text-sm text-foreground">{value}</p>
+    <div className="flex items-center justify-between gap-3 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium">{value}</span>
     </div>
   );
 }
 
-function getCalendar(calendarId: CalendarId) {
-  return connectedCalendars.find((calendar) => calendar.id === calendarId) ?? connectedCalendars[0];
+function CalendarColor({
+  calendar,
+  ring = false,
+  small = false,
+}: {
+  calendar: ConnectedCalendar;
+  ring?: boolean;
+  small?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded-full",
+        small ? "size-2" : "size-2.5",
+        !calendar.backgroundColor && calendar.colorClass,
+        ring && !calendar.backgroundColor && `ring-4 ${calendar.ringClass}`,
+      )}
+      style={{
+        backgroundColor: calendar.backgroundColor,
+        boxShadow:
+          ring && calendar.backgroundColor ? `0 0 0 4px ${calendar.backgroundColor}33` : undefined,
+      }}
+    />
+  );
+}
+
+function getCalendar(calendarId: CalendarId, calendars = demoCalendars) {
+  return (
+    calendars.find((calendar) => calendar.id === calendarId) ??
+    demoCalendars.find((calendar) => calendar.id === calendarId) ??
+    demoCalendars[0]
+  );
 }
 
 function mergeCalendarIds(current: CalendarId[], next: CalendarId[]) {
@@ -1304,14 +1088,13 @@ function sortByStart(a: RoutedEvent, b: RoutedEvent) {
 }
 
 function buildVisibleMonthGrid(month: Date) {
-  const firstDay = startOfMonth(month);
-  const days: Array<Date | null> = Array.from({ length: firstDay.getDay() }, () => null);
-  const cursor = new Date(firstDay);
-  while (cursor.getMonth() === month.getMonth()) {
-    days.push(new Date(cursor));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return days;
+  const first = startOfMonth(month);
+  const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  const result: Array<Date | null> = Array.from({ length: first.getDay() }, () => null);
+  for (let day = 1; day <= daysInMonth; day += 1)
+    result.push(new Date(first.getFullYear(), first.getMonth(), day));
+  while (result.length % 7 !== 0) result.push(null);
+  return result;
 }
 
 function startOfMonth(date: Date) {
@@ -1330,8 +1113,8 @@ function addMonths(date: Date, months: number) {
 
 function toDateKey(date: Date) {
   const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -1345,12 +1128,9 @@ function formatMonth(date: Date) {
 }
 
 function formatFullDate(date: Date) {
-  return new Intl.DateTimeFormat("en", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
+  return new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(
+    date,
+  );
 }
 
 function formatShortDate(date: Date) {

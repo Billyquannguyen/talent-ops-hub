@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { CreatorOutreachAssistant } from "@/features/creator-outreach/CreatorOutreachAssistant";
+import { CreatorOutreachPages } from "@/features/creator-outreach/CreatorOutreachPages";
 
 export const Route = createFileRoute("/creator-outreach")({
-  component: CreatorOutreachAssistant,
+  component: CreatorOutreachPages,
 });

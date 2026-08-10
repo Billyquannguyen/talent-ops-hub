@@ -127,7 +127,7 @@ const outreachEmojis = [
   "🚀",
 ] as const;
 
-export function CreatorOutreachAssistant() {
+export function CreatorOutreachAssistant({ pageSwitcher }: { pageSwitcher?: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [database, setDatabase] = useState<KatlasBuddyDatabase>(() => createDefaultDatabase());
   const [campaignRegistry, setCampaignRegistry] = useState<GlobalCampaignRegistry>(() =>
@@ -921,6 +921,7 @@ export function CreatorOutreachAssistant() {
               <h1 className="mt-2 text-2xl font-semibold tracking-tight">
                 Translate, build, and copy creator replies.
               </h1>
+              <div className="mt-4">{pageSwitcher}</div>
             </div>
 
             <div className="flex flex-wrap gap-2 lg:justify-end">

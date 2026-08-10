@@ -6,7 +6,7 @@ import { SmokeyBackground } from "@/components/ui/smokey-background";
 
 type PasswordGateProps = {
   status: PasswordGateStatus;
-  onUnlocked: () => void;
+  onUnlocked: (password: string) => void;
 };
 
 export function PasswordGate({ status, onUnlocked }: PasswordGateProps) {
@@ -21,7 +21,7 @@ export function PasswordGate({ status, onUnlocked }: PasswordGateProps) {
     try {
       const result = await verifyPasswordGate({ data: { password } });
       if (result.ok) {
-        onUnlocked();
+        onUnlocked(password);
         return;
       }
       setMessage(result.message || result.status.message);

@@ -171,8 +171,8 @@ function RootComponent() {
     return () => window.removeEventListener(passwordGateLockEvent, lockApp);
   }, [gateStatus?.mode]);
 
-  function unlockApp() {
-    markPasswordGateUnlocked();
+  function unlockApp(password: string) {
+    markPasswordGateUnlocked(password);
     setIsUnlocked(true);
   }
 

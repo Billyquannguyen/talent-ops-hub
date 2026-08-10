@@ -27,11 +27,15 @@ import { Route as AboutKatlasMediaRouteImport } from './routes/about-katlas-medi
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ActiveCampaignsIndexRouteImport } from './routes/active-campaigns.index'
 import { Route as ApiTranslateRouteImport } from './routes/api/translate'
+import { Route as ApiBulkSenderRouteImport } from './routes/api/bulk-sender'
 import { Route as ActiveCampaignsCampaignIdRouteImport } from './routes/active-campaigns.$campaignId'
 import { Route as ApiSourcingTiktokProfilesRouteImport } from './routes/api/sourcing/tiktok-profiles'
 import { Route as ApiSourcingHashtagRouteImport } from './routes/api/sourcing/hashtag'
+import { Route as ApiCalendarConnectionRouteImport } from './routes/api/calendar/connection'
 import { Route as ApiAiOutreachRouteImport } from './routes/api/ai/outreach'
 import { Route as ApiAiEnrichContactsRouteImport } from './routes/api/ai/enrich-contacts'
+import { Route as ApiCalendarOauthStartRouteImport } from './routes/api/calendar/oauth/start'
+import { Route as ApiCalendarOauthCallbackRouteImport } from './routes/api/calendar/oauth/callback'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -123,6 +127,11 @@ const ApiTranslateRoute = ApiTranslateRouteImport.update({
   path: '/api/translate',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBulkSenderRoute = ApiBulkSenderRouteImport.update({
+  id: '/api/bulk-sender',
+  path: '/api/bulk-sender',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ActiveCampaignsCampaignIdRoute =
   ActiveCampaignsCampaignIdRouteImport.update({
     id: '/$campaignId',
@@ -140,6 +149,11 @@ const ApiSourcingHashtagRoute = ApiSourcingHashtagRouteImport.update({
   path: '/api/sourcing/hashtag',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCalendarConnectionRoute = ApiCalendarConnectionRouteImport.update({
+  id: '/api/calendar/connection',
+  path: '/api/calendar/connection',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAiOutreachRoute = ApiAiOutreachRouteImport.update({
   id: '/api/ai/outreach',
   path: '/api/ai/outreach',
@@ -150,6 +164,17 @@ const ApiAiEnrichContactsRoute = ApiAiEnrichContactsRouteImport.update({
   path: '/api/ai/enrich-contacts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCalendarOauthStartRoute = ApiCalendarOauthStartRouteImport.update({
+  id: '/api/calendar/oauth/start',
+  path: '/api/calendar/oauth/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCalendarOauthCallbackRoute =
+  ApiCalendarOauthCallbackRouteImport.update({
+    id: '/api/calendar/oauth/callback',
+    path: '/api/calendar/oauth/callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -169,12 +194,16 @@ export interface FileRoutesByFullPath {
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
+  '/api/bulk-sender': typeof ApiBulkSenderRoute
   '/api/translate': typeof ApiTranslateRoute
   '/active-campaigns/': typeof ActiveCampaignsIndexRoute
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
+  '/api/calendar/connection': typeof ApiCalendarConnectionRoute
   '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
   '/api/sourcing/tiktok-profiles': typeof ApiSourcingTiktokProfilesRoute
+  '/api/calendar/oauth/callback': typeof ApiCalendarOauthCallbackRoute
+  '/api/calendar/oauth/start': typeof ApiCalendarOauthStartRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -193,12 +222,16 @@ export interface FileRoutesByTo {
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
+  '/api/bulk-sender': typeof ApiBulkSenderRoute
   '/api/translate': typeof ApiTranslateRoute
   '/active-campaigns': typeof ActiveCampaignsIndexRoute
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
+  '/api/calendar/connection': typeof ApiCalendarConnectionRoute
   '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
   '/api/sourcing/tiktok-profiles': typeof ApiSourcingTiktokProfilesRoute
+  '/api/calendar/oauth/callback': typeof ApiCalendarOauthCallbackRoute
+  '/api/calendar/oauth/start': typeof ApiCalendarOauthStartRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -219,12 +252,16 @@ export interface FileRoutesById {
   '/roster': typeof RosterRoute
   '/settings': typeof SettingsRoute
   '/active-campaigns/$campaignId': typeof ActiveCampaignsCampaignIdRoute
+  '/api/bulk-sender': typeof ApiBulkSenderRoute
   '/api/translate': typeof ApiTranslateRoute
   '/active-campaigns/': typeof ActiveCampaignsIndexRoute
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
+  '/api/calendar/connection': typeof ApiCalendarConnectionRoute
   '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
   '/api/sourcing/tiktok-profiles': typeof ApiSourcingTiktokProfilesRoute
+  '/api/calendar/oauth/callback': typeof ApiCalendarOauthCallbackRoute
+  '/api/calendar/oauth/start': typeof ApiCalendarOauthStartRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -246,12 +283,16 @@ export interface FileRouteTypes {
     | '/roster'
     | '/settings'
     | '/active-campaigns/$campaignId'
+    | '/api/bulk-sender'
     | '/api/translate'
     | '/active-campaigns/'
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
+    | '/api/calendar/connection'
     | '/api/sourcing/hashtag'
     | '/api/sourcing/tiktok-profiles'
+    | '/api/calendar/oauth/callback'
+    | '/api/calendar/oauth/start'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -270,12 +311,16 @@ export interface FileRouteTypes {
     | '/roster'
     | '/settings'
     | '/active-campaigns/$campaignId'
+    | '/api/bulk-sender'
     | '/api/translate'
     | '/active-campaigns'
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
+    | '/api/calendar/connection'
     | '/api/sourcing/hashtag'
     | '/api/sourcing/tiktok-profiles'
+    | '/api/calendar/oauth/callback'
+    | '/api/calendar/oauth/start'
   id:
     | '__root__'
     | '/'
@@ -295,12 +340,16 @@ export interface FileRouteTypes {
     | '/roster'
     | '/settings'
     | '/active-campaigns/$campaignId'
+    | '/api/bulk-sender'
     | '/api/translate'
     | '/active-campaigns/'
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
+    | '/api/calendar/connection'
     | '/api/sourcing/hashtag'
     | '/api/sourcing/tiktok-profiles'
+    | '/api/calendar/oauth/callback'
+    | '/api/calendar/oauth/start'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -320,11 +369,15 @@ export interface RootRouteChildren {
   PromptVaultRoute: typeof PromptVaultRoute
   RosterRoute: typeof RosterRoute
   SettingsRoute: typeof SettingsRoute
+  ApiBulkSenderRoute: typeof ApiBulkSenderRoute
   ApiTranslateRoute: typeof ApiTranslateRoute
   ApiAiEnrichContactsRoute: typeof ApiAiEnrichContactsRoute
   ApiAiOutreachRoute: typeof ApiAiOutreachRoute
+  ApiCalendarConnectionRoute: typeof ApiCalendarConnectionRoute
   ApiSourcingHashtagRoute: typeof ApiSourcingHashtagRoute
   ApiSourcingTiktokProfilesRoute: typeof ApiSourcingTiktokProfilesRoute
+  ApiCalendarOauthCallbackRoute: typeof ApiCalendarOauthCallbackRoute
+  ApiCalendarOauthStartRoute: typeof ApiCalendarOauthStartRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -455,6 +508,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTranslateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/bulk-sender': {
+      id: '/api/bulk-sender'
+      path: '/api/bulk-sender'
+      fullPath: '/api/bulk-sender'
+      preLoaderRoute: typeof ApiBulkSenderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/active-campaigns/$campaignId': {
       id: '/active-campaigns/$campaignId'
       path: '/$campaignId'
@@ -476,6 +536,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSourcingHashtagRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/calendar/connection': {
+      id: '/api/calendar/connection'
+      path: '/api/calendar/connection'
+      fullPath: '/api/calendar/connection'
+      preLoaderRoute: typeof ApiCalendarConnectionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ai/outreach': {
       id: '/api/ai/outreach'
       path: '/api/ai/outreach'
@@ -488,6 +555,20 @@ declare module '@tanstack/react-router' {
       path: '/api/ai/enrich-contacts'
       fullPath: '/api/ai/enrich-contacts'
       preLoaderRoute: typeof ApiAiEnrichContactsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/calendar/oauth/start': {
+      id: '/api/calendar/oauth/start'
+      path: '/api/calendar/oauth/start'
+      fullPath: '/api/calendar/oauth/start'
+      preLoaderRoute: typeof ApiCalendarOauthStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/calendar/oauth/callback': {
+      id: '/api/calendar/oauth/callback'
+      path: '/api/calendar/oauth/callback'
+      fullPath: '/api/calendar/oauth/callback'
+      preLoaderRoute: typeof ApiCalendarOauthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -524,11 +605,15 @@ const rootRouteChildren: RootRouteChildren = {
   PromptVaultRoute: PromptVaultRoute,
   RosterRoute: RosterRoute,
   SettingsRoute: SettingsRoute,
+  ApiBulkSenderRoute: ApiBulkSenderRoute,
   ApiTranslateRoute: ApiTranslateRoute,
   ApiAiEnrichContactsRoute: ApiAiEnrichContactsRoute,
   ApiAiOutreachRoute: ApiAiOutreachRoute,
+  ApiCalendarConnectionRoute: ApiCalendarConnectionRoute,
   ApiSourcingHashtagRoute: ApiSourcingHashtagRoute,
   ApiSourcingTiktokProfilesRoute: ApiSourcingTiktokProfilesRoute,
+  ApiCalendarOauthCallbackRoute: ApiCalendarOauthCallbackRoute,
+  ApiCalendarOauthStartRoute: ApiCalendarOauthStartRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

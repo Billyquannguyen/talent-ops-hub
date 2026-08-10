@@ -13,6 +13,7 @@ export type PasswordGateStatus = {
 function readPasswordGateStatus(): PasswordGateStatus {
   const password = String(process.env.KATLAS_APP_PASSWORD ?? "").trim();
   const deployedOnVercel = process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+  const isProduction = process.env.NODE_ENV === "production";
   const configured = password.length > 0;
 
   if (configured) {
@@ -24,7 +25,7 @@ function readPasswordGateStatus(): PasswordGateStatus {
     };
   }
 
-  if (deployedOnVercel) {
+  if (deployedOnVercel && isProduction) {
     return {
       mode: "setup-error",
       configured: false,
