@@ -10,13 +10,17 @@ import type { BulkSenderDraftInput, BulkSenderJob, BulkSenderRowResult } from ".
 
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const MICROSOFT_GRAPH_API = "https://graph.microsoft.com/v1.0";
 const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const USER_COOLDOWN_MS = 10_000;
 const MAX_BATCH_SIZE = 50;
 const CONCURRENCY = 2;
 
 let gmailTokenCache: { accessToken: string; expiresAt: number } | null = null;
+let outlookTokenCache: { accessToken: string; expiresAt: number } | null = null;
 let sharedQueue = Promise.resolve();
+
+type MailProvider = "outlook" | "gmail";
 
 type SubmitInput = {
   workspaceId: string;
@@ -31,14 +35,37 @@ type StoredDraftResult = BulkSenderRowResult & {
 };
 
 export function getBulkSenderConfiguration() {
-  const missing = [
+  const outlookFields = [
+    ["OUTLOOK_TENANT_ID", process.env.OUTLOOK_TENANT_ID],
+    ["OUTLOOK_CLIENT_ID", process.env.OUTLOOK_CLIENT_ID],
+    ["OUTLOOK_CLIENT_SECRET", process.env.OUTLOOK_CLIENT_SECRET],
+    ["OUTLOOK_MAILBOX", process.env.OUTLOOK_MAILBOX],
+  ] as const;
+  const gmailFields = [
     ["GMAIL_CLIENT_ID", process.env.GMAIL_CLIENT_ID],
     ["GMAIL_CLIENT_SECRET", process.env.GMAIL_CLIENT_SECRET],
     ["GMAIL_REFRESH_TOKEN", process.env.GMAIL_REFRESH_TOKEN],
-  ]
-    .filter(([, value]) => !String(value ?? "").trim())
-    .map(([name]) => name);
-  return { configured: missing.length === 0, missing };
+  ] as const;
+  const missingOutlook = missingConfigurationFields(outlookFields);
+  const missingGmail = missingConfigurationFields(gmailFields);
+  const outlookStarted = outlookFields.some(([, value]) => String(value ?? "").trim());
+  const gmailStarted = gmailFields.some(([, value]) => String(value ?? "").trim());
+
+  if (missingOutlook.length === 0 || outlookStarted || !gmailStarted) {
+    return {
+      configured: missingOutlook.length === 0,
+      missing: missingOutlook,
+      provider: "outlook" as const,
+      signatureConfigured: Boolean(String(process.env.OUTLOOK_SIGNATURE_HTML ?? "").trim()),
+    };
+  }
+
+  return {
+    configured: missingGmail.length === 0,
+    missing: missingGmail,
+    provider: "gmail" as const,
+    signatureConfigured: missingGmail.length === 0,
+  };
 }
 
 export function isBulkSenderRequestAuthenticated(request: Request) {
@@ -113,7 +140,18 @@ async function processJob(job: BulkSenderJob, drafts: BulkSenderDraftInput[]) {
   await saveJsonSetting(jobKey(job.id), processing);
 
   try {
-    const signature = await getDefaultGmailSignature();
+    const configuration = getBulkSenderConfiguration();
+    const provider = configuration.provider;
+    const providerLabel = getProviderLabel(provider);
+    if (!configuration.configured) {
+      throw new Error(
+        `${providerLabel} is not configured. Missing: ${configuration.missing.join(", ")}.`,
+      );
+    }
+    const signature =
+      provider === "gmail"
+        ? await getDefaultGmailSignature()
+        : String(process.env.OUTLOOK_SIGNATURE_HTML ?? "");
     const recentResults = await listRecentSuccessfulResults();
     const resultByFingerprint = new Map(
       recentResults.map((result) => [result.fingerprint, result]),
@@ -125,7 +163,7 @@ async function processJob(job: BulkSenderJob, drafts: BulkSenderDraftInput[]) {
       while (nextIndex < drafts.length) {
         const index = nextIndex++;
         const draft = drafts[index];
-        const fingerprint = draftFingerprint(draft);
+        const fingerprint = draftFingerprint(draft, provider);
         const prior = resultByFingerprint.get(fingerprint);
 
         if (prior) {
@@ -140,11 +178,11 @@ async function processJob(job: BulkSenderJob, drafts: BulkSenderDraftInput[]) {
         }
 
         try {
-          const draftId = await createGmailDraft(draft, signature);
+          const draftId = await createMailDraft(provider, draft, signature);
           const result: StoredDraftResult = {
             rowId: draft.rowId,
             status: "created",
-            message: "Gmail draft created.",
+            message: `${providerLabel} draft created.`,
             draftId,
             fingerprint,
             createdAt: new Date().toISOString(),
@@ -155,7 +193,8 @@ async function processJob(job: BulkSenderJob, drafts: BulkSenderDraftInput[]) {
           results[index] = {
             rowId: draft.rowId,
             status: "failed",
-            message: error instanceof Error ? error.message : "Gmail draft creation failed.",
+            message:
+              error instanceof Error ? error.message : `${providerLabel} draft creation failed.`,
             fingerprint,
             createdAt: new Date().toISOString(),
           };
@@ -218,6 +257,45 @@ async function getDefaultGmailSignature() {
     sendAs?: Array<{ isDefault?: boolean; signature?: string }>;
   };
   return payload.sendAs?.find((entry) => entry.isDefault)?.signature ?? "";
+}
+
+async function createMailDraft(
+  provider: MailProvider,
+  draft: BulkSenderDraftInput,
+  signature: string,
+) {
+  return provider === "outlook"
+    ? createOutlookDraft(draft, signature)
+    : createGmailDraft(draft, signature);
+}
+
+async function createOutlookDraft(draft: BulkSenderDraftInput, signature: string) {
+  const token = await getOutlookAccessToken();
+  const mailbox = String(process.env.OUTLOOK_MAILBOX ?? "").trim();
+  const subject = stripHeaderBreaks(draft.subject);
+  const to = stripHeaderBreaks(draft.to);
+  const messageHtml = sanitizeEmailHtml(draft.html);
+  const signatureHtml = sanitizeEmailHtml(signature);
+  const html = `${messageHtml}${signatureHtml ? `<div class="outlook_signature">${signatureHtml}</div>` : ""}`;
+  const response = await fetchWithRetry(
+    `${MICROSOFT_GRAPH_API}/users/${encodeURIComponent(mailbox)}/messages`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject,
+        body: { contentType: "HTML", content: html },
+        toRecipients: [{ emailAddress: { address: to } }],
+      }),
+    },
+  );
+  if (!response.ok) {
+    const payload = await response.text();
+    throw new Error(`Outlook rejected the draft (${response.status}): ${payload.slice(0, 180)}`);
+  }
+  const payload = (await response.json()) as { id?: string };
+  if (!payload.id) throw new Error("Outlook created a draft without returning its ID.");
+  return payload.id;
 }
 
 async function createGmailDraft(draft: BulkSenderDraftInput, signature: string) {
@@ -292,6 +370,41 @@ async function getGmailAccessToken() {
   return payload.access_token;
 }
 
+async function getOutlookAccessToken() {
+  if (outlookTokenCache && outlookTokenCache.expiresAt > Date.now() + 30_000) {
+    return outlookTokenCache.accessToken;
+  }
+  const config = getBulkSenderConfiguration();
+  if (config.provider !== "outlook" || !config.configured) {
+    throw new Error(`Outlook is not configured. Missing: ${config.missing.join(", ")}.`);
+  }
+  const tenantId = String(process.env.OUTLOOK_TENANT_ID);
+  const response = await fetch(
+    `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: String(process.env.OUTLOOK_CLIENT_ID),
+        client_secret: String(process.env.OUTLOOK_CLIENT_SECRET),
+        scope: "https://graph.microsoft.com/.default",
+        grant_type: "client_credentials",
+      }),
+    },
+  );
+  if (!response.ok) {
+    const payload = await response.text();
+    throw new Error(`Outlook authorization failed (${response.status}): ${payload.slice(0, 180)}`);
+  }
+  const payload = (await response.json()) as { access_token?: string; expires_in?: number };
+  if (!payload.access_token) throw new Error("Outlook did not return an access token.");
+  outlookTokenCache = {
+    accessToken: payload.access_token,
+    expiresAt: Date.now() + (payload.expires_in ?? 3600) * 1000,
+  };
+  return payload.access_token;
+}
+
 async function fetchWithRetry(url: string, init: RequestInit) {
   let response: Response | undefined;
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -314,7 +427,9 @@ async function listRecentSuccessfulResults() {
     .map((record) => parseSetting<StoredDraftResult>(record))
     .filter(
       (result): result is StoredDraftResult =>
-        Boolean(result) && result.status === "created" && Date.parse(result.createdAt) >= cutoff,
+        result !== undefined &&
+        result.status === "created" &&
+        Date.parse(result.createdAt) >= cutoff,
     );
 }
 
@@ -344,11 +459,19 @@ function parseSetting<T>(record?: AppSettingRecord): T | undefined {
   }
 }
 
-function draftFingerprint(draft: BulkSenderDraftInput) {
+function draftFingerprint(draft: BulkSenderDraftInput, provider: MailProvider) {
   return crypto
     .createHash("sha256")
-    .update(`${draft.to.trim().toLowerCase()}\n${draft.subject}\n${draft.html}`)
+    .update(`${provider}\n${draft.to.trim().toLowerCase()}\n${draft.subject}\n${draft.html}`)
     .digest("hex");
+}
+
+function missingConfigurationFields(fields: ReadonlyArray<readonly [string, unknown]>) {
+  return fields.filter(([, value]) => !String(value ?? "").trim()).map(([name]) => name);
+}
+
+function getProviderLabel(provider: MailProvider) {
+  return provider === "outlook" ? "Outlook" : "Gmail";
 }
 
 function sanitizeEmailHtml(html: string) {

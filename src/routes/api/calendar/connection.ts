@@ -2,19 +2,17 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
 import {
-  clearTokenCookie,
-  createGoogleCalendarBlockers,
-  createTokenCookie,
-  ensureFreshGoogleCalendarToken,
+  clearLegacyTokenCookie,
+  createWorkspaceBlockers,
+  disconnectGoogleCalendarAccount,
   getGoogleCalendarConfiguration,
-  listGoogleCalendars,
-  readGoogleCalendarToken,
-  revokeGoogleCalendarToken,
+  listCalendarWorkspace,
 } from "@/services/calendar/googleCalendar.server";
 
+const targetSchema = z.object({ connectionId: z.string().min(1), calendarId: z.string().min(1) });
 const blockerSchema = z.object({
   action: z.literal("create-blocker"),
-  calendarIds: z.array(z.string().min(1)).min(1).max(20),
+  targets: z.array(targetSchema).min(1).max(50),
   title: z.string().trim().min(1).max(120),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
@@ -32,71 +30,42 @@ export const Route = createFileRoute("/api/calendar/connection")({
           return Response.json({
             ok: true,
             configured: false,
-            connected: false,
+            connections: [],
             calendars: [],
             redirectUri: configuration.redirectUri,
           });
         }
-
         try {
-          const session = await ensureFreshGoogleCalendarToken(request);
-          if (!session.token) {
-            return Response.json({
-              ok: true,
-              configured: true,
-              connected: false,
-              calendars: [],
-              redirectUri: configuration.redirectUri,
-            });
-          }
-          const calendars = await listGoogleCalendars(session.token.accessToken);
-          const headers = session.refreshed
-            ? { "Set-Cookie": createTokenCookie(request, session.token) }
-            : undefined;
-          return Response.json(
-            {
-              ok: true,
-              configured: true,
-              connected: true,
-              account: calendars.find((calendar) => calendar.primary)?.account ?? "",
-              calendars,
-              redirectUri: configuration.redirectUri,
-            },
-            { headers },
-          );
+          return Response.json({
+            ok: true,
+            configured: true,
+            ...(await listCalendarWorkspace(request)),
+            redirectUri: configuration.redirectUri,
+          });
         } catch (error) {
           return Response.json(
             {
               ok: false,
               configured: true,
-              connected: false,
+              connections: [],
               calendars: [],
               redirectUri: configuration.redirectUri,
               error: error instanceof Error ? error.message : "Calendar connection failed.",
             },
-            { status: 401, headers: { "Set-Cookie": clearTokenCookie(request) } },
+            { status: 502 },
           );
         }
       },
       POST: async ({ request }) => {
         try {
           const input = blockerSchema.parse(await request.json());
-          const session = await ensureFreshGoogleCalendarToken(request);
-          if (!session.token) {
-            return Response.json(
-              { ok: false, error: "Connect Google Calendar first." },
-              { status: 401 },
-            );
-          }
-          const results = await createGoogleCalendarBlockers(session.token.accessToken, input);
-          const headers = session.refreshed
-            ? { "Set-Cookie": createTokenCookie(request, session.token) }
-            : undefined;
-          return Response.json({ ok: true, results }, { headers });
+          return Response.json({
+            ok: true,
+            results: await createWorkspaceBlockers(request, input),
+          });
         } catch (error) {
-          if (error instanceof z.ZodError) {
+          if (error instanceof z.ZodError)
             return Response.json({ ok: false, error: "Invalid blocker details." }, { status: 400 });
-          }
           return Response.json(
             {
               ok: false,
@@ -107,10 +76,16 @@ export const Route = createFileRoute("/api/calendar/connection")({
         }
       },
       DELETE: async ({ request }) => {
-        await revokeGoogleCalendarToken(readGoogleCalendarToken(request));
+        const connectionId = new URL(request.url).searchParams.get("connectionId") ?? "";
+        if (!connectionId)
+          return Response.json(
+            { ok: false, error: "Choose an account to disconnect." },
+            { status: 400 },
+          );
+        await disconnectGoogleCalendarAccount(request, connectionId);
         return Response.json(
           { ok: true },
-          { headers: { "Set-Cookie": clearTokenCookie(request) } },
+          { headers: { "Set-Cookie": clearLegacyTokenCookie(request) } },
         );
       },
     },

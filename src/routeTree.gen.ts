@@ -31,6 +31,9 @@ import { Route as ApiBulkSenderRouteImport } from './routes/api/bulk-sender'
 import { Route as ActiveCampaignsCampaignIdRouteImport } from './routes/active-campaigns.$campaignId'
 import { Route as ApiSourcingTiktokProfilesRouteImport } from './routes/api/sourcing/tiktok-profiles'
 import { Route as ApiSourcingHashtagRouteImport } from './routes/api/sourcing/hashtag'
+import { Route as ApiCalendarWebhookRouteImport } from './routes/api/calendar/webhook'
+import { Route as ApiCalendarNotificationsRouteImport } from './routes/api/calendar/notifications'
+import { Route as ApiCalendarCronRouteImport } from './routes/api/calendar/cron'
 import { Route as ApiCalendarConnectionRouteImport } from './routes/api/calendar/connection'
 import { Route as ApiAiOutreachRouteImport } from './routes/api/ai/outreach'
 import { Route as ApiAiEnrichContactsRouteImport } from './routes/api/ai/enrich-contacts'
@@ -149,6 +152,22 @@ const ApiSourcingHashtagRoute = ApiSourcingHashtagRouteImport.update({
   path: '/api/sourcing/hashtag',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCalendarWebhookRoute = ApiCalendarWebhookRouteImport.update({
+  id: '/api/calendar/webhook',
+  path: '/api/calendar/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCalendarNotificationsRoute =
+  ApiCalendarNotificationsRouteImport.update({
+    id: '/api/calendar/notifications',
+    path: '/api/calendar/notifications',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiCalendarCronRoute = ApiCalendarCronRouteImport.update({
+  id: '/api/calendar/cron',
+  path: '/api/calendar/cron',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCalendarConnectionRoute = ApiCalendarConnectionRouteImport.update({
   id: '/api/calendar/connection',
   path: '/api/calendar/connection',
@@ -200,6 +219,9 @@ export interface FileRoutesByFullPath {
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
   '/api/calendar/connection': typeof ApiCalendarConnectionRoute
+  '/api/calendar/cron': typeof ApiCalendarCronRoute
+  '/api/calendar/notifications': typeof ApiCalendarNotificationsRoute
+  '/api/calendar/webhook': typeof ApiCalendarWebhookRoute
   '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
   '/api/sourcing/tiktok-profiles': typeof ApiSourcingTiktokProfilesRoute
   '/api/calendar/oauth/callback': typeof ApiCalendarOauthCallbackRoute
@@ -228,6 +250,9 @@ export interface FileRoutesByTo {
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
   '/api/calendar/connection': typeof ApiCalendarConnectionRoute
+  '/api/calendar/cron': typeof ApiCalendarCronRoute
+  '/api/calendar/notifications': typeof ApiCalendarNotificationsRoute
+  '/api/calendar/webhook': typeof ApiCalendarWebhookRoute
   '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
   '/api/sourcing/tiktok-profiles': typeof ApiSourcingTiktokProfilesRoute
   '/api/calendar/oauth/callback': typeof ApiCalendarOauthCallbackRoute
@@ -258,6 +283,9 @@ export interface FileRoutesById {
   '/api/ai/enrich-contacts': typeof ApiAiEnrichContactsRoute
   '/api/ai/outreach': typeof ApiAiOutreachRoute
   '/api/calendar/connection': typeof ApiCalendarConnectionRoute
+  '/api/calendar/cron': typeof ApiCalendarCronRoute
+  '/api/calendar/notifications': typeof ApiCalendarNotificationsRoute
+  '/api/calendar/webhook': typeof ApiCalendarWebhookRoute
   '/api/sourcing/hashtag': typeof ApiSourcingHashtagRoute
   '/api/sourcing/tiktok-profiles': typeof ApiSourcingTiktokProfilesRoute
   '/api/calendar/oauth/callback': typeof ApiCalendarOauthCallbackRoute
@@ -289,6 +317,9 @@ export interface FileRouteTypes {
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
     | '/api/calendar/connection'
+    | '/api/calendar/cron'
+    | '/api/calendar/notifications'
+    | '/api/calendar/webhook'
     | '/api/sourcing/hashtag'
     | '/api/sourcing/tiktok-profiles'
     | '/api/calendar/oauth/callback'
@@ -317,6 +348,9 @@ export interface FileRouteTypes {
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
     | '/api/calendar/connection'
+    | '/api/calendar/cron'
+    | '/api/calendar/notifications'
+    | '/api/calendar/webhook'
     | '/api/sourcing/hashtag'
     | '/api/sourcing/tiktok-profiles'
     | '/api/calendar/oauth/callback'
@@ -346,6 +380,9 @@ export interface FileRouteTypes {
     | '/api/ai/enrich-contacts'
     | '/api/ai/outreach'
     | '/api/calendar/connection'
+    | '/api/calendar/cron'
+    | '/api/calendar/notifications'
+    | '/api/calendar/webhook'
     | '/api/sourcing/hashtag'
     | '/api/sourcing/tiktok-profiles'
     | '/api/calendar/oauth/callback'
@@ -374,6 +411,9 @@ export interface RootRouteChildren {
   ApiAiEnrichContactsRoute: typeof ApiAiEnrichContactsRoute
   ApiAiOutreachRoute: typeof ApiAiOutreachRoute
   ApiCalendarConnectionRoute: typeof ApiCalendarConnectionRoute
+  ApiCalendarCronRoute: typeof ApiCalendarCronRoute
+  ApiCalendarNotificationsRoute: typeof ApiCalendarNotificationsRoute
+  ApiCalendarWebhookRoute: typeof ApiCalendarWebhookRoute
   ApiSourcingHashtagRoute: typeof ApiSourcingHashtagRoute
   ApiSourcingTiktokProfilesRoute: typeof ApiSourcingTiktokProfilesRoute
   ApiCalendarOauthCallbackRoute: typeof ApiCalendarOauthCallbackRoute
@@ -536,6 +576,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSourcingHashtagRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/calendar/webhook': {
+      id: '/api/calendar/webhook'
+      path: '/api/calendar/webhook'
+      fullPath: '/api/calendar/webhook'
+      preLoaderRoute: typeof ApiCalendarWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/calendar/notifications': {
+      id: '/api/calendar/notifications'
+      path: '/api/calendar/notifications'
+      fullPath: '/api/calendar/notifications'
+      preLoaderRoute: typeof ApiCalendarNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/calendar/cron': {
+      id: '/api/calendar/cron'
+      path: '/api/calendar/cron'
+      fullPath: '/api/calendar/cron'
+      preLoaderRoute: typeof ApiCalendarCronRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/calendar/connection': {
       id: '/api/calendar/connection'
       path: '/api/calendar/connection'
@@ -610,6 +671,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAiEnrichContactsRoute: ApiAiEnrichContactsRoute,
   ApiAiOutreachRoute: ApiAiOutreachRoute,
   ApiCalendarConnectionRoute: ApiCalendarConnectionRoute,
+  ApiCalendarCronRoute: ApiCalendarCronRoute,
+  ApiCalendarNotificationsRoute: ApiCalendarNotificationsRoute,
+  ApiCalendarWebhookRoute: ApiCalendarWebhookRoute,
   ApiSourcingHashtagRoute: ApiSourcingHashtagRoute,
   ApiSourcingTiktokProfilesRoute: ApiSourcingTiktokProfilesRoute,
   ApiCalendarOauthCallbackRoute: ApiCalendarOauthCallbackRoute,

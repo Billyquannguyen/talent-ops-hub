@@ -61,7 +61,9 @@ export function BulkSenderPage({ pageSwitcher }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
-  const [gmailConfigured, setGmailConfigured] = useState<boolean | null>(null);
+  const [mailConfigured, setMailConfigured] = useState<boolean | null>(null);
+  const [mailProvider, setMailProvider] = useState<"Outlook" | "Gmail">("Outlook");
+  const [signatureConfigured, setSignatureConfigured] = useState(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const subjectRef = useRef<HTMLInputElement | null>(null);
   const workspaceBodyHtml = workspace?.bodyHtml;
@@ -90,18 +92,26 @@ export function BulkSenderPage({ pageSwitcher }: Props) {
       headers: { "x-katlas-password": getPasswordGateCredential() },
     })
       .then(async (response) => {
-        const payload = (await response.json()) as { ok?: boolean; configured?: boolean };
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          configured?: boolean;
+          provider?: "outlook" | "gmail";
+          signatureConfigured?: boolean;
+        };
+        const provider = payload.provider === "gmail" ? "Gmail" : "Outlook";
         const configured = Boolean(response.ok && payload.ok && payload.configured);
-        setGmailConfigured(configured);
+        setMailProvider(provider);
+        setSignatureConfigured(Boolean(payload.signatureConfigured));
+        setMailConfigured(configured);
         if (!configured) {
           setStatusMessage(
-            "Gmail is not connected yet. Add the server-only Gmail OAuth settings before creating drafts.",
+            `${provider} is not connected yet. Add the server-only ${provider} credentials before creating drafts.`,
           );
         }
       })
       .catch(() => {
-        setGmailConfigured(false);
-        setStatusMessage("Gmail connection status could not be checked.");
+        setMailConfigured(false);
+        setStatusMessage("Email connection status could not be checked.");
       });
   }, []);
 
@@ -293,7 +303,9 @@ export function BulkSenderPage({ pageSwitcher }: Props) {
     if (!workspace || !workspaceId || !batchRows.length) return;
     setConfirmOpen(false);
     setSubmitting(true);
-    setStatusMessage("Creating Gmail drafts. Keep this page open until the batch finishes...");
+    setStatusMessage(
+      `Creating ${mailProvider} drafts. Keep this page open until the batch finishes...`,
+    );
     const drafts: BulkSenderDraftInput[] = batchRows.map((row) => {
       const html = personalizeTemplate(workspace.bodyHtml, workspace.columns, row);
       return {
@@ -331,7 +343,7 @@ export function BulkSenderPage({ pageSwitcher }: Props) {
         rows: current.rows.map((row) => ({ ...row, result: resultMap.get(row.id) ?? row.result })),
       }));
       setStatusMessage(
-        `${payload.job.created} created, ${payload.job.skipped} skipped, ${payload.job.failed} failed. Review every draft in Gmail before sending.`,
+        `${payload.job.created} created, ${payload.job.skipped} skipped, ${payload.job.failed} failed. Review every draft in ${mailProvider} before sending.`,
       );
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "The draft batch failed.");
@@ -364,17 +376,18 @@ export function BulkSenderPage({ pageSwitcher }: Props) {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-hero-glow" />
       <main className="katlas-page gap-4 py-5">
         <section className="katlas-hero-panel p-4 md:p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
+          <div>
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase text-muted-foreground">
                 Creator Outreach Assistant
               </p>
               <h1 className="mt-2 text-2xl font-semibold tracking-tight">Bulk Sender</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                Paste recipients, personalize one template, and create review-ready Gmail drafts.
+                Paste recipients, personalize one template, and create review-ready {mailProvider}
+                drafts.
               </p>
+              <div className="mt-4">{pageSwitcher}</div>
             </div>
-            <div className="shrink-0">{pageSwitcher}</div>
           </div>
         </section>
 
@@ -538,8 +551,10 @@ export function BulkSenderPage({ pageSwitcher }: Props) {
             <Send className="size-4 text-primary" /> Email template
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Fields are matched to every row. Your connected Gmail signature is appended
-            automatically.
+            Fields are matched to every row.{" "}
+            {signatureConfigured
+              ? `Your configured ${mailProvider} signature is appended automatically.`
+              : `${mailProvider} drafts are created without an automatic signature.`}
           </p>
 
           <label className="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -633,7 +648,9 @@ export function BulkSenderPage({ pageSwitcher }: Props) {
               className="mt-2 h-64 w-full bg-white"
             />
             <p className="mt-2 text-xs text-muted-foreground">
-              Gmail’s default signature is added on the server and is not shown in this preview.
+              {signatureConfigured
+                ? `${mailProvider} signature is added on the server and is not shown in this preview.`
+                : `No ${mailProvider} signature is configured.`}
             </p>
           </div>
         </section>
@@ -649,7 +666,7 @@ export function BulkSenderPage({ pageSwitcher }: Props) {
             </p>
             <p className="mt-0.5 text-xs text-white/60">
               {statusMessage ||
-                "Every draft opens in Gmail for manual review. Nothing is sent automatically."}
+                `Every draft opens in ${mailProvider} for manual review. Nothing is sent automatically.`}
             </p>
           </div>
           <button
@@ -660,7 +677,7 @@ export function BulkSenderPage({ pageSwitcher }: Props) {
               !workspace.emailColumnId ||
               !workspace.subject.trim() ||
               !htmlToPlainText(workspace.bodyHtml) ||
-              gmailConfigured === false
+              mailConfigured === false
             }
             onClick={() => setConfirmOpen(true)}
             className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
@@ -674,6 +691,7 @@ export function BulkSenderPage({ pageSwitcher }: Props) {
       {confirmOpen ? (
         <ConfirmationDialog
           count={batchRows.length}
+          provider={mailProvider}
           onBack={() => setConfirmOpen(false)}
           onCreate={() => void submitBatch()}
         />
@@ -829,10 +847,12 @@ function RichTextToolbar({
 
 function ConfirmationDialog({
   count,
+  provider,
   onBack,
   onCreate,
 }: {
   count: number;
+  provider: "Outlook" | "Gmail";
   onBack: () => void;
   onCreate: () => void;
 }) {
@@ -858,7 +878,7 @@ function ConfirmationDialog({
         </div>
         <p className="mt-4 text-sm font-medium">Nothing will be sent automatically.</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          This batch will create {count} Gmail draft{count === 1 ? "" : "s"}.
+          This batch will create {count} {provider} draft{count === 1 ? "" : "s"}.
         </p>
         <div className="mt-6 flex justify-end gap-2">
           <button

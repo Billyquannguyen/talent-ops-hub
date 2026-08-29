@@ -12,7 +12,7 @@ export function createId(prefix: string) {
 export function createDefaultWorkspace(): BulkSenderWorkspace {
   const columns = [
     { id: createId("column"), name: "Creator Name" },
-    { id: createId("column"), name: "Creator Gmail" },
+    { id: createId("column"), name: "Creator Email" },
   ];
   return {
     columns,

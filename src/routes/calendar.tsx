@@ -3,1136 +3,712 @@ import {
   Bell,
   CalendarDays,
   Check,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Copy,
+  ChevronDown,
+  Clock3,
   Link2,
   LoaderCircle,
   Plus,
   RefreshCw,
   ShieldCheck,
-  Unplug,
-  X,
+  Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/calendar")({
-  component: EventAssistant,
-});
+export const Route = createFileRoute("/calendar")({ component: EventAssistant });
 
-type CalendarId = string;
-type EventKind = "event" | "blocker";
-
-type ConnectedCalendar = {
-  id: CalendarId;
+type Connection = { id: string; account: string; error: string };
+type CalendarItem = {
+  key: string;
+  connectionId: string;
+  id: string;
   name: string;
   account: string;
-  colorClass: string;
-  ringClass: string;
-  backgroundColor?: string;
-  primary?: boolean;
-  writable?: boolean;
+  primary: boolean;
+  writable: boolean;
+  backgroundColor: string;
+  timeZone: string;
 };
-
-type CalendarConnectionState = {
-  loading: boolean;
-  configured: boolean;
-  connected: boolean;
+type Notification = {
+  id: string;
+  connectionId: string;
   account: string;
-  calendars: ConnectedCalendar[];
-  redirectUri: string;
-  error: string;
-};
-
-type RoutedEvent = {
-  id: string;
+  calendarId: string;
+  calendarName: string;
   title: string;
-  date: string;
   start: string;
   end: string;
-  calendars: CalendarId[];
-  origin: "assistant" | "external";
-  kind: EventKind;
-  source: string;
-  routed?: boolean;
+  allDay: boolean;
+  timeZone: string;
+  responseStatus: "accepted" | "tentative" | "needsAction";
 };
+type Target = { connectionId: string; calendarId: string };
 
-type QueueItem = {
-  id: string;
-  sourceEventId: string;
-  title: string;
-  sourceCalendarId: CalendarId;
-  date: string;
-  start: string;
-  end: string;
-  source: string;
-  recommendedTargets: CalendarId[];
-  note: string;
-};
-
-const demoCalendars: ConnectedCalendar[] = [
-  {
-    id: "work",
-    name: "Work",
-    account: "work@company.com",
-    colorClass: "bg-sky-400",
-    ringClass: "ring-sky-400/40",
-  },
-  {
-    id: "personal",
-    name: "Personal",
-    account: "personal@gmail.com",
-    colorClass: "bg-amber-300",
-    ringClass: "ring-amber-300/40",
-  },
-  {
-    id: "content",
-    name: "Content",
-    account: "content@katlas.media",
-    colorClass: "bg-emerald-400",
-    ringClass: "ring-emerald-400/40",
-  },
-  {
-    id: "team",
-    name: "Team Ops",
-    account: "ops@katlas.media",
-    colorClass: "bg-violet-400",
-    ringClass: "ring-violet-400/40",
-  },
-];
-
-const today = new Date();
-const todayKey = toDateKey(today);
-
-const seedEvents: RoutedEvent[] = [
-  {
-    id: "evt-1",
-    title: "Glossier creator review",
-    date: toDateKey(addDays(today, 1)),
-    start: "10:00",
-    end: "10:45",
-    calendars: ["work", "team"],
-    origin: "assistant",
-    kind: "event",
-    source: "Event Assistant",
-    routed: true,
-  },
-  {
-    id: "evt-2",
-    title: "Pilates class",
-    date: toDateKey(addDays(today, 2)),
-    start: "18:30",
-    end: "19:30",
-    calendars: ["personal"],
-    origin: "external",
-    kind: "event",
-    source: "Personal Google Calendar",
-  },
-  {
-    id: "evt-3",
-    title: "Calendly: brand intro",
-    date: toDateKey(addDays(today, 4)),
-    start: "14:00",
-    end: "14:30",
-    calendars: ["work"],
-    origin: "external",
-    kind: "event",
-    source: "Calendly",
-  },
-  {
-    id: "evt-4",
-    title: "YouTube publishing hold",
-    date: toDateKey(addDays(today, 6)),
-    start: "09:00",
-    end: "11:00",
-    calendars: ["content", "team"],
-    origin: "assistant",
-    kind: "blocker",
-    source: "Event Assistant",
-    routed: true,
-  },
-];
-
-const seedQueue: QueueItem[] = [
-  {
-    id: "queue-1",
-    sourceEventId: "evt-3",
-    title: "Calendly: brand intro",
-    sourceCalendarId: "work",
-    date: toDateKey(addDays(today, 4)),
-    start: "14:00",
-    end: "14:30",
-    source: "Calendly",
-    recommendedTargets: ["personal", "team"],
-    note: "External booking found on Work.",
-  },
-];
+const today = new Date().toISOString().slice(0, 10);
 
 function EventAssistant() {
-  const [activeMonth, setActiveMonth] = useState(() => startOfMonth(today));
-  const [selectedDate, setSelectedDate] = useState(todayKey);
-  const [events, setEvents] = useState<RoutedEvent[]>(seedEvents);
-  const [queue, setQueue] = useState<QueueItem[]>(seedQueue);
-  const [visibleCalendars, setVisibleCalendars] = useState<CalendarId[]>(
-    demoCalendars.map((calendar) => calendar.id),
-  );
-  const [blockerTitle, setBlockerTitle] = useState("Busy");
-  const [blockerDate, setBlockerDate] = useState(todayKey);
-  const [startTime, setStartTime] = useState("13:30");
-  const [endTime, setEndTime] = useState("14:30");
+  const [configured, setConfigured] = useState(true);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [calendars, setCalendars] = useState<CalendarItem[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
+  const [message, setMessage] = useState("");
+  const [notificationTargets, setNotificationTargets] = useState<Record<string, string[]>>({});
+  const [manualTargets, setManualTargets] = useState<string[]>([]);
+  const [workingId, setWorkingId] = useState("");
+  const [title, setTitle] = useState("Busy");
+  const [date, setDate] = useState(today);
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("10:00");
   const [allDay, setAllDay] = useState(false);
-  const [targetCalendars, setTargetCalendars] = useState<CalendarId[]>(["work"]);
-  const [queueTargets, setQueueTargets] = useState<Record<string, CalendarId[]>>(() =>
-    Object.fromEntries(seedQueue.map((item) => [item.id, item.recommendedTargets])),
+
+  const writableCalendars = useMemo(
+    () => calendars.filter((calendar) => calendar.writable),
+    [calendars],
   );
-  const [status, setStatus] = useState("Ready to protect your time.");
-  const [isCreating, setIsCreating] = useState(false);
-  const [connection, setConnection] = useState<CalendarConnectionState>({
-    loading: true,
-    configured: false,
-    connected: false,
-    account: "",
-    calendars: [],
-    redirectUri: "",
-    error: "",
-  });
 
-  const activeCalendars = connection.connected ? connection.calendars : demoCalendars;
-  const writableCalendars = connection.calendars.filter((calendar) => calendar.writable);
-
-  useEffect(() => {
-    const result = new URLSearchParams(window.location.search).get("calendar");
-    if (result === "denied") setStatus("Google Calendar access was not approved.");
-    if (result === "failed") setStatus("Google Calendar connection failed. Try connecting again.");
-    if (result === "invalid-state") setStatus("The connection expired. Try connecting again.");
-    if (result === "not-configured") setStatus("Google Calendar OAuth setup is still required.");
-    if (result) window.history.replaceState({}, "", window.location.pathname);
-    void loadCalendarConnection();
-  }, []);
-
-  async function loadCalendarConnection() {
-    setConnection((current) => ({ ...current, loading: true, error: "" }));
+  const loadWorkspace = useCallback(async () => {
+    setLoading(true);
+    setMessage("");
     try {
       const response = await fetch("/api/calendar/connection");
       const body = (await response.json()) as {
-        configured?: boolean;
-        connected?: boolean;
-        account?: string;
-        calendars?: Array<{
-          id: string;
-          name: string;
-          account: string;
-          primary: boolean;
-          writable: boolean;
-          backgroundColor: string;
-        }>;
-        redirectUri?: string;
+        ok: boolean;
+        configured: boolean;
+        connections: Connection[];
+        calendars: CalendarItem[];
         error?: string;
       };
-      const calendars = (body.calendars ?? []).map(
-        (calendar) =>
-          ({
-            ...calendar,
-            colorClass: "bg-blue-400",
-            ringClass: "ring-blue-400/40",
-          }) satisfies ConnectedCalendar,
+      if (!response.ok || !body.ok) throw new Error(body.error || "Could not load calendars.");
+      setConfigured(body.configured);
+      setConnections(body.connections ?? []);
+      setCalendars(body.calendars ?? []);
+      setManualTargets((current) =>
+        current.filter((key) => (body.calendars ?? []).some((item) => item.key === key)),
       );
-      const nextConnection: CalendarConnectionState = {
-        loading: false,
-        configured: Boolean(body.configured),
-        connected: Boolean(body.connected),
-        account: body.account ?? "",
-        calendars,
-        redirectUri: body.redirectUri ?? "",
-        error: body.error ?? (response.ok ? "" : "Could not load the calendar connection."),
-      };
-      setConnection(nextConnection);
-
-      if (nextConnection.connected) {
-        const writable = calendars.filter((calendar) => calendar.writable);
-        const defaultCalendar = writable.find((calendar) => calendar.primary) ?? writable[0];
-        setVisibleCalendars(calendars.map((calendar) => calendar.id));
-        setTargetCalendars(defaultCalendar ? [defaultCalendar.id] : []);
-        setStatus(`Connected ${nextConnection.account || "Google Calendar"}.`);
+      if (body.connections?.length) {
+        const scan = await requestScan();
+        const items = scan.notifications ?? [];
+        setNotifications(items);
+        setNotificationTargets(
+          Object.fromEntries(
+            items.map((item) => [
+              item.id,
+              (body.calendars ?? [])
+                .filter(
+                  (calendar) =>
+                    calendar.writable &&
+                    (calendar.connectionId !== item.connectionId ||
+                      calendar.id !== item.calendarId),
+                )
+                .map((calendar) => calendar.key),
+            ]),
+          ),
+        );
       }
     } catch (error) {
-      setConnection((current) => ({
-        ...current,
-        loading: false,
-        error: error instanceof Error ? error.message : "Could not load the calendar connection.",
-      }));
+      setMessage(error instanceof Error ? error.message : "Could not load calendars.");
+    } finally {
+      setLoading(false);
     }
-  }
+  }, []);
 
-  async function disconnectGoogleCalendar() {
-    setConnection((current) => ({ ...current, loading: true, error: "" }));
-    try {
-      await fetch("/api/calendar/connection", { method: "DELETE" });
-      setConnection((current) => ({
-        ...current,
-        loading: false,
-        connected: false,
-        account: "",
-        calendars: [],
-      }));
-      setVisibleCalendars(demoCalendars.map((calendar) => calendar.id));
-      setTargetCalendars([]);
-      setStatus("Google Calendar disconnected.");
-    } catch (error) {
-      setConnection((current) => ({
-        ...current,
-        loading: false,
-        error: error instanceof Error ? error.message : "Could not disconnect Google Calendar.",
-      }));
-    }
-  }
-
-  const selectedDayEvents = useMemo(
-    () =>
-      events
-        .filter((event) => event.date === selectedDate)
-        .filter((event) =>
-          event.calendars.some((calendarId) => visibleCalendars.includes(calendarId)),
-        )
-        .sort(sortByStart),
-    [events, selectedDate, visibleCalendars],
+  const scanCalendars = useCallback(
+    async (showProgress = true) => {
+      if (showProgress) setScanning(true);
+      try {
+        const body = await requestScan();
+        const items = body.notifications ?? [];
+        setNotifications(items);
+        setNotificationTargets((current) => {
+          const next = { ...current };
+          for (const item of items) {
+            if (!next[item.id]) {
+              next[item.id] = writableCalendars
+                .filter(
+                  (calendar) =>
+                    calendar.connectionId !== item.connectionId || calendar.id !== item.calendarId,
+                )
+                .map((calendar) => calendar.key);
+            }
+          }
+          return next;
+        });
+        if (showProgress) setMessage(body.errors?.length ? body.errors[0] : "Calendars checked.");
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Calendar check failed.");
+      } finally {
+        if (showProgress) setScanning(false);
+      }
+    },
+    [writableCalendars],
   );
 
-  const blockerCount = events.filter((event) => event.kind === "blocker").length;
+  useEffect(() => {
+    void loadWorkspace();
+  }, [loadWorkspace]);
 
-  function selectDate(dateKey: string) {
-    setSelectedDate(dateKey);
-    setBlockerDate(dateKey);
-  }
-
-  function toggleVisibleCalendar(calendarId: CalendarId) {
-    setVisibleCalendars((current) =>
-      current.includes(calendarId)
-        ? current.filter((id) => id !== calendarId)
-        : [...current, calendarId],
-    );
-  }
-
-  function toggleTargetCalendar(calendarId: CalendarId) {
-    setTargetCalendars((current) =>
-      current.includes(calendarId)
-        ? current.filter((id) => id !== calendarId)
-        : [...current, calendarId],
-    );
-  }
-
-  function toggleQueueTarget(itemId: string, calendarId: CalendarId) {
-    setQueueTargets((current) => {
-      const selected = current[itemId] ?? [];
-      return {
-        ...current,
-        [itemId]: selected.includes(calendarId)
-          ? selected.filter((id) => id !== calendarId)
-          : [...selected, calendarId],
-      };
-    });
-  }
-
-  async function createBlocker(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!connection.connected) {
-      setStatus("Connect Google Calendar first.");
-      return;
-    }
-    if (targetCalendars.length === 0) {
-      setStatus("Choose at least one calendar.");
-      return;
-    }
-    if (!allDay && startTime >= endTime) {
-      setStatus("End time must be after start time.");
-      return;
-    }
-
-    const title = blockerTitle.trim() || "Busy";
-    setIsCreating(true);
-    setStatus("Creating blocker in Google Calendar...");
+  async function disconnect(connection: Connection) {
+    if (!window.confirm(`Disconnect ${connection.account}?`)) return;
+    setWorkingId(connection.id);
     try {
+      const response = await fetch(
+        `/api/calendar/connection?connectionId=${encodeURIComponent(connection.id)}`,
+        { method: "DELETE" },
+      );
+      const body = (await response.json()) as { ok: boolean; error?: string };
+      if (!response.ok || !body.ok) throw new Error(body.error || "Disconnect failed.");
+      await loadWorkspace();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Disconnect failed.");
+    } finally {
+      setWorkingId("");
+    }
+  }
+
+  async function actOnNotification(item: Notification, acceptSource: boolean) {
+    const selected = notificationTargets[item.id] ?? [];
+    if (!acceptSource && !selected.length) {
+      setMessage("Choose at least one destination calendar.");
+      return;
+    }
+    setWorkingId(item.id);
+    try {
+      const response = await fetch("/api/calendar/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "apply",
+          notificationId: item.id,
+          targets: targetObjects(selected),
+          acceptSource,
+        }),
+      });
+      const body = (await response.json()) as {
+        ok: boolean;
+        results?: Array<{ ok: boolean; error?: string }>;
+        error?: string;
+      };
+      if (!response.ok || !body.ok) throw new Error(body.error || "Could not apply this event.");
+      const failed = body.results?.filter((result) => !result.ok) ?? [];
+      if (failed.length) throw new Error(failed[0]?.error || "Some blockers could not be created.");
+      setNotifications((current) => current.filter((notification) => notification.id !== item.id));
+      setMessage(
+        acceptSource && item.responseStatus !== "accepted"
+          ? "Invitation accepted and blockers added."
+          : "Blockers added.",
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not apply this event.");
+    } finally {
+      setWorkingId("");
+    }
+  }
+
+  async function ignoreNotification(id: string) {
+    setWorkingId(id);
+    try {
+      const response = await fetch("/api/calendar/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ignore", notificationId: id }),
+      });
+      if (!response.ok) throw new Error("Could not ignore this event.");
+      setNotifications((current) => current.filter((item) => item.id !== id));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not ignore this event.");
+    } finally {
+      setWorkingId("");
+    }
+  }
+
+  async function createBlocker() {
+    if (!manualTargets.length) return setMessage("Choose at least one calendar.");
+    if (!allDay && endTime <= startTime) return setMessage("End time must be after start time.");
+    setWorkingId("manual");
+    try {
+      const selectedCalendars = calendars.filter((calendar) =>
+        manualTargets.includes(calendar.key),
+      );
       const response = await fetch("/api/calendar/connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "create-blocker",
-          calendarIds: targetCalendars,
+          targets: targetObjects(manualTargets),
           title,
-          date: blockerDate,
+          date,
           startTime,
           endTime,
           allDay,
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+          timeZone:
+            selectedCalendars[0]?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       });
-      const body = (await response.json()) as { ok?: boolean; error?: string };
+      const body = (await response.json()) as {
+        ok: boolean;
+        results?: Array<{ ok: boolean; error?: string }>;
+        error?: string;
+      };
       if (!response.ok || !body.ok) throw new Error(body.error || "Blocker creation failed.");
-
-      setEvents((current) => [
-        ...current,
-        {
-          id: `evt-${crypto.randomUUID()}`,
-          title,
-          date: blockerDate,
-          start: allDay ? "All day" : startTime,
-          end: allDay ? "All day" : endTime,
-          calendars: targetCalendars,
-          origin: "assistant",
-          kind: "blocker",
-          source: "Google Calendar",
-          routed: true,
-        },
-      ]);
-      setSelectedDate(blockerDate);
-      setActiveMonth(startOfMonth(parseDateKey(blockerDate)));
-      setBlockerTitle("Busy");
-      setStatus(
-        `${title} blocked on ${targetCalendars.length} calendar${targetCalendars.length > 1 ? "s" : ""}.`,
+      const created = body.results?.filter((result) => result.ok).length ?? 0;
+      const failed = body.results?.filter((result) => !result.ok) ?? [];
+      setMessage(
+        failed.length
+          ? `${created} blockers created. ${failed.length} failed.`
+          : `${created} blockers created.`,
       );
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Blocker creation failed.");
+      setMessage(error instanceof Error ? error.message : "Blocker creation failed.");
     } finally {
-      setIsCreating(false);
+      setWorkingId("");
     }
-  }
-
-  function routeQueueItem(item: QueueItem, mode: EventKind) {
-    const targets = queueTargets[item.id] ?? [];
-    if (targets.length === 0) {
-      setStatus("Choose at least one target calendar.");
-      return;
-    }
-
-    if (mode === "event") {
-      setEvents((current) =>
-        current.map((event) =>
-          event.id === item.sourceEventId
-            ? { ...event, calendars: mergeCalendarIds(event.calendars, targets), routed: true }
-            : event,
-        ),
-      );
-    } else {
-      setEvents((current) => [
-        ...current,
-        {
-          id: `evt-${crypto.randomUUID()}`,
-          title: `Busy`,
-          date: item.date,
-          start: item.start,
-          end: item.end,
-          calendars: targets,
-          origin: "assistant",
-          kind: "blocker",
-          source: `${item.source} review`,
-          routed: true,
-        },
-      ]);
-    }
-
-    setQueue((current) => current.filter((queueItem) => queueItem.id !== item.id));
-    setStatus(
-      `${mode === "event" ? "Copied" : "Blocked"} ${item.title} on ${targets.length} calendar${targets.length > 1 ? "s" : ""}.`,
-    );
-  }
-
-  function ignoreQueueItem(item: QueueItem) {
-    setQueue((current) => current.filter((queueItem) => queueItem.id !== item.id));
-    setStatus(`${item.title} ignored.`);
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground">
       <TopBar />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-hero-glow" />
-
-      <main className="katlas-page max-w-[1400px] gap-4 py-5">
-        <header className="katlas-panel flex flex-col gap-4 rounded-lg p-4 md:flex-row md:items-center md:justify-between">
+      <main className="mx-auto w-full max-w-[1440px] px-4 pb-12 pt-5 sm:px-6">
+        <header className="mb-4 flex flex-col gap-3 rounded-xl border border-border bg-card/60 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-lg bg-blue-600 text-white">
-              <CalendarDays className="size-4" />
+            <div className="grid size-10 place-items-center rounded-lg bg-blue-600 text-white">
+              <CalendarDays className="size-5" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold tracking-tight">Event Assistant</h1>
-              <p className="text-xs text-muted-foreground">
-                Protect your time and route outside bookings.
+              <h1 className="text-lg font-semibold">Event Assistant</h1>
+              <p className="text-sm text-muted-foreground">
+                One event in, private blockers everywhere you choose.
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <StatusPill
-              label="Connected"
-              value={connection.connected ? connection.calendars.length.toString() : "0"}
+          <div className="flex items-center gap-2 text-xs">
+            <Stat value={connections.length} label="accounts" />
+            <Stat value={calendars.length} label="calendars" />
+            <Stat
+              value={notifications.length}
+              label="to review"
+              attention={notifications.length > 0}
             />
-            <StatusPill label="Needs review" value={queue.length.toString()} tone="amber" />
-            <StatusPill label="Blockers" value={blockerCount.toString()} tone="emerald" />
           </div>
         </header>
 
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="katlas-panel rounded-lg p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold">{formatMonth(activeMonth)}</h2>
-                <p className="text-xs text-muted-foreground">Select a day to create a blocker.</p>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Previous month"
-                  onClick={() => setActiveMonth(addMonths(activeMonth, -1))}
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setActiveMonth(startOfMonth(today));
-                    selectDate(todayKey);
-                  }}
-                >
-                  Today
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Next month"
-                  onClick={() => setActiveMonth(addMonths(activeMonth, 1))}
-                >
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-            </div>
-
-            <MonthGrid
-              month={activeMonth}
-              selectedDate={selectedDate}
-              events={events}
-              visibleCalendars={visibleCalendars}
-              calendars={activeCalendars}
-              onSelectDate={selectDate}
-            />
-
-            <div className="mt-4 border-t border-border/70 pt-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold">
-                    {formatFullDate(parseDateKey(selectedDate))}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedDayEvents.length} visible item
-                    {selectedDayEvents.length === 1 ? "" : "s"}
-                  </p>
-                </div>
-                <Clock className="size-4 text-muted-foreground" />
-              </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {selectedDayEvents.length ? (
-                  selectedDayEvents.map((event) => (
-                    <EventCard key={event.id} event={event} calendars={activeCalendars} />
-                  ))
-                ) : (
-                  <div className="rounded-lg border border-dashed border-border/70 px-3 py-4 text-sm text-muted-foreground sm:col-span-2 xl:col-span-3">
-                    Nothing scheduled on the visible calendars.
-                  </div>
-                )}
-              </div>
-            </div>
+        {message && (
+          <div className="mb-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+            {message}
           </div>
+        )}
 
-          <aside className="grid content-start gap-4">
-            <CalendarConnectionCard
-              connection={connection}
-              onRefresh={() => void loadCalendarConnection()}
-              onDisconnect={() => void disconnectGoogleCalendar()}
-            />
-
-            <form onSubmit={createBlocker} className="katlas-panel rounded-lg p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold">Create blocker</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Details stay private. Only “busy” time is shared.
-                  </p>
-                </div>
-                <div className="katlas-panel-icon rounded-md">
-                  <ShieldCheck className="size-4" />
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                <label className="block text-xs font-medium text-muted-foreground">
-                  Label
-                  <Input
-                    className="mt-1 bg-background/70"
-                    value={blockerTitle}
-                    onChange={(event) => setBlockerTitle(event.target.value)}
-                    placeholder="Busy"
-                  />
-                </label>
-
-                <label className="block text-xs font-medium text-muted-foreground">
-                  Date
-                  <Input
-                    className="mt-1 bg-background/70"
-                    type="date"
-                    value={blockerDate}
-                    onChange={(event) => {
-                      setBlockerDate(event.target.value);
-                      setSelectedDate(event.target.value);
-                    }}
-                  />
-                </label>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="block text-xs font-medium text-muted-foreground">
-                    Starts
-                    <Input
-                      className="mt-1 bg-background/70"
-                      type="time"
-                      value={startTime}
-                      disabled={allDay}
-                      onChange={(event) => setStartTime(event.target.value)}
-                    />
-                  </label>
-                  <label className="block text-xs font-medium text-muted-foreground">
-                    Ends
-                    <Input
-                      className="mt-1 bg-background/70"
-                      type="time"
-                      value={endTime}
-                      disabled={allDay}
-                      onChange={(event) => setEndTime(event.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={allDay}
-                    onChange={(event) => setAllDay(event.target.checked)}
-                    className="size-4 accent-primary"
-                  />
-                  Block the full day
-                </label>
-
-                <fieldset>
-                  <legend className="text-xs font-medium text-muted-foreground">Block on</legend>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    {writableCalendars.map((calendar) => {
-                      const selected = targetCalendars.includes(calendar.id);
-                      return (
-                        <button
-                          key={calendar.id}
-                          type="button"
-                          aria-pressed={selected}
-                          onClick={() => toggleTargetCalendar(calendar.id)}
-                          className={cn(
-                            "flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            selected
-                              ? "border-ring/50 bg-accent/55"
-                              : "border-border/70 bg-background/35 text-muted-foreground hover:bg-accent/25",
-                          )}
-                        >
-                          <CalendarColor calendar={calendar} />
-                          <span className="truncate">{calendar.name}</span>
-                          {selected ? <Check className="ml-auto size-3.5" /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {!connection.connected ? (
-                    <p className="mt-2 text-xs text-amber-200/80">
-                      Connect Google Calendar to choose where the blocker should go.
-                    </p>
-                  ) : null}
-                </fieldset>
-
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={!connection.connected || isCreating || writableCalendars.length === 0}
-                >
-                  {isCreating ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : (
-                    <Plus className="size-4" />
-                  )}
-                  {connection.connected ? "Create blocker" : "Connect calendar first"}
-                </Button>
-                <p aria-live="polite" className="min-h-4 text-xs text-muted-foreground">
-                  {status}
-                </p>
-              </div>
-            </form>
-
-            <div className="katlas-panel rounded-lg p-4">
-              <h2 className="text-sm font-semibold">Visible calendars</h2>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {activeCalendars.map((calendar) => {
-                  const selected = visibleCalendars.includes(calendar.id);
-                  return (
-                    <button
-                      key={calendar.id}
-                      type="button"
-                      aria-pressed={selected}
-                      onClick={() => toggleVisibleCalendar(calendar.id)}
-                      className={cn(
-                        "flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        selected
-                          ? "border-border bg-background/65"
-                          : "border-border/60 bg-background/25 opacity-55",
-                      )}
-                    >
-                      <CalendarColor calendar={calendar} ring />
-                      <span className="truncate">{calendar.name}</span>
-                      {selected ? <Check className="ml-auto size-3.5" /> : null}
-                    </button>
-                  );
-                })}
-              </div>
+        <section className="mb-4 rounded-xl border border-border bg-card/60 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-medium">Connected Google accounts</h2>
+              <p className="text-xs text-muted-foreground">
+                Connect every account you use. Each can contain several calendars.
+              </p>
             </div>
-          </aside>
+            <Button asChild size="sm" disabled={!configured}>
+              <a href="/api/calendar/oauth/start">
+                <Plus /> Connect another account
+              </a>
+            </Button>
+          </div>
+          {!configured && (
+            <p className="mt-3 text-sm text-amber-300">
+              Google OAuth setup is missing on this deployment.
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {loading ? (
+              <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
+            ) : connections.length ? (
+              connections.map((connection) => (
+                <div
+                  key={connection.id}
+                  className="flex items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm"
+                >
+                  <span
+                    className={cn(
+                      "size-2 rounded-full",
+                      connection.error ? "bg-amber-400" : "bg-emerald-400",
+                    )}
+                  />
+                  <span>{connection.account}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {calendars.filter((calendar) => calendar.connectionId === connection.id).length}{" "}
+                    calendars
+                  </span>
+                  <button
+                    className="ml-1 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={() => void disconnect(connection)}
+                    aria-label={`Disconnect ${connection.account}`}
+                    disabled={workingId === connection.id}
+                  >
+                    {workingId === connection.id ? (
+                      <LoaderCircle className="size-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="size-3.5" />
+                    )}
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No account connected yet.</p>
+            )}
+          </div>
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="katlas-panel rounded-lg p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Bell className="size-4 text-amber-200" />
-                  <h2 className="text-base font-semibold">Needs your attention</h2>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <section className="rounded-xl border border-border bg-card/60">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Bell className="size-4 text-amber-300" />
+                <div>
+                  <h2 className="font-medium">Needs your decision</h2>
+                  <p className="text-xs text-muted-foreground">
+                    New bookings and invitations appear here.
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Outside bookings waiting for a routing decision.
-                </p>
               </div>
-              <span className="rounded-full border border-border/70 bg-background/50 px-3 py-1 text-xs text-muted-foreground">
-                {queue.length} pending
-              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void scanCalendars()}
+                disabled={scanning || !connections.length}
+              >
+                {scanning ? <LoaderCircle className="animate-spin" /> : <RefreshCw />} Check now
+              </Button>
             </div>
-
-            <div className="mt-4 grid gap-3 xl:grid-cols-2">
-              {queue.length ? (
-                queue.map((item) => (
-                  <QueueCard
-                    key={item.id}
-                    item={item}
-                    selectedTargets={queueTargets[item.id] ?? []}
-                    onToggleTarget={(calendarId) => toggleQueueTarget(item.id, calendarId)}
-                    onCopy={() => routeQueueItem(item, "event")}
-                    onBlock={() => routeQueueItem(item, "blocker")}
-                    onIgnore={() => ignoreQueueItem(item)}
-                  />
-                ))
+            <div className="p-3">
+              {!notifications.length ? (
+                <EmptyInbox connected={connections.length > 0} />
               ) : (
-                <div className="rounded-lg border border-dashed border-border/70 p-5 text-sm text-muted-foreground xl:col-span-2">
-                  All caught up.
-                </div>
+                notifications.map((item) => {
+                  const availableTargets = writableCalendars.filter(
+                    (calendar) =>
+                      calendar.connectionId !== item.connectionId ||
+                      calendar.id !== item.calendarId,
+                  );
+                  const selected = notificationTargets[item.id] ?? [];
+                  const pendingReply = item.responseStatus !== "accepted";
+                  return (
+                    <article
+                      key={item.id}
+                      className="mb-3 rounded-lg border border-border bg-background/55 p-4 last:mb-0"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="mb-1 flex items-center gap-2">
+                            <StatusBadge status={item.responseStatus} />
+                            <span className="text-xs text-muted-foreground">
+                              {item.account} · {item.calendarName}
+                            </span>
+                          </div>
+                          <h3 className="font-medium">{item.title}</h3>
+                          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <Clock3 className="size-3.5" /> {formatEventTime(item)}
+                          </p>
+                        </div>
+                        <ShieldCheck className="size-5 text-emerald-400" />
+                      </div>
+                      <div className="mt-3">
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Add private Busy blocker to
+                        </p>
+                        <CalendarChoices
+                          calendars={availableTargets}
+                          selected={selected}
+                          onChange={(keys) =>
+                            setNotificationTargets((current) => ({ ...current, [item.id]: keys }))
+                          }
+                        />
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {pendingReply && (
+                          <Button
+                            size="sm"
+                            onClick={() => void actOnNotification(item, true)}
+                            disabled={workingId === item.id}
+                          >
+                            {workingId === item.id ? (
+                              <LoaderCircle className="animate-spin" />
+                            ) : (
+                              <Check />
+                            )}{" "}
+                            Accept{selected.length ? " + block selected" : " invitation"}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant={pendingReply ? "outline" : "default"}
+                          onClick={() => void actOnNotification(item, false)}
+                          disabled={workingId === item.id || !selected.length}
+                        >
+                          <Link2 /> Block selected
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void ignoreNotification(item.id)}
+                          disabled={workingId === item.id}
+                        >
+                          Ignore
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })
               )}
             </div>
-          </div>
+          </section>
 
-          <div className="katlas-panel rounded-lg p-4">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="size-4 text-emerald-200" />
-              <h2 className="text-sm font-semibold">Routing health</h2>
+          <aside className="h-fit rounded-xl border border-border bg-card/60 p-4">
+            <div className="mb-4 flex items-center gap-2">
+              <div className="grid size-8 place-items-center rounded-lg bg-emerald-500/15 text-emerald-300">
+                <ShieldCheck className="size-4" />
+              </div>
+              <div>
+                <h2 className="font-medium">Quick blocker</h2>
+                <p className="text-xs text-muted-foreground">
+                  Same private Busy hold on several calendars.
+                </p>
+              </div>
             </div>
-            <div className="mt-4 space-y-3">
-              <HealthRow label="Outside bookings" value={queue.length ? "Review" : "Clear"} />
-              <HealthRow label="Private blockers" value={blockerCount.toString()} />
+            <div className="space-y-3">
+              <Field label="Label">
+                <Input value={title} onChange={(event) => setTitle(event.target.value)} />
+              </Field>
+              <Field label="Date">
+                <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+              </Field>
+              {!allDay && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Starts">
+                    <Input
+                      type="time"
+                      value={startTime}
+                      onChange={(event) => setStartTime(event.target.value)}
+                    />
+                  </Field>
+                  <Field label="Ends">
+                    <Input
+                      type="time"
+                      value={endTime}
+                      onChange={(event) => setEndTime(event.target.value)}
+                    />
+                  </Field>
+                </div>
+              )}
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={allDay}
+                  onChange={(event) => setAllDay(event.target.checked)}
+                  className="size-4 accent-emerald-500"
+                />{" "}
+                Block full day
+              </label>
+              <div>
+                <p className="mb-2 text-sm font-medium">Block on</p>
+                <CalendarChoices
+                  calendars={writableCalendars}
+                  selected={manualTargets}
+                  onChange={setManualTargets}
+                />
+              </div>
+              <Button
+                className="w-full"
+                onClick={() => void createBlocker()}
+                disabled={workingId === "manual" || !connections.length}
+              >
+                {workingId === "manual" ? <LoaderCircle className="animate-spin" /> : <Plus />}{" "}
+                Create {manualTargets.length || ""} blocker{manualTargets.length === 1 ? "" : "s"}
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                Event details stay private. Other calendars only receive “Busy”.
+              </p>
             </div>
-          </div>
-        </section>
+          </aside>
+        </div>
       </main>
     </div>
   );
 }
 
-function CalendarConnectionCard({
-  connection,
-  onRefresh,
-  onDisconnect,
-}: {
-  connection: CalendarConnectionState;
-  onRefresh: () => void;
-  onDisconnect: () => void;
-}) {
-  return (
-    <section className="katlas-panel rounded-lg p-4">
-      <div className="flex items-start gap-3">
-        <div
-          className={cn(
-            "grid size-9 shrink-0 place-items-center rounded-lg",
-            connection.connected
-              ? "bg-emerald-400/15 text-emerald-200"
-              : "bg-blue-500/15 text-blue-200",
-          )}
-        >
-          {connection.loading ? (
-            <LoaderCircle className="size-4 animate-spin" />
-          ) : connection.connected ? (
-            <Check className="size-4" />
-          ) : (
-            <Link2 className="size-4" />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold">Google Calendar</h2>
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            {connection.loading
-              ? "Checking connection..."
-              : connection.connected
-                ? connection.account || "Connected"
-                : connection.configured
-                  ? "Ready to connect"
-                  : "OAuth setup required"}
-          </p>
-        </div>
-        {connection.connected ? (
-          <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-1 text-[10px] font-medium text-emerald-100">
-            Connected
-          </span>
-        ) : null}
-      </div>
-
-      {connection.error ? (
-        <p className="mt-3 rounded-md border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-100">
-          {connection.error}
-        </p>
-      ) : null}
-
-      {!connection.loading && !connection.configured ? (
-        <div className="mt-3 rounded-md border border-amber-400/20 bg-amber-400/10 p-3">
-          <p className="text-xs leading-5 text-amber-100/90">
-            Add the four Google Calendar variables from <code>.env.example</code>, then register
-            this redirect URI in Google Cloud:
-          </p>
-          <code className="mt-2 block break-all rounded bg-black/25 px-2 py-1.5 text-[10px] text-amber-50">
-            {connection.redirectUri}
-          </code>
-        </div>
-      ) : null}
-
-      <div className="mt-4 flex gap-2">
-        {connection.connected ? (
-          <>
-            <Button type="button" size="sm" variant="outline" onClick={onRefresh}>
-              <RefreshCw className="size-3.5" />
-              Refresh
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={onDisconnect}>
-              <Unplug className="size-3.5" />
-              Disconnect
-            </Button>
-          </>
-        ) : connection.configured ? (
-          <Button asChild size="sm" className="w-full">
-            <a href="/api/calendar/oauth/start">
-              <Link2 className="size-3.5" />
-              Connect Google Calendar
-            </a>
-          </Button>
-        ) : (
-          <Button type="button" size="sm" className="w-full" disabled>
-            Setup required
-          </Button>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function MonthGrid({
-  month,
-  selectedDate,
-  events,
-  visibleCalendars,
+function CalendarChoices({
   calendars,
-  onSelectDate,
+  selected,
+  onChange,
 }: {
-  month: Date;
-  selectedDate: string;
-  events: RoutedEvent[];
-  visibleCalendars: CalendarId[];
-  calendars: ConnectedCalendar[];
-  onSelectDate: (dateKey: string) => void;
+  calendars: CalendarItem[];
+  selected: string[];
+  onChange: (keys: string[]) => void;
 }) {
-  const days = buildVisibleMonthGrid(month);
+  const grouped = useMemo(
+    () => Object.entries(Object.groupBy(calendars, (calendar) => calendar.account)),
+    [calendars],
+  );
+  if (!calendars.length)
+    return (
+      <p className="text-xs text-muted-foreground">Connect another writable calendar first.</p>
+    );
   return (
-    <div className="mt-4">
-      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-          <div key={day}>{day}</div>
-        ))}
-      </div>
-      <div className="mt-2 grid grid-cols-7 gap-1">
-        {days.map((day, index) => {
-          if (!day) return <div key={`empty-${index}`} className="h-12 sm:h-14" />;
-          const key = toDateKey(day);
-          const dayEvents = events.filter(
-            (event) =>
-              event.date === key &&
-              event.calendars.some((calendarId) => visibleCalendars.includes(calendarId)),
-          );
-          const selected = selectedDate === key;
-          const isToday = key === todayKey;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onSelectDate(key)}
-              className={cn(
-                "flex h-12 cursor-pointer flex-col items-center justify-center rounded-md border border-transparent text-xs transition hover:border-border hover:bg-accent/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-14",
-                selected && "border-ring/60 bg-accent/55",
-              )}
-            >
-              <span
-                className={cn(
-                  "grid size-6 place-items-center rounded-full",
-                  isToday && "bg-foreground font-semibold text-background",
-                )}
+    <div className="space-y-2">
+      {grouped.map(([account, items]) => (
+        <details key={account} open className="rounded-md border border-border bg-card/40">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-medium">
+            <span>{account}</span>
+            <ChevronDown className="size-3.5 text-muted-foreground" />
+          </summary>
+          <div className="border-t border-border px-2 py-1">
+            {items?.map((calendar) => (
+              <label
+                key={calendar.key}
+                className="flex cursor-pointer items-center gap-2 rounded px-1 py-1.5 text-sm hover:bg-muted/50"
               >
-                {day.getDate()}
-              </span>
-              <span className="mt-1 flex h-1.5 items-center gap-0.5">
-                {dayEvents.slice(0, 3).map((event) => (
-                  <CalendarColor
-                    key={event.id}
-                    calendar={getCalendar(event.calendars[0], calendars)}
-                    small
-                  />
-                ))}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <input
+                  type="checkbox"
+                  className="size-4 accent-emerald-500"
+                  checked={selected.includes(calendar.key)}
+                  onChange={(event) =>
+                    onChange(
+                      event.target.checked
+                        ? [...selected, calendar.key]
+                        : selected.filter((key) => key !== calendar.key),
+                    )
+                  }
+                />
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: calendar.backgroundColor }}
+                />
+                <span className="min-w-0 flex-1 truncate">{calendar.name}</span>
+                {calendar.primary && (
+                  <span className="text-[10px] text-muted-foreground">Primary</span>
+                )}
+              </label>
+            ))}
+          </div>
+        </details>
+      ))}
     </div>
   );
 }
 
-function EventCard({ event, calendars }: { event: RoutedEvent; calendars: ConnectedCalendar[] }) {
+function EmptyInbox({ connected }: { connected: boolean }) {
   return (
-    <div className="rounded-lg border border-border/70 bg-background/40 p-3">
-      <div className="flex items-center gap-2">
-        <CalendarColor calendar={getCalendar(event.calendars[0], calendars)} small />
-        <span className="min-w-0 truncate text-sm font-medium">{event.title}</span>
-        {event.kind === "blocker" ? (
-          <ShieldCheck className="ml-auto size-3.5 text-emerald-200" />
-        ) : null}
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {event.start}
-        {event.start !== "All day" ? `–${event.end}` : ""}
-      </p>
-    </div>
-  );
-}
-
-function QueueCard({
-  item,
-  selectedTargets,
-  onToggleTarget,
-  onCopy,
-  onBlock,
-  onIgnore,
-}: {
-  item: QueueItem;
-  selectedTargets: CalendarId[];
-  onToggleTarget: (calendarId: CalendarId) => void;
-  onCopy: () => void;
-  onBlock: () => void;
-  onIgnore: () => void;
-}) {
-  const sourceCalendar = getCalendar(item.sourceCalendarId);
-  return (
-    <article className="rounded-lg border border-border/70 bg-background/40 p-4">
-      <div className="flex items-start gap-3">
-        <span className={cn("mt-1 size-2.5 rounded-full", sourceCalendar.colorClass)} />
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold">{item.title}</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {formatShortDate(parseDateKey(item.date))} · {item.start}–{item.end} · {item.source}
-          </p>
-          <p className="mt-2 text-xs text-muted-foreground">{item.note}</p>
+    <div className="grid min-h-56 place-items-center px-4 text-center">
+      <div>
+        <div className="mx-auto mb-3 grid size-10 place-items-center rounded-full bg-muted">
+          <Bell className="size-4 text-muted-foreground" />
         </div>
+        <p className="font-medium">
+          {connected ? "Nothing needs review" : "Connect your first Google account"}
+        </p>
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+          {connected
+            ? "New accepted, tentative, and unanswered invitations will appear here."
+            : "Then connect the other Google accounts whose availability you want to protect."}
+        </p>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {demoCalendars
-          .filter((calendar) => calendar.id !== item.sourceCalendarId)
-          .map((calendar) => {
-            const selected = selectedTargets.includes(calendar.id);
-            return (
-              <button
-                key={calendar.id}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => onToggleTarget(calendar.id)}
-                className={cn(
-                  "flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  selected
-                    ? "border-ring/50 bg-accent/55"
-                    : "border-border/70 text-muted-foreground",
-                )}
-              >
-                <span className={cn("size-1.5 rounded-full", calendar.colorClass)} />
-                {calendar.name}
-              </button>
-            );
-          })}
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button type="button" size="sm" onClick={onBlock}>
-          <ShieldCheck className="size-3.5" />
-          Create blockers
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCopy}>
-          <Copy className="size-3.5" />
-          Copy details
-        </Button>
-        <Button type="button" size="sm" variant="ghost" className="ml-auto" onClick={onIgnore}>
-          <X className="size-3.5" />
-          Ignore
-        </Button>
-      </div>
-    </article>
+    </div>
   );
 }
 
-function StatusPill({
-  label,
+function Stat({
   value,
-  tone = "default",
+  label,
+  attention = false,
 }: {
+  value: number;
   label: string;
-  value: string;
-  tone?: "default" | "amber" | "emerald";
+  attention?: boolean;
 }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5",
-        tone === "amber" && "border-amber-400/25 bg-amber-400/10",
-        tone === "emerald" && "border-emerald-400/25 bg-emerald-400/10",
-        tone === "default" && "border-border/70 bg-background/45",
+        "rounded-full border px-2.5 py-1",
+        attention
+          ? "border-amber-400/40 bg-amber-400/10 text-amber-200"
+          : "border-border text-muted-foreground",
       )}
     >
-      <span className="text-muted-foreground">{label}</span>
-      <strong>{value}</strong>
+      <strong className="text-foreground">{value}</strong> {label}
     </span>
   );
 }
 
-function HealthRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
-    </div>
-  );
-}
-
-function CalendarColor({
-  calendar,
-  ring = false,
-  small = false,
-}: {
-  calendar: ConnectedCalendar;
-  ring?: boolean;
-  small?: boolean;
-}) {
+function StatusBadge({ status }: { status: Notification["responseStatus"] }) {
+  const label =
+    status === "needsAction" ? "Needs response" : status === "tentative" ? "Tentative" : "Accepted";
   return (
     <span
       className={cn(
-        "shrink-0 rounded-full",
-        small ? "size-2" : "size-2.5",
-        !calendar.backgroundColor && calendar.colorClass,
-        ring && !calendar.backgroundColor && `ring-4 ${calendar.ringClass}`,
+        "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        status === "accepted"
+          ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+          : status === "tentative"
+            ? "border-sky-400/30 bg-sky-400/10 text-sky-300"
+            : "border-amber-400/30 bg-amber-400/10 text-amber-300",
       )}
-      style={{
-        backgroundColor: calendar.backgroundColor,
-        boxShadow:
-          ring && calendar.backgroundColor ? `0 0 0 4px ${calendar.backgroundColor}33` : undefined,
-      }}
-    />
+    >
+      {label}
+    </span>
   );
 }
 
-function getCalendar(calendarId: CalendarId, calendars = demoCalendars) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    calendars.find((calendar) => calendar.id === calendarId) ??
-    demoCalendars.find((calendar) => calendar.id === calendarId) ??
-    demoCalendars[0]
+    <label className="block">
+      <span className="mb-1 block text-sm font-medium">{label}</span>
+      {children}
+    </label>
   );
 }
 
-function mergeCalendarIds(current: CalendarId[], next: CalendarId[]) {
-  return Array.from(new Set([...current, ...next]));
+function targetObjects(keys: string[]): Target[] {
+  return keys.map((key) => {
+    const separator = key.indexOf(":");
+    return { connectionId: key.slice(0, separator), calendarId: key.slice(separator + 1) };
+  });
 }
 
-function sortByStart(a: RoutedEvent, b: RoutedEvent) {
-  return a.start.localeCompare(b.start);
+async function requestScan() {
+  const response = await fetch("/api/calendar/notifications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "scan" }),
+  });
+  const body = (await response.json()) as {
+    ok: boolean;
+    notifications?: Notification[];
+    errors?: string[];
+    error?: string;
+  };
+  if (!response.ok || !body.ok) throw new Error(body.error || "Calendar check failed.");
+  return body;
 }
 
-function buildVisibleMonthGrid(month: Date) {
-  const first = startOfMonth(month);
-  const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-  const result: Array<Date | null> = Array.from({ length: first.getDay() }, () => null);
-  for (let day = 1; day <= daysInMonth; day += 1)
-    result.push(new Date(first.getFullYear(), first.getMonth(), day));
-  while (result.length % 7 !== 0) result.push(null);
-  return result;
+function formatEventTime(item: Notification) {
+  if (item.allDay) return `${formatDate(item.start)} · All day`;
+  return `${formatDate(item.start)} · ${formatTime(item.start)}–${formatTime(item.end)}`;
 }
 
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
+function formatDate(value: string) {
+  const date = value.includes("T") ? new Date(value) : new Date(`${value}T12:00:00`);
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(date);
 }
 
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function addMonths(date: Date, months: number) {
-  return new Date(date.getFullYear(), date.getMonth() + months, 1);
-}
-
-function toDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseDateKey(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
-function formatMonth(date: Date) {
-  return new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(date);
-}
-
-function formatFullDate(date: Date) {
-  return new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(
-    date,
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(
+    new Date(value),
   );
-}
-
-function formatShortDate(date: Date) {
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date);
 }
