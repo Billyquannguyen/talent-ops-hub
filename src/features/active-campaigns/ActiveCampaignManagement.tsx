@@ -1,4 +1,18 @@
-import { CreditCard, ExternalLink, Pencil, Plus, Trash2, UsersRound } from "lucide-react";
+import {
+  BadgeDollarSign,
+  CircleCheck,
+  CreditCard,
+  ExternalLink,
+  Gauge,
+  Pencil,
+  Percent,
+  Plus,
+  Trash2,
+  TrendingUp,
+  TriangleAlert,
+  UsersRound,
+  X,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
@@ -35,6 +49,11 @@ const statusSelectStyles: Record<SelectedCreatorStatus, string> = {
   Invoicing: "border-orange-400/40 bg-orange-400/10 text-orange-200",
   "Fully paid": "border-emerald-400/40 bg-emerald-400/10 text-emerald-200",
 };
+
+const controlClassName =
+  "h-10 w-full rounded-md border border-input bg-background/80 px-3 text-sm outline-none ring-ring transition-colors focus:border-ring focus:ring-2";
+const tableActionClassName =
+  "inline-flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-background/65 px-2.5 text-xs font-medium transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring";
 
 export function ActiveCampaignManagement({
   initialCampaignId = "",
@@ -305,28 +324,28 @@ export function ActiveCampaignManagement({
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <TopBar />
-      <div className="absolute inset-x-0 top-0 h-[360px] bg-hero-glow pointer-events-none" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[300px] bg-hero-glow opacity-70" />
 
-      <main className="katlas-page">
-        <section className="katlas-hero-panel">
-          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+      <main className="katlas-page gap-4">
+        <section className="rounded-xl border border-border/80 bg-card/75 px-4 py-4 shadow-[0_18px_55px_rgba(0,0,0,0.2)] backdrop-blur-xl md:px-5">
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
             <div>
-              <p className="text-xs font-semibold uppercase text-muted-foreground">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                 Active Campaign Management
               </p>
-              <h1 className="mt-3 text-3xl font-medium leading-tight tracking-tight md:text-4xl">
-                Selected creator tracker
+              <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight md:text-3xl">
+                Campaign delivery
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Track selected creators after client approval and contract signing.
+              <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
+                Track selected creators from contract signing through final payment.
               </p>
             </div>
-            <div className="w-full lg:max-w-sm">
-              <FieldLabel label="Campaign Selector">
+            <div className="w-full lg:max-w-xs">
+              <FieldLabel label="Campaign view">
                 <select
                   value={selectedCampaignId}
                   onChange={(event) => setSelectedCampaignId(event.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+                  className={controlClassName}
                 >
                   <option value={allCampaignsSelectionId}>All Campaigns</option>
                   {registry.campaigns.map((campaign) => (
@@ -342,19 +361,26 @@ export function ActiveCampaignManagement({
 
         {hasCampaignProfiles ? (
           <>
-            <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <SummaryCard
                 label="Selected Creators"
                 value={visibleSummary.totalCreators.toLocaleString()}
+                icon={UsersRound}
               />
-              <SummaryCard label="Total Spend" value={formatCurrency(visibleSummary.totalSpend)} />
+              <SummaryCard
+                label="Total Spend"
+                value={formatCurrency(visibleSummary.totalSpend)}
+                icon={BadgeDollarSign}
+              />
               <SummaryCard
                 label="Total Profit"
                 value={formatCurrency(visibleSummary.totalProfit)}
+                icon={TrendingUp}
               />
               <SummaryCard
                 label="Average Profit Margin"
                 value={formatPercent(visibleSummary.averageMargin)}
+                icon={Percent}
               />
               <ProjectProgressCard
                 finished={visibleSummary.finishedProjects}
@@ -362,30 +388,42 @@ export function ActiveCampaignManagement({
               />
             </section>
 
-            <Panel title="Creator Records" icon={UsersRound}>
-              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <section className="overflow-hidden rounded-xl border border-border/80 bg-card/80 shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-sm">
+              <div className="flex flex-col justify-between gap-4 border-b border-border/70 px-4 py-4 sm:flex-row sm:items-center md:px-5">
                 <div>
-                  <p className="text-sm font-medium">
+                  <div className="flex items-center gap-2">
+                    <div className="katlas-panel-icon">
+                      <UsersRound className="size-4" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-semibold">Creator records</h2>
+                      <p className="text-xs text-muted-foreground">
+                        {visibleCreatorRecords.length.toLocaleString()} records in this view
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm font-medium">
                     {selectedCampaign
                       ? `${selectedCampaign.campaignName} | ${selectedCampaign.campaignCode}`
                       : "All Campaigns"}
                   </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     {selectedCampaign
-                      ? "Add only creators who are officially selected and contract signed."
-                      : "Showing selected creators across every campaign profile."}
+                      ? "Showing the selected creators for this campaign."
+                      : "Choose one campaign to add a creator or narrow the table."}
                   </p>
                 </div>
                 {selectedCampaign ? (
                   <button
+                    type="button"
                     onClick={openNewCreator}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+                    className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
                   >
                     <Plus className="size-4" />
                     Add Creator
                   </button>
                 ) : (
-                  <p className="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+                  <p className="rounded-md border border-border/80 bg-background/60 px-3 py-2 text-xs text-muted-foreground">
                     Select one campaign to add a creator.
                   </p>
                 )}
@@ -400,10 +438,8 @@ export function ActiveCampaignManagement({
                 onStatusChange={requestStatusChange}
                 onPaymentForm={openPaymentForm}
               />
-              {storageMessage ? (
-                <p className="mt-3 text-xs text-muted-foreground">{storageMessage}</p>
-              ) : null}
-            </Panel>
+              {storageMessage ? <StorageMessage message={storageMessage} /> : null}
+            </section>
           </>
         ) : (
           <section className="katlas-panel p-6 text-sm text-muted-foreground">
@@ -479,71 +515,99 @@ function CreatorRecordsTable({
   onStatusChange: (record: SelectedCreatorRecord, status: SelectedCreatorStatus) => void;
   onPaymentForm: (record: SelectedCreatorRecord) => void;
 }) {
+  if (!records.length) {
+    return (
+      <div className="px-4 py-12 text-center md:px-5">
+        <div className="mx-auto grid size-11 place-items-center rounded-full border border-border bg-background/60 text-muted-foreground">
+          <UsersRound className="size-5" />
+        </div>
+        <p className="mt-3 text-sm font-medium">No creators in this view</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Select a campaign and add its first contracted creator.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="katlas-table-shell mt-4">
-      <table className="min-w-[1240px] w-full border-collapse text-left text-sm">
-        <thead className="bg-muted/40 text-xs text-muted-foreground">
-          <tr>
-            <TableHeader>Creator</TableHeader>
-            {showCampaignColumn ? <TableHeader>Campaign</TableHeader> : null}
-            <TableHeader>Project Code</TableHeader>
-            <TableHeader>Creator Link</TableHeader>
-            <TableHeader>Avg Views</TableHeader>
-            <TableHeader>Creator Payment</TableHeader>
-            <TableHeader>Internal Cost USD</TableHeader>
-            <TableHeader>Client Quote USD</TableHeader>
-            <TableHeader>CPM</TableHeader>
-            <TableHeader>Profit</TableHeader>
-            <TableHeader>Profit Margin</TableHeader>
-            <TableHeader>Month</TableHeader>
-            <TableHeader>Status</TableHeader>
-            <TableHeader>Live Link</TableHeader>
-            <TableHeader>Notes</TableHeader>
-            <TableHeader>Actions</TableHeader>
-          </tr>
-        </thead>
-        <tbody>
-          {records.length ? (
-            records.map((record) => {
+    <>
+      <div className="hidden overflow-x-auto lg:block">
+        <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
+          <thead className="bg-background/55 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+            <tr>
+              <TableHeader>Creator</TableHeader>
+              <TableHeader>{showCampaignColumn ? "Campaign / Project" : "Project"}</TableHeader>
+              <TableHeader>Performance</TableHeader>
+              <TableHeader>Commercials</TableHeader>
+              <TableHeader>Profit</TableHeader>
+              <TableHeader>Delivery</TableHeader>
+              <TableHeader>Status</TableHeader>
+              <TableHeader align="right">Actions</TableHeader>
+            </tr>
+          </thead>
+          <tbody>
+            {records.map((record) => {
               const financials = calculateCreatorFinancials(record);
               const campaign = campaignById.get(record.campaignRegistryId);
               const currentBatch = (batchesByCampaignId.get(record.campaignRegistryId) ?? []).find(
                 (batch) => batch.batchId === record.batchId,
               );
+              const projectCode =
+                currentBatch?.projectCode ||
+                record.projectCode ||
+                campaign?.campaignCode ||
+                "No project code";
+
               return (
-                <tr key={record.id} className="border-t border-border">
+                <tr
+                  key={record.id}
+                  className="border-t border-border/70 transition-colors hover:bg-accent/20"
+                >
                   <TableCell>
-                    <span className="font-medium">{record.creatorName}</span>
+                    <CreatorNameLink name={record.creatorName} href={record.creatorLink} />
+                    <p className="mt-1 max-w-52 truncate text-xs text-muted-foreground">
+                      {record.notes || "No notes"}
+                    </p>
                   </TableCell>
-                  {showCampaignColumn ? (
-                    <TableCell>
-                      <p className="font-medium">{campaign?.campaignName ?? "Unknown Campaign"}</p>
-                    </TableCell>
-                  ) : null}
                   <TableCell>
-                    <span className="inline-flex rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium">
-                      {currentBatch?.projectCode ||
-                        record.projectCode ||
-                        campaign?.campaignCode ||
-                        "No project code"}
+                    {showCampaignColumn ? (
+                      <p className="max-w-44 truncate font-medium">
+                        {campaign?.campaignName ?? "Unknown campaign"}
+                      </p>
+                    ) : null}
+                    <span className="mt-1 inline-flex rounded-full border border-border/80 bg-background/70 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {projectCode}
                     </span>
                   </TableCell>
                   <TableCell>
-                    <InlineLink href={record.creatorLink} label="Creator Link" />
+                    <DataPair label="Avg views" value={formatNumber(record.avgViews)} />
+                    <DataPair label="CPM" value={formatCpm(financials.cpm)} />
                   </TableCell>
-                  <TableCell>{formatNumber(record.avgViews)}</TableCell>
                   <TableCell>
-                    {formatPaymentAmount(
-                      record.creatorPaymentAmount,
-                      record.creatorPaymentCurrency,
-                    )}
+                    <DataPair
+                      label="Creator"
+                      value={formatPaymentAmount(
+                        record.creatorPaymentAmount,
+                        record.creatorPaymentCurrency,
+                      )}
+                    />
+                    <DataPair label="Cost" value={formatCurrency(record.internalQuote)} />
+                    <DataPair label="Quote" value={formatCurrency(record.externalQuote)} strong />
                   </TableCell>
-                  <TableCell>{formatCurrency(record.internalQuote)}</TableCell>
-                  <TableCell>{formatCurrency(record.externalQuote)}</TableCell>
-                  <TableCell>{formatCpm(financials.cpm)}</TableCell>
-                  <TableCell>{formatCurrency(financials.profit)}</TableCell>
-                  <TableCell>{formatPercent(financials.profitMargin)}</TableCell>
-                  <TableCell>{record.month || "No month"}</TableCell>
+                  <TableCell>
+                    <p className="font-semibold tabular-nums">
+                      {formatCurrency(financials.profit)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {formatPercent(financials.profitMargin)} margin
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    <p className="text-xs font-medium">{formatMonth(record.month)}</p>
+                    <div className="mt-1">
+                      <InlineLink href={record.liveLink} label="Live content" />
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <StatusSelect
                       status={record.status}
@@ -551,47 +615,101 @@ function CreatorRecordsTable({
                     />
                   </TableCell>
                   <TableCell>
-                    <InlineLink href={record.liveLink} label="Live Link" />
-                  </TableCell>
-                  <TableCell>
-                    <p className="max-w-52 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
-                      {record.notes || "No notes"}
-                    </p>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex justify-end gap-2">
                       <button
+                        type="button"
                         onClick={() => onEdit(record)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition hover:bg-accent"
+                        className={tableActionClassName}
                       >
                         <Pencil className="size-3.5" />
                         Edit
                       </button>
                       <button
+                        type="button"
                         onClick={() => onPaymentForm(record)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition hover:bg-accent"
+                        className={tableActionClassName}
                       >
                         <CreditCard className="size-3.5" />
-                        Payment form
+                        Payment
                       </button>
                     </div>
                   </TableCell>
                 </tr>
               );
-            })
-          ) : (
-            <tr>
-              <td
-                colSpan={showCampaignColumn ? 15 : 14}
-                className="px-4 py-10 text-center text-sm text-muted-foreground"
-              >
-                No selected creators for this view yet.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="divide-y divide-border/70 lg:hidden">
+        {records.map((record) => {
+          const financials = calculateCreatorFinancials(record);
+          const campaign = campaignById.get(record.campaignRegistryId);
+          const currentBatch = (batchesByCampaignId.get(record.campaignRegistryId) ?? []).find(
+            (batch) => batch.batchId === record.batchId,
+          );
+          const projectCode =
+            currentBatch?.projectCode ||
+            record.projectCode ||
+            campaign?.campaignCode ||
+            "No project code";
+
+          return (
+            <article key={record.id} className="p-4 md:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <CreatorNameLink name={record.creatorName} href={record.creatorLink} />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {showCampaignColumn && campaign ? `${campaign.campaignName} · ` : ""}
+                    {projectCode}
+                  </p>
+                </div>
+                <StatusSelect
+                  status={record.status}
+                  onChange={(status) => onStatusChange(record, status)}
+                />
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+                <MobileMetric label="Avg views" value={formatNumber(record.avgViews)} />
+                <MobileMetric label="Client quote" value={formatCurrency(record.externalQuote)} />
+                <MobileMetric label="Profit" value={formatCurrency(financials.profit)} />
+                <MobileMetric label="Margin" value={formatPercent(financials.profitMargin)} />
+              </div>
+
+              {record.notes ? (
+                <p className="mt-4 text-xs leading-5 text-muted-foreground">{record.notes}</p>
+              ) : null}
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">{formatMonth(record.month)}</span>
+                  <InlineLink href={record.liveLink} label="Live content" />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(record)}
+                    className={tableActionClassName}
+                  >
+                    <Pencil className="size-3.5" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onPaymentForm(record)}
+                    className={tableActionClassName}
+                  >
+                    <CreditCard className="size-3.5" />
+                    Payment
+                  </button>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -630,15 +748,20 @@ function CreatorRecordModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-3 backdrop-blur-sm md:p-6">
       <form
         onSubmit={onSubmit}
-        className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="creator-record-title"
+        className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-border/90 bg-card p-4 shadow-2xl md:p-6"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase text-muted-foreground">Creator Record</p>
-            <h2 className="mt-2 text-xl font-semibold">{record.creatorName || campaignName}</h2>
+            <h2 id="creator-record-title" className="mt-2 text-xl font-semibold">
+              {record.creatorName || "Add creator"}
+            </h2>
             <p className="mt-1 text-xs text-muted-foreground">
               Campaign is locked to {campaignName}
             </p>
@@ -646,112 +769,121 @@ function CreatorRecordModal({
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
+            aria-label="Close creator record"
+            className="grid size-9 shrink-0 place-items-center rounded-md border border-border bg-background/70 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
-            Cancel
+            <X className="size-4" />
           </button>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <FieldLabel label="Project Code / Batch">
-            <select
-              value={selectedBatchValue}
-              onChange={(event) => {
-                const batch = campaignBatches.find(
-                  (candidate) => candidate.batchId === event.target.value,
-                );
-                patchRecord({
-                  batchId: batch?.batchId ?? "",
-                  projectCode: batch?.projectCode ?? campaignCode,
-                });
-              }}
+        <div className="mt-5 rounded-lg border border-border/70 bg-background/25 p-4">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold">Creator and delivery</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Identity, campaign batch, performance and publishing details.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <FieldLabel label="Project Code / Batch">
+              <select
+                value={selectedBatchValue}
+                onChange={(event) => {
+                  const batch = campaignBatches.find(
+                    (candidate) => candidate.batchId === event.target.value,
+                  );
+                  patchRecord({
+                    batchId: batch?.batchId ?? "",
+                    projectCode: batch?.projectCode ?? campaignCode,
+                  });
+                }}
+                required
+                className={controlClassName}
+              >
+                {!campaignBatches.length ? (
+                  <option value={`legacy:${record.projectCode || campaignCode}`}>
+                    {record.projectCode || campaignCode || "No project code"}
+                  </option>
+                ) : null}
+                {campaignBatches.map((batch) => (
+                  <option key={batch.batchId} value={batch.batchId}>
+                    {batch.projectCode}
+                    {batch.batchName ? ` | ${batch.batchName}` : ""}
+                    {batch.isDefault === "TRUE" ? " | Default" : ""}
+                  </option>
+                ))}
+              </select>
+            </FieldLabel>
+            <TextInput
+              label="Creator Name"
+              value={record.creatorName}
+              onChange={(creatorName) => patchRecord({ creatorName })}
               required
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
-            >
-              {!campaignBatches.length ? (
-                <option value={`legacy:${record.projectCode || campaignCode}`}>
-                  {record.projectCode || campaignCode || "No project code"}
-                </option>
-              ) : null}
-              {campaignBatches.map((batch) => (
-                <option key={batch.batchId} value={batch.batchId}>
-                  {batch.projectCode}
-                  {batch.batchName ? ` | ${batch.batchName}` : ""}
-                  {batch.isDefault === "TRUE" ? " | Default" : ""}
-                </option>
-              ))}
-            </select>
-          </FieldLabel>
-          <TextInput
-            label="Creator Name"
-            value={record.creatorName}
-            onChange={(creatorName) => patchRecord({ creatorName })}
-            required
-          />
-          <TextInput
-            label="Creator Link"
-            value={record.creatorLink}
-            onChange={(creatorLink) => patchRecord({ creatorLink })}
-          />
-          <NumberInput
-            label="Avg Views"
-            value={record.avgViews}
-            onChange={(avgViews) => patchRecord({ avgViews })}
-          />
-          <NumberInput
-            label="Creator Payment Amount"
-            value={record.creatorPaymentAmount}
-            onChange={(creatorPaymentAmount) => patchRecord({ creatorPaymentAmount })}
-          />
-          <TextInput
-            label="Creator Payment Currency"
-            value={record.creatorPaymentCurrency}
-            onChange={(creatorPaymentCurrency) =>
-              patchRecord({ creatorPaymentCurrency: creatorPaymentCurrency.toUpperCase() })
-            }
-            required
-          />
-          <NumberInput
-            label="Internal Cost USD"
-            value={record.internalQuote}
-            onChange={(internalQuote) => patchRecord({ internalQuote })}
-          />
-          <NumberInput
-            label="Client Quote USD"
-            value={record.externalQuote}
-            onChange={(externalQuote) => patchRecord({ externalQuote })}
-          />
-          <MonthInput
-            label="Month"
-            value={record.month}
-            onChange={(month) => patchRecord({ month })}
-          />
-          <FieldLabel label="Status">
-            <select
-              value={record.status}
-              onChange={(event) =>
-                patchRecord({ status: event.target.value as SelectedCreatorStatus })
+            />
+            <TextInput
+              label="Creator Link"
+              value={record.creatorLink}
+              onChange={(creatorLink) => patchRecord({ creatorLink })}
+            />
+            <NumberInput
+              label="Avg Views"
+              value={record.avgViews}
+              onChange={(avgViews) => patchRecord({ avgViews })}
+            />
+            <NumberInput
+              label="Creator Payment Amount"
+              value={record.creatorPaymentAmount}
+              onChange={(creatorPaymentAmount) => patchRecord({ creatorPaymentAmount })}
+            />
+            <TextInput
+              label="Creator Payment Currency"
+              value={record.creatorPaymentCurrency}
+              onChange={(creatorPaymentCurrency) =>
+                patchRecord({ creatorPaymentCurrency: creatorPaymentCurrency.toUpperCase() })
               }
-              className={`h-10 w-full rounded-md border px-3 text-sm font-medium outline-none ring-ring focus:ring-2 ${statusSelectStyles[record.status]}`}
-            >
-              {selectedCreatorStatuses.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </FieldLabel>
-          <TextInput
-            label="Live Link"
-            value={record.liveLink}
-            onChange={(liveLink) => patchRecord({ liveLink })}
-          />
+              required
+            />
+            <NumberInput
+              label="Internal Cost USD"
+              value={record.internalQuote}
+              onChange={(internalQuote) => patchRecord({ internalQuote })}
+            />
+            <NumberInput
+              label="Client Quote USD"
+              value={record.externalQuote}
+              onChange={(externalQuote) => patchRecord({ externalQuote })}
+            />
+            <MonthInput
+              label="Month"
+              value={record.month}
+              onChange={(month) => patchRecord({ month })}
+            />
+            <FieldLabel label="Status">
+              <select
+                value={record.status}
+                onChange={(event) =>
+                  patchRecord({ status: event.target.value as SelectedCreatorStatus })
+                }
+                className={`h-10 w-full rounded-md border px-3 text-sm font-medium outline-none ring-ring focus:ring-2 ${statusSelectStyles[record.status]}`}
+              >
+                {selectedCreatorStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </FieldLabel>
+            <TextInput
+              label="Live Link"
+              value={record.liveLink}
+              onChange={(liveLink) => patchRecord({ liveLink })}
+            />
+          </div>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <SummaryCard label="CPM" value={formatCpm(financials.cpm)} />
-          <SummaryCard label="Profit" value={formatCurrency(financials.profit)} />
-          <SummaryCard label="Profit Margin" value={formatPercent(financials.profitMargin)} />
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <CompactFinancial label="CPM" value={formatCpm(financials.cpm)} />
+          <CompactFinancial label="Profit" value={formatCurrency(financials.profit)} />
+          <CompactFinancial label="Profit margin" value={formatPercent(financials.profitMargin)} />
         </div>
 
         <div className="mt-4">
@@ -760,12 +892,12 @@ function CreatorRecordModal({
               value={record.notes}
               rows={4}
               onChange={(event) => patchRecord({ notes: event.target.value })}
-              className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 outline-none ring-ring focus:ring-2"
+              className="w-full resize-y rounded-md border border-input bg-background/80 px-3 py-2 text-sm leading-6 outline-none ring-ring transition-colors focus:border-ring focus:ring-2"
             />
           </FieldLabel>
         </div>
 
-        <div className="mt-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+        <div className="mt-5 flex flex-col-reverse justify-between gap-3 border-t border-border/70 pt-4 sm:flex-row sm:items-center">
           {canDelete ? (
             <button
               type="button"
@@ -813,16 +945,33 @@ function PostedLiveLinkModal({
   const [value, setValue] = useState(liveLink);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/85 p-4 backdrop-blur-sm">
       <form
         onSubmit={(event) => {
           event.preventDefault();
           onSubmit(value.trim());
         }}
-        className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="posted-live-link-title"
+        className="w-full max-w-md rounded-xl border border-border/90 bg-card p-5 shadow-2xl"
       >
-        <p className="text-xs font-semibold uppercase text-muted-foreground">Posted content</p>
-        <h2 className="mt-2 text-xl font-semibold">Add live link</h2>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Posted content</p>
+            <h2 id="posted-live-link-title" className="mt-2 text-xl font-semibold">
+              Add live link
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close live link form"
+            className="grid size-9 shrink-0 place-items-center rounded-md border border-border bg-background/70 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {creatorName || "This creator"} is marked as Posted. Add the live link so the campaign
           record stays useful.
@@ -850,54 +999,143 @@ function PostedLiveLinkModal({
   );
 }
 
-function Panel({
-  title,
+function SummaryCard({
+  label,
+  value,
   icon: Icon,
-  children,
 }: {
-  title: string;
-  icon: LucideIcon;
-  children: ReactNode;
+  label: string;
+  value: string;
+  icon?: LucideIcon;
 }) {
   return (
-    <section className="katlas-panel">
-      <div className="mb-4 flex items-center gap-2">
-        <div className="katlas-panel-icon">
-          <Icon className="size-4" />
-        </div>
-        <h2 className="text-base font-semibold">{title}</h2>
+    <div className="rounded-xl border border-border/80 bg-card/75 p-4 shadow-[0_12px_35px_rgba(0,0,0,0.14)]">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        {Icon ? (
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border/70 bg-background/55 text-muted-foreground">
+            <Icon className="size-4" />
+          </span>
+        ) : null}
       </div>
-      {children}
-    </section>
-  );
-}
-
-function SummaryCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="katlas-panel p-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-2 text-lg font-semibold">{value}</p>
+      <p className="mt-3 text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
     </div>
   );
 }
 
 function ProjectProgressCard({ finished, ongoing }: { finished: number; ongoing: number }) {
   return (
-    <div className="katlas-panel grid gap-4 p-4 md:col-span-2 md:grid-cols-[minmax(150px,0.65fr)_minmax(260px,1.35fr)] md:items-center xl:col-span-2">
-      <div>
-        <p className="text-xs text-muted-foreground">Project Progress</p>
-        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-1">
-          <div>
-            <p className="text-2xl font-semibold tabular-nums">{finished.toLocaleString()}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Finished projects</p>
-          </div>
-          <div>
-            <p className="text-2xl font-semibold tabular-nums">{ongoing.toLocaleString()}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">Ongoing projects</p>
-          </div>
+    <div className="min-w-0 rounded-xl border border-border/80 bg-card/75 p-4 shadow-[0_12px_35px_rgba(0,0,0,0.14)] md:col-span-2 xl:col-span-4">
+      <div className="flex items-center gap-2">
+        <span className="grid size-8 place-items-center rounded-lg border border-border/70 bg-background/55 text-muted-foreground">
+          <Gauge className="size-4" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold">Project progress</p>
+          <p className="text-xs text-muted-foreground">Current delivery workload</p>
         </div>
       </div>
-      <OngoingWorkloadMonitor count={ongoing} />
+      <div className="mt-4 grid min-w-0 grid-cols-2 gap-4 sm:grid-cols-[120px_120px_minmax(0,1fr)] sm:items-center sm:gap-5">
+        <ProgressMetric label="Finished" value={finished} tone="success" />
+        <ProgressMetric label="Ongoing" value={ongoing} tone="active" />
+        <div className="col-span-2 min-w-0 border-t border-border/70 pt-4 sm:col-span-1 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
+          <OngoingWorkloadMonitor count={ongoing} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProgressMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "success" | "active";
+}) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-background/40 px-3 py-3">
+      <div className="flex items-center gap-2">
+        <span
+          className={`size-2 rounded-full ${tone === "success" ? "bg-emerald-400" : "bg-cyan-400"}`}
+        />
+        <p className="text-xs text-muted-foreground">{label}</p>
+      </div>
+      <p className="mt-1.5 text-2xl font-semibold tabular-nums">{value.toLocaleString()}</p>
+    </div>
+  );
+}
+
+function CompactFinancial({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border/70 bg-background/45 px-3 py-3">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-base font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function DataPair({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-0.5 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={strong ? "font-semibold text-foreground" : "font-medium text-foreground"}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function MobileMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function CreatorNameLink({ name, href }: { name: string; href: string }) {
+  if (!href.trim()) return <p className="font-semibold">{name || "Unnamed creator"}</p>;
+
+  return (
+    <a
+      href={normalizeUrl(href)}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex max-w-52 items-center gap-1.5 font-semibold underline-offset-4 transition-colors hover:text-emerald-300 hover:underline"
+    >
+      <span className="truncate">{name || "Unnamed creator"}</span>
+      <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
+    </a>
+  );
+}
+
+function StorageMessage({ message }: { message: string }) {
+  const isError = /error|failed|unavailable|missing|unsupported/i.test(message);
+  const Icon = isError ? TriangleAlert : CircleCheck;
+
+  return (
+    <div
+      role="status"
+      className={`flex items-center gap-2 border-t px-4 py-3 text-xs md:px-5 ${
+        isError
+          ? "border-rose-400/20 bg-rose-400/5 text-rose-200"
+          : "border-emerald-400/20 bg-emerald-400/5 text-emerald-200"
+      }`}
+    >
+      <Icon className="size-4 shrink-0" />
+      <span>{message}</span>
     </div>
   );
 }
@@ -905,8 +1143,8 @@ function ProjectProgressCard({ finished, ongoing }: { finished: number; ongoing:
 function FieldLabel({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="mt-1">{children}</div>
+      <span className="text-xs font-medium text-foreground/75">{label}</span>
+      <div className="mt-1.5">{children}</div>
     </label>
   );
 }
@@ -928,7 +1166,7 @@ function TextInput({
         value={value}
         required={required}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+        className={controlClassName}
       />
     </FieldLabel>
   );
@@ -951,7 +1189,7 @@ function NumberInput({
         min="0"
         step="0.01"
         onChange={(event) => onChange(Number(event.target.value))}
-        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+        className={controlClassName}
       />
     </FieldLabel>
   );
@@ -972,18 +1210,28 @@ function MonthInput({
         value={value}
         type="month"
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-ring focus:ring-2"
+        className={controlClassName}
       />
     </FieldLabel>
   );
 }
 
-function TableHeader({ children }: { children: ReactNode }) {
-  return <th className="px-4 py-3 font-medium">{children}</th>;
+function TableHeader({
+  children,
+  align = "left",
+}: {
+  children: ReactNode;
+  align?: "left" | "right";
+}) {
+  return (
+    <th className={`px-4 py-3 font-semibold ${align === "right" ? "text-right" : "text-left"}`}>
+      {children}
+    </th>
+  );
 }
 
 function TableCell({ children }: { children: ReactNode }) {
-  return <td className="px-4 py-3 align-top">{children}</td>;
+  return <td className="px-4 py-3.5 align-top">{children}</td>;
 }
 
 function StatusSelect({
@@ -1027,6 +1275,15 @@ function InlineLink({ href, label }: { href: string; label: string }) {
 function normalizeUrl(value: string): string {
   if (/^https?:\/\//i.test(value)) return value;
   return `https://${value}`;
+}
+
+function formatMonth(value: string): string {
+  if (!value) return "No month";
+  const [year, month] = value.split("-").map(Number);
+  if (!year || !month) return value;
+  return new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" }).format(
+    new Date(year, month - 1, 1),
+  );
 }
 
 function formatNumber(value: number): string {

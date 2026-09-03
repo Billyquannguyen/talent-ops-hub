@@ -1,5 +1,6 @@
 import { Player } from "@remotion/player";
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
+import { useEffect, useState } from "react";
 
 type WorkloadTier = {
   label: string;
@@ -8,7 +9,7 @@ type WorkloadTier = {
   softColor: string;
 };
 
-export function getOngoingWorkloadTier(count: number): WorkloadTier {
+function getOngoingWorkloadTier(count: number): WorkloadTier {
   if (count < 15) {
     return {
       label: "Outreach warning",
@@ -57,100 +58,85 @@ export function getOngoingWorkloadTier(count: number): WorkloadTier {
   };
 }
 
-function WorkloadIllustration({ count }: { count: number }) {
-  const frame = useCurrentFrame();
+function WorkloadIllustration({ count, reduceMotion }: { count: number; reduceMotion: boolean }) {
+  const currentFrame = useCurrentFrame();
+  const frame = reduceMotion ? 60 : currentFrame;
   const tier = getOngoingWorkloadTier(count);
   const chartMaximum = 45;
   const markerPosition = Math.min(Math.max(count, 0), chartMaximum) / chartMaximum;
+  const zones = [
+    { color: "#f59e0b", width: 33.33 },
+    { color: "#38bdf8", width: 11.11 },
+    { color: "#34d399", width: 13.33 },
+    { color: "#22d3ee", width: 11.11 },
+    { color: "#a78bfa", width: 22.22 },
+    { color: "#fb7185", width: 8.9 },
+  ];
 
   return (
     <AbsoluteFill
       style={{
         backgroundColor: "transparent",
-        color: "#f8fafc",
         fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
         justifyContent: "center",
-        padding: "24px 28px",
+        padding: "8px 10px",
       }}
     >
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
-        <div>
-          <div style={{ color: "#94a3b8", fontSize: 20 }}>ONGOING WORKLOAD</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 6 }}>
-            <strong style={{ fontSize: 54, lineHeight: 1 }}>{count}</strong>
-            <span style={{ color: "#cbd5e1", fontSize: 21 }}>projects</span>
-          </div>
-        </div>
+      <div style={{ position: "relative" }}>
         <div
           style={{
-            backgroundColor: tier.softColor,
-            border: `1px solid ${tier.color}66`,
+            display: "flex",
+            gap: 5,
             borderRadius: 999,
-            color: tier.color,
-            fontSize: 19,
-            fontWeight: 700,
-            opacity: interpolate(frame, [8, 24], [0, 1], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-              easing: Easing.bezier(0.16, 1, 0.3, 1),
-            }),
-            padding: "7px 13px",
-          }}
-        >
-          {tier.label}
-        </div>
-      </div>
-
-      <div style={{ marginTop: 26, position: "relative" }}>
-        <div
-          style={{
-            backgroundColor: "rgba(148, 163, 184, 0.15)",
-            borderRadius: 999,
-            height: 15,
+            height: 12,
             overflow: "hidden",
           }}
         >
-          <div
-            style={{
-              backgroundColor: tier.color,
-              borderRadius: 999,
-              height: "100%",
-              width: `${interpolate(frame, [0, 32], [0, markerPosition * 100], {
-                extrapolateLeft: "clamp",
-                extrapolateRight: "clamp",
-                easing: Easing.bezier(0.16, 1, 0.3, 1),
-              })}%`,
-            }}
-          />
+          {zones.map((zone, index) => (
+            <div
+              key={zone.color}
+              style={{
+                backgroundColor: zone.color,
+                flexBasis: `${zone.width}%`,
+                flexGrow: 0,
+                flexShrink: 0,
+                opacity: interpolate(frame, [index * 4, index * 4 + 18], [0.16, 0.48], {
+                  extrapolateLeft: "clamp",
+                  extrapolateRight: "clamp",
+                  easing: Easing.bezier(0.16, 1, 0.3, 1),
+                }),
+              }}
+            />
+          ))}
         </div>
         <div
           style={{
             backgroundColor: tier.color,
-            border: "4px solid #111827",
+            border: "3px solid #0f1115",
             borderRadius: "50%",
-            boxShadow: `0 0 24px ${tier.color}88`,
-            height: 26,
-            left: `${interpolate(frame, [0, 32], [0, markerPosition * 100], {
+            boxShadow: `0 0 18px ${tier.color}99`,
+            height: 18,
+            left: `${interpolate(frame, [0, 36], [1, markerPosition * 100], {
               extrapolateLeft: "clamp",
               extrapolateRight: "clamp",
               easing: Easing.bezier(0.16, 1, 0.3, 1),
             })}%`,
             position: "absolute",
-            top: -6,
+            top: -3,
             translate: "-50% 0",
-            width: 26,
+            width: 18,
           }}
         />
         <div
           style={{
             color: "#64748b",
             display: "flex",
-            fontSize: 16,
+            fontSize: 10,
             justifyContent: "space-between",
-            marginTop: 12,
+            marginTop: 10,
           }}
         >
-          <span>0</span>
+          <span>Below 15</span>
           <span style={{ color: "#34d399" }}>Ideal 20–25</span>
           <span>40+</span>
         </div>
@@ -161,21 +147,46 @@ function WorkloadIllustration({ count }: { count: number }) {
 
 export function OngoingWorkloadMonitor({ count }: { count: number }) {
   const tier = getOngoingWorkloadTier(count);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updatePreference = () => setReduceMotion(mediaQuery.matches);
+    updatePreference();
+    mediaQuery.addEventListener("change", updatePreference);
+    return () => mediaQuery.removeEventListener("change", updatePreference);
+  }, []);
 
   return (
-    <div>
-      <div className="overflow-hidden rounded-lg border border-border/70 bg-background/55">
+    <div className="min-w-0">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs text-muted-foreground">Ongoing workload</p>
+          <p className="mt-1 text-xs text-muted-foreground">{tier.guidance}</p>
+        </div>
+        <span
+          className="shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold"
+          style={{
+            backgroundColor: tier.softColor,
+            borderColor: `${tier.color}66`,
+            color: tier.color,
+          }}
+        >
+          {tier.label}
+        </span>
+      </div>
+      <div className="mt-2 min-w-0 max-w-full">
         <Player
           component={WorkloadIllustration}
-          inputProps={{ count }}
+          inputProps={{ count, reduceMotion }}
           durationInFrames={60}
           compositionWidth={640}
-          compositionHeight={250}
+          compositionHeight={64}
           fps={30}
-          autoPlay
+          autoPlay={!reduceMotion}
           controls={false}
           clickToPlay={false}
-          style={{ aspectRatio: "640 / 250", width: "100%" }}
+          style={{ aspectRatio: "10 / 1", maxWidth: "100%", width: "100%" }}
         />
       </div>
       <p className="sr-only" aria-live="polite">
