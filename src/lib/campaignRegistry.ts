@@ -98,6 +98,8 @@ export type CampaignSummary = {
   invoicing: number;
   paymentPending: number;
   fullyPaid: number;
+  finishedProjects: number;
+  ongoingProjects: number;
   totalSpend: number;
   totalExternalQuote: number;
   totalProfit: number;
@@ -498,6 +500,8 @@ export function calculateCampaignSummary(records: SelectedCreatorRecord[]): Camp
   const invoicing = count("Invoicing");
   const fullyPaid = count("Fully paid");
   const paymentPending = invoicing;
+  const finishedProjects = posted + invoicing + fullyPaid;
+  const ongoingProjects = records.length - finishedProjects;
 
   return {
     totalCreators: records.length,
@@ -508,18 +512,13 @@ export function calculateCampaignSummary(records: SelectedCreatorRecord[]): Camp
     invoicing,
     paymentPending,
     fullyPaid,
+    finishedProjects,
+    ongoingProjects,
     totalSpend,
     totalExternalQuote,
     totalProfit,
     averageMargin,
-    statusSummary: buildStatusSummary({
-      contractSigned,
-      script,
-      draft,
-      posted,
-      invoicing,
-      fullyPaid,
-    }),
+    statusSummary: `${finishedProjects} Finished, ${ongoingProjects} Ongoing`,
   };
 }
 
@@ -684,23 +683,6 @@ function normalizeCreatorRecord(value: unknown): SelectedCreatorRecord {
     createdAt,
     updatedAt: stringValue(record.updatedAt) || createdAt,
   };
-}
-
-function buildStatusSummary(counts: Record<string, number>): string {
-  const visible = [
-    ["Fully paid", counts.fullyPaid],
-    ["Invoicing", counts.invoicing],
-    ["Posted", counts.posted],
-    ["Draft", counts.draft],
-    ["Script", counts.script],
-    ["Contract signed", counts.contractSigned],
-  ].filter(([, count]) => Number(count) > 0);
-
-  if (!visible.length) return "No selected creators";
-  return visible
-    .slice(0, 3)
-    .map(([label, count]) => `${count} ${label}`)
-    .join(", ");
 }
 
 function normalizeStatus(value: unknown): SelectedCreatorStatus {

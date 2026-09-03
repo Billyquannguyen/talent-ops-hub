@@ -23,6 +23,7 @@ import { readCampaignBatches } from "@/storage/appRepository";
 import type { CampaignBatchRecord } from "@/storage/schema";
 
 import { FeishuPaymentFormGenerator } from "./FeishuPaymentFormGenerator";
+import { OngoingWorkloadMonitor } from "./OngoingWorkloadMonitor";
 
 const allCampaignsSelectionId = "all-campaigns";
 
@@ -341,7 +342,7 @@ export function ActiveCampaignManagement({
 
         {hasCampaignProfiles ? (
           <>
-            <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
               <SummaryCard
                 label="Selected Creators"
                 value={visibleSummary.totalCreators.toLocaleString()}
@@ -355,7 +356,10 @@ export function ActiveCampaignManagement({
                 label="Average Profit Margin"
                 value={formatPercent(visibleSummary.averageMargin)}
               />
-              <SummaryCard label="Status Summary" value={visibleSummary.statusSummary} />
+              <ProjectProgressCard
+                finished={visibleSummary.finishedProjects}
+                ongoing={visibleSummary.ongoingProjects}
+              />
             </section>
 
             <Panel title="Creator Records" icon={UsersRound}>
@@ -873,6 +877,27 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
     <div className="katlas-panel p-4">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-2 text-lg font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function ProjectProgressCard({ finished, ongoing }: { finished: number; ongoing: number }) {
+  return (
+    <div className="katlas-panel grid gap-4 p-4 md:col-span-2 md:grid-cols-[minmax(150px,0.65fr)_minmax(260px,1.35fr)] md:items-center xl:col-span-2">
+      <div>
+        <p className="text-xs text-muted-foreground">Project Progress</p>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-1">
+          <div>
+            <p className="text-2xl font-semibold tabular-nums">{finished.toLocaleString()}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Finished projects</p>
+          </div>
+          <div>
+            <p className="text-2xl font-semibold tabular-nums">{ongoing.toLocaleString()}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Ongoing projects</p>
+          </div>
+        </div>
+      </div>
+      <OngoingWorkloadMonitor count={ongoing} />
     </div>
   );
 }
