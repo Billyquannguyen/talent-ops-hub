@@ -2,6 +2,7 @@ import {
   BadgeDollarSign,
   CircleCheck,
   CreditCard,
+  HandCoins,
   ExternalLink,
   Gauge,
   Pencil,
@@ -361,16 +362,21 @@ export function ActiveCampaignManagement({
 
         {hasCampaignProfiles ? (
           <>
-            <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <SummaryCard
                 label="Selected Creators"
                 value={visibleSummary.totalCreators.toLocaleString()}
                 icon={UsersRound}
               />
               <SummaryCard
-                label="Total Spend"
+                label="Creator Cost"
                 value={formatCurrency(visibleSummary.totalSpend)}
                 icon={BadgeDollarSign}
+              />
+              <SummaryCard
+                label="Revenue"
+                value={formatCurrency(visibleSummary.totalExternalQuote)}
+                icon={HandCoins}
               />
               <SummaryCard
                 label="Total Profit"
@@ -1025,7 +1031,7 @@ function SummaryCard({
 
 function ProjectProgressCard({ finished, ongoing }: { finished: number; ongoing: number }) {
   return (
-    <div className="min-w-0 rounded-xl border border-border/80 bg-card/75 p-4 shadow-[0_12px_35px_rgba(0,0,0,0.14)] md:col-span-2 xl:col-span-4">
+    <div className="min-w-0 rounded-xl border border-border/80 bg-card/75 p-4 shadow-[0_12px_35px_rgba(0,0,0,0.14)] md:col-span-2 xl:col-span-5">
       <div className="flex items-center gap-2">
         <span className="grid size-8 place-items-center rounded-lg border border-border/70 bg-background/55 text-muted-foreground">
           <Gauge className="size-4" />

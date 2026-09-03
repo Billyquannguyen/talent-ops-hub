@@ -60,7 +60,7 @@ function getOngoingWorkloadTier(count: number): WorkloadTier {
 
 function WorkloadIllustration({ count, reduceMotion }: { count: number; reduceMotion: boolean }) {
   const currentFrame = useCurrentFrame();
-  const frame = reduceMotion ? 60 : currentFrame;
+  const frame = reduceMotion ? 0 : currentFrame;
   const tier = getOngoingWorkloadTier(count);
   const chartMaximum = 45;
   const markerPosition = Math.min(Math.max(count, 0), chartMaximum) / chartMaximum;
@@ -112,15 +112,36 @@ function WorkloadIllustration({ count, reduceMotion }: { count: number; reduceMo
         <div
           style={{
             backgroundColor: tier.color,
+            borderRadius: "50%",
+            filter: "blur(5px)",
+            height: 28,
+            left: `${markerPosition * 100}%`,
+            opacity: reduceMotion
+              ? 0.28
+              : interpolate(frame, [0, 30, 59], [0.18, 0.55, 0.18], {
+                  extrapolateLeft: "clamp",
+                  extrapolateRight: "clamp",
+                }),
+            position: "absolute",
+            scale: reduceMotion
+              ? 1
+              : interpolate(frame, [0, 30, 59], [0.85, 1.25, 0.85], {
+                  extrapolateLeft: "clamp",
+                  extrapolateRight: "clamp",
+                }),
+            top: -8,
+            translate: "-50% 0",
+            width: 28,
+          }}
+        />
+        <div
+          style={{
+            backgroundColor: tier.color,
             border: "3px solid #0f1115",
             borderRadius: "50%",
             boxShadow: `0 0 18px ${tier.color}99`,
             height: 18,
-            left: `${interpolate(frame, [0, 36], [1, markerPosition * 100], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-              easing: Easing.bezier(0.16, 1, 0.3, 1),
-            })}%`,
+            left: `${markerPosition * 100}%`,
             position: "absolute",
             top: -3,
             translate: "-50% 0",
@@ -184,6 +205,7 @@ export function OngoingWorkloadMonitor({ count }: { count: number }) {
           compositionHeight={64}
           fps={30}
           autoPlay={!reduceMotion}
+          loop={!reduceMotion}
           controls={false}
           clickToPlay={false}
           style={{ aspectRatio: "10 / 1", maxWidth: "100%", width: "100%" }}
