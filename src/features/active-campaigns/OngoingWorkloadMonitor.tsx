@@ -65,12 +65,12 @@ function WorkloadIllustration({ count, reduceMotion }: { count: number; reduceMo
   const chartMaximum = 45;
   const markerPosition = Math.min(Math.max(count, 0), chartMaximum) / chartMaximum;
   const zones = [
-    { color: "#f59e0b", width: 33.33 },
+    { color: "#f59e0b", width: 32.22 },
     { color: "#38bdf8", width: 11.11 },
     { color: "#34d399", width: 13.33 },
     { color: "#22d3ee", width: 11.11 },
     { color: "#a78bfa", width: 22.22 },
-    { color: "#fb7185", width: 8.9 },
+    { color: "#fb7185", width: 10.01 },
   ];
 
   return (
@@ -86,7 +86,6 @@ function WorkloadIllustration({ count, reduceMotion }: { count: number; reduceMo
         <div
           style={{
             display: "flex",
-            gap: 5,
             borderRadius: 999,
             height: 12,
             overflow: "hidden",
@@ -100,6 +99,7 @@ function WorkloadIllustration({ count, reduceMotion }: { count: number; reduceMo
                 flexBasis: `${zone.width}%`,
                 flexGrow: 0,
                 flexShrink: 0,
+                borderLeft: index === 0 ? undefined : "3px solid #0f1115",
                 opacity: interpolate(frame, [index * 4, index * 4 + 18], [0.16, 0.48], {
                   extrapolateLeft: "clamp",
                   extrapolateRight: "clamp",

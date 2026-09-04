@@ -369,14 +369,14 @@ export function ActiveCampaignManagement({
                 icon={UsersRound}
               />
               <SummaryCard
-                label="Creator Cost"
-                value={formatCurrency(visibleSummary.totalSpend)}
-                icon={BadgeDollarSign}
-              />
-              <SummaryCard
                 label="Revenue"
                 value={formatCurrency(visibleSummary.totalExternalQuote)}
                 icon={HandCoins}
+              />
+              <SummaryCard
+                label="Creator Cost"
+                value={formatCurrency(visibleSummary.totalSpend)}
+                icon={BadgeDollarSign}
               />
               <SummaryCard
                 label="Total Profit"
