@@ -9,105 +9,40 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as RosterRouteImport } from './routes/roster'
-import { Route as PromptVaultRouteImport } from './routes/prompt-vault'
-import { Route as OutreachRouteImport } from './routes/outreach'
-import { Route as InboxRouteImport } from './routes/inbox'
-import { Route as HelpRouteImport } from './routes/help'
-import { Route as EmployeeProfileRouteImport } from './routes/employee-profile'
-import { Route as DealsRouteImport } from './routes/deals'
-import { Route as CreatorSourcingRouteImport } from './routes/creator-sourcing'
-import { Route as CreatorOutreachRouteImport } from './routes/creator-outreach'
-import { Route as CampaignProfilesRouteImport } from './routes/campaign-profiles'
-import { Route as CalendarRouteImport } from './routes/calendar'
-import { Route as AnalyticsRouteImport } from './routes/analytics'
-import { Route as ActiveCampaignsRouteImport } from './routes/active-campaigns'
-import { Route as AboutKatlasMediaRouteImport } from './routes/about-katlas-media'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutKatlasMediaRouteImport } from './routes/about-katlas-media'
+import { Route as ActiveCampaignsRouteImport } from './routes/active-campaigns'
+import { Route as AnalyticsRouteImport } from './routes/analytics'
+import { Route as CalendarRouteImport } from './routes/calendar'
+import { Route as CampaignProfilesRouteImport } from './routes/campaign-profiles'
+import { Route as CreatorOutreachRouteImport } from './routes/creator-outreach'
+import { Route as CreatorSourcingRouteImport } from './routes/creator-sourcing'
+import { Route as DealsRouteImport } from './routes/deals'
+import { Route as EmployeeProfileRouteImport } from './routes/employee-profile'
+import { Route as HelpRouteImport } from './routes/help'
+import { Route as InboxRouteImport } from './routes/inbox'
+import { Route as OutreachRouteImport } from './routes/outreach'
+import { Route as PromptVaultRouteImport } from './routes/prompt-vault'
+import { Route as RosterRouteImport } from './routes/roster'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ActiveCampaignsIndexRouteImport } from './routes/active-campaigns.index'
-import { Route as ApiTranslateRouteImport } from './routes/api/translate'
-import { Route as ApiBulkSenderRouteImport } from './routes/api/bulk-sender'
 import { Route as ActiveCampaignsCampaignIdRouteImport } from './routes/active-campaigns.$campaignId'
-import { Route as ApiSourcingTiktokProfilesRouteImport } from './routes/api/sourcing/tiktok-profiles'
-import { Route as ApiSourcingHashtagRouteImport } from './routes/api/sourcing/hashtag'
-import { Route as ApiCalendarWebhookRouteImport } from './routes/api/calendar/webhook'
-import { Route as ApiCalendarNotificationsRouteImport } from './routes/api/calendar/notifications'
-import { Route as ApiCalendarCronRouteImport } from './routes/api/calendar/cron'
-import { Route as ApiCalendarConnectionRouteImport } from './routes/api/calendar/connection'
-import { Route as ApiAiOutreachRouteImport } from './routes/api/ai/outreach'
+import { Route as ApiBulkSenderRouteImport } from './routes/api/bulk-sender'
+import { Route as ApiTranslateRouteImport } from './routes/api/translate'
 import { Route as ApiAiEnrichContactsRouteImport } from './routes/api/ai/enrich-contacts'
-import { Route as ApiCalendarOauthStartRouteImport } from './routes/api/calendar/oauth/start'
+import { Route as ApiAiOutreachRouteImport } from './routes/api/ai/outreach'
+import { Route as ApiCalendarConnectionRouteImport } from './routes/api/calendar/connection'
+import { Route as ApiCalendarCronRouteImport } from './routes/api/calendar/cron'
+import { Route as ApiCalendarNotificationsRouteImport } from './routes/api/calendar/notifications'
+import { Route as ApiCalendarWebhookRouteImport } from './routes/api/calendar/webhook'
+import { Route as ApiSourcingHashtagRouteImport } from './routes/api/sourcing/hashtag'
+import { Route as ApiSourcingTiktokProfilesRouteImport } from './routes/api/sourcing/tiktok-profiles'
 import { Route as ApiCalendarOauthCallbackRouteImport } from './routes/api/calendar/oauth/callback'
+import { Route as ApiCalendarOauthStartRouteImport } from './routes/api/calendar/oauth/start'
 
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RosterRoute = RosterRouteImport.update({
-  id: '/roster',
-  path: '/roster',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PromptVaultRoute = PromptVaultRouteImport.update({
-  id: '/prompt-vault',
-  path: '/prompt-vault',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OutreachRoute = OutreachRouteImport.update({
-  id: '/outreach',
-  path: '/outreach',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InboxRoute = InboxRouteImport.update({
-  id: '/inbox',
-  path: '/inbox',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HelpRoute = HelpRouteImport.update({
-  id: '/help',
-  path: '/help',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EmployeeProfileRoute = EmployeeProfileRouteImport.update({
-  id: '/employee-profile',
-  path: '/employee-profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DealsRoute = DealsRouteImport.update({
-  id: '/deals',
-  path: '/deals',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CreatorSourcingRoute = CreatorSourcingRouteImport.update({
-  id: '/creator-sourcing',
-  path: '/creator-sourcing',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CreatorOutreachRoute = CreatorOutreachRouteImport.update({
-  id: '/creator-outreach',
-  path: '/creator-outreach',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CampaignProfilesRoute = CampaignProfilesRouteImport.update({
-  id: '/campaign-profiles',
-  path: '/campaign-profiles',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CalendarRoute = CalendarRouteImport.update({
-  id: '/calendar',
-  path: '/calendar',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AnalyticsRoute = AnalyticsRouteImport.update({
-  id: '/analytics',
-  path: '/analytics',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ActiveCampaignsRoute = ActiveCampaignsRouteImport.update({
-  id: '/active-campaigns',
-  path: '/active-campaigns',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutKatlasMediaRoute = AboutKatlasMediaRouteImport.update({
@@ -115,9 +50,74 @@ const AboutKatlasMediaRoute = AboutKatlasMediaRouteImport.update({
   path: '/about-katlas-media',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ActiveCampaignsRoute = ActiveCampaignsRouteImport.update({
+  id: '/active-campaigns',
+  path: '/active-campaigns',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnalyticsRoute = AnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CalendarRoute = CalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CampaignProfilesRoute = CampaignProfilesRouteImport.update({
+  id: '/campaign-profiles',
+  path: '/campaign-profiles',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreatorOutreachRoute = CreatorOutreachRouteImport.update({
+  id: '/creator-outreach',
+  path: '/creator-outreach',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreatorSourcingRoute = CreatorSourcingRouteImport.update({
+  id: '/creator-sourcing',
+  path: '/creator-sourcing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DealsRoute = DealsRouteImport.update({
+  id: '/deals',
+  path: '/deals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmployeeProfileRoute = EmployeeProfileRouteImport.update({
+  id: '/employee-profile',
+  path: '/employee-profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HelpRoute = HelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InboxRoute = InboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OutreachRoute = OutreachRouteImport.update({
+  id: '/outreach',
+  path: '/outreach',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PromptVaultRoute = PromptVaultRouteImport.update({
+  id: '/prompt-vault',
+  path: '/prompt-vault',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RosterRoute = RosterRouteImport.update({
+  id: '/roster',
+  path: '/roster',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ActiveCampaignsIndexRoute = ActiveCampaignsIndexRouteImport.update({
@@ -125,36 +125,40 @@ const ActiveCampaignsIndexRoute = ActiveCampaignsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ActiveCampaignsRoute,
 } as any)
-const ApiTranslateRoute = ApiTranslateRouteImport.update({
-  id: '/api/translate',
-  path: '/api/translate',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiBulkSenderRoute = ApiBulkSenderRouteImport.update({
-  id: '/api/bulk-sender',
-  path: '/api/bulk-sender',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ActiveCampaignsCampaignIdRoute =
   ActiveCampaignsCampaignIdRouteImport.update({
     id: '/$campaignId',
     path: '/$campaignId',
     getParentRoute: () => ActiveCampaignsRoute,
   } as any)
-const ApiSourcingTiktokProfilesRoute =
-  ApiSourcingTiktokProfilesRouteImport.update({
-    id: '/api/sourcing/tiktok-profiles',
-    path: '/api/sourcing/tiktok-profiles',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiSourcingHashtagRoute = ApiSourcingHashtagRouteImport.update({
-  id: '/api/sourcing/hashtag',
-  path: '/api/sourcing/hashtag',
+const ApiBulkSenderRoute = ApiBulkSenderRouteImport.update({
+  id: '/api/bulk-sender',
+  path: '/api/bulk-sender',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiCalendarWebhookRoute = ApiCalendarWebhookRouteImport.update({
-  id: '/api/calendar/webhook',
-  path: '/api/calendar/webhook',
+const ApiTranslateRoute = ApiTranslateRouteImport.update({
+  id: '/api/translate',
+  path: '/api/translate',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiEnrichContactsRoute = ApiAiEnrichContactsRouteImport.update({
+  id: '/api/ai/enrich-contacts',
+  path: '/api/ai/enrich-contacts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAiOutreachRoute = ApiAiOutreachRouteImport.update({
+  id: '/api/ai/outreach',
+  path: '/api/ai/outreach',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCalendarConnectionRoute = ApiCalendarConnectionRouteImport.update({
+  id: '/api/calendar/connection',
+  path: '/api/calendar/connection',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCalendarCronRoute = ApiCalendarCronRouteImport.update({
+  id: '/api/calendar/cron',
+  path: '/api/calendar/cron',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCalendarNotificationsRoute =
@@ -163,37 +167,33 @@ const ApiCalendarNotificationsRoute =
     path: '/api/calendar/notifications',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiCalendarCronRoute = ApiCalendarCronRouteImport.update({
-  id: '/api/calendar/cron',
-  path: '/api/calendar/cron',
+const ApiCalendarWebhookRoute = ApiCalendarWebhookRouteImport.update({
+  id: '/api/calendar/webhook',
+  path: '/api/calendar/webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiCalendarConnectionRoute = ApiCalendarConnectionRouteImport.update({
-  id: '/api/calendar/connection',
-  path: '/api/calendar/connection',
+const ApiSourcingHashtagRoute = ApiSourcingHashtagRouteImport.update({
+  id: '/api/sourcing/hashtag',
+  path: '/api/sourcing/hashtag',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAiOutreachRoute = ApiAiOutreachRouteImport.update({
-  id: '/api/ai/outreach',
-  path: '/api/ai/outreach',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAiEnrichContactsRoute = ApiAiEnrichContactsRouteImport.update({
-  id: '/api/ai/enrich-contacts',
-  path: '/api/ai/enrich-contacts',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCalendarOauthStartRoute = ApiCalendarOauthStartRouteImport.update({
-  id: '/api/calendar/oauth/start',
-  path: '/api/calendar/oauth/start',
-  getParentRoute: () => rootRouteImport,
-} as any)
+const ApiSourcingTiktokProfilesRoute =
+  ApiSourcingTiktokProfilesRouteImport.update({
+    id: '/api/sourcing/tiktok-profiles',
+    path: '/api/sourcing/tiktok-profiles',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCalendarOauthCallbackRoute =
   ApiCalendarOauthCallbackRouteImport.update({
     id: '/api/calendar/oauth/callback',
     path: '/api/calendar/oauth/callback',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCalendarOauthStartRoute = ApiCalendarOauthStartRouteImport.update({
+  id: '/api/calendar/oauth/start',
+  path: '/api/calendar/oauth/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -422,102 +422,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/roster': {
-      id: '/roster'
-      path: '/roster'
-      fullPath: '/roster'
-      preLoaderRoute: typeof RosterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/prompt-vault': {
-      id: '/prompt-vault'
-      path: '/prompt-vault'
-      fullPath: '/prompt-vault'
-      preLoaderRoute: typeof PromptVaultRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/outreach': {
-      id: '/outreach'
-      path: '/outreach'
-      fullPath: '/outreach'
-      preLoaderRoute: typeof OutreachRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/inbox': {
-      id: '/inbox'
-      path: '/inbox'
-      fullPath: '/inbox'
-      preLoaderRoute: typeof InboxRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/help': {
-      id: '/help'
-      path: '/help'
-      fullPath: '/help'
-      preLoaderRoute: typeof HelpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/employee-profile': {
-      id: '/employee-profile'
-      path: '/employee-profile'
-      fullPath: '/employee-profile'
-      preLoaderRoute: typeof EmployeeProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/deals': {
-      id: '/deals'
-      path: '/deals'
-      fullPath: '/deals'
-      preLoaderRoute: typeof DealsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/creator-sourcing': {
-      id: '/creator-sourcing'
-      path: '/creator-sourcing'
-      fullPath: '/creator-sourcing'
-      preLoaderRoute: typeof CreatorSourcingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/creator-outreach': {
-      id: '/creator-outreach'
-      path: '/creator-outreach'
-      fullPath: '/creator-outreach'
-      preLoaderRoute: typeof CreatorOutreachRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/campaign-profiles': {
-      id: '/campaign-profiles'
-      path: '/campaign-profiles'
-      fullPath: '/campaign-profiles'
-      preLoaderRoute: typeof CampaignProfilesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/calendar': {
-      id: '/calendar'
-      path: '/calendar'
-      fullPath: '/calendar'
-      preLoaderRoute: typeof CalendarRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/analytics': {
-      id: '/analytics'
-      path: '/analytics'
-      fullPath: '/analytics'
-      preLoaderRoute: typeof AnalyticsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/active-campaigns': {
-      id: '/active-campaigns'
-      path: '/active-campaigns'
-      fullPath: '/active-campaigns'
-      preLoaderRoute: typeof ActiveCampaignsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about-katlas-media': {
@@ -527,11 +436,102 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutKatlasMediaRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/active-campaigns': {
+      id: '/active-campaigns'
+      path: '/active-campaigns'
+      fullPath: '/active-campaigns'
+      preLoaderRoute: typeof ActiveCampaignsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/analytics': {
+      id: '/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/calendar': {
+      id: '/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof CalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/campaign-profiles': {
+      id: '/campaign-profiles'
+      path: '/campaign-profiles'
+      fullPath: '/campaign-profiles'
+      preLoaderRoute: typeof CampaignProfilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/creator-outreach': {
+      id: '/creator-outreach'
+      path: '/creator-outreach'
+      fullPath: '/creator-outreach'
+      preLoaderRoute: typeof CreatorOutreachRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/creator-sourcing': {
+      id: '/creator-sourcing'
+      path: '/creator-sourcing'
+      fullPath: '/creator-sourcing'
+      preLoaderRoute: typeof CreatorSourcingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deals': {
+      id: '/deals'
+      path: '/deals'
+      fullPath: '/deals'
+      preLoaderRoute: typeof DealsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/employee-profile': {
+      id: '/employee-profile'
+      path: '/employee-profile'
+      fullPath: '/employee-profile'
+      preLoaderRoute: typeof EmployeeProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/help': {
+      id: '/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof HelpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbox': {
+      id: '/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof InboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/outreach': {
+      id: '/outreach'
+      path: '/outreach'
+      fullPath: '/outreach'
+      preLoaderRoute: typeof OutreachRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prompt-vault': {
+      id: '/prompt-vault'
+      path: '/prompt-vault'
+      fullPath: '/prompt-vault'
+      preLoaderRoute: typeof PromptVaultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/roster': {
+      id: '/roster'
+      path: '/roster'
+      fullPath: '/roster'
+      preLoaderRoute: typeof RosterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/active-campaigns/': {
@@ -541,12 +541,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ActiveCampaignsIndexRouteImport
       parentRoute: typeof ActiveCampaignsRoute
     }
-    '/api/translate': {
-      id: '/api/translate'
-      path: '/api/translate'
-      fullPath: '/api/translate'
-      preLoaderRoute: typeof ApiTranslateRouteImport
-      parentRoute: typeof rootRouteImport
+    '/active-campaigns/$campaignId': {
+      id: '/active-campaigns/$campaignId'
+      path: '/$campaignId'
+      fullPath: '/active-campaigns/$campaignId'
+      preLoaderRoute: typeof ActiveCampaignsCampaignIdRouteImport
+      parentRoute: typeof ActiveCampaignsRoute
     }
     '/api/bulk-sender': {
       id: '/api/bulk-sender'
@@ -555,60 +555,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBulkSenderRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/active-campaigns/$campaignId': {
-      id: '/active-campaigns/$campaignId'
-      path: '/$campaignId'
-      fullPath: '/active-campaigns/$campaignId'
-      preLoaderRoute: typeof ActiveCampaignsCampaignIdRouteImport
-      parentRoute: typeof ActiveCampaignsRoute
-    }
-    '/api/sourcing/tiktok-profiles': {
-      id: '/api/sourcing/tiktok-profiles'
-      path: '/api/sourcing/tiktok-profiles'
-      fullPath: '/api/sourcing/tiktok-profiles'
-      preLoaderRoute: typeof ApiSourcingTiktokProfilesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/sourcing/hashtag': {
-      id: '/api/sourcing/hashtag'
-      path: '/api/sourcing/hashtag'
-      fullPath: '/api/sourcing/hashtag'
-      preLoaderRoute: typeof ApiSourcingHashtagRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/calendar/webhook': {
-      id: '/api/calendar/webhook'
-      path: '/api/calendar/webhook'
-      fullPath: '/api/calendar/webhook'
-      preLoaderRoute: typeof ApiCalendarWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/calendar/notifications': {
-      id: '/api/calendar/notifications'
-      path: '/api/calendar/notifications'
-      fullPath: '/api/calendar/notifications'
-      preLoaderRoute: typeof ApiCalendarNotificationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/calendar/cron': {
-      id: '/api/calendar/cron'
-      path: '/api/calendar/cron'
-      fullPath: '/api/calendar/cron'
-      preLoaderRoute: typeof ApiCalendarCronRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/calendar/connection': {
-      id: '/api/calendar/connection'
-      path: '/api/calendar/connection'
-      fullPath: '/api/calendar/connection'
-      preLoaderRoute: typeof ApiCalendarConnectionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/ai/outreach': {
-      id: '/api/ai/outreach'
-      path: '/api/ai/outreach'
-      fullPath: '/api/ai/outreach'
-      preLoaderRoute: typeof ApiAiOutreachRouteImport
+    '/api/translate': {
+      id: '/api/translate'
+      path: '/api/translate'
+      fullPath: '/api/translate'
+      preLoaderRoute: typeof ApiTranslateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ai/enrich-contacts': {
@@ -618,11 +569,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAiEnrichContactsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/calendar/oauth/start': {
-      id: '/api/calendar/oauth/start'
-      path: '/api/calendar/oauth/start'
-      fullPath: '/api/calendar/oauth/start'
-      preLoaderRoute: typeof ApiCalendarOauthStartRouteImport
+    '/api/ai/outreach': {
+      id: '/api/ai/outreach'
+      path: '/api/ai/outreach'
+      fullPath: '/api/ai/outreach'
+      preLoaderRoute: typeof ApiAiOutreachRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/calendar/connection': {
+      id: '/api/calendar/connection'
+      path: '/api/calendar/connection'
+      fullPath: '/api/calendar/connection'
+      preLoaderRoute: typeof ApiCalendarConnectionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/calendar/cron': {
+      id: '/api/calendar/cron'
+      path: '/api/calendar/cron'
+      fullPath: '/api/calendar/cron'
+      preLoaderRoute: typeof ApiCalendarCronRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/calendar/notifications': {
+      id: '/api/calendar/notifications'
+      path: '/api/calendar/notifications'
+      fullPath: '/api/calendar/notifications'
+      preLoaderRoute: typeof ApiCalendarNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/calendar/webhook': {
+      id: '/api/calendar/webhook'
+      path: '/api/calendar/webhook'
+      fullPath: '/api/calendar/webhook'
+      preLoaderRoute: typeof ApiCalendarWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sourcing/hashtag': {
+      id: '/api/sourcing/hashtag'
+      path: '/api/sourcing/hashtag'
+      fullPath: '/api/sourcing/hashtag'
+      preLoaderRoute: typeof ApiSourcingHashtagRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sourcing/tiktok-profiles': {
+      id: '/api/sourcing/tiktok-profiles'
+      path: '/api/sourcing/tiktok-profiles'
+      fullPath: '/api/sourcing/tiktok-profiles'
+      preLoaderRoute: typeof ApiSourcingTiktokProfilesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/calendar/oauth/callback': {
@@ -630,6 +623,13 @@ declare module '@tanstack/react-router' {
       path: '/api/calendar/oauth/callback'
       fullPath: '/api/calendar/oauth/callback'
       preLoaderRoute: typeof ApiCalendarOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/calendar/oauth/start': {
+      id: '/api/calendar/oauth/start'
+      path: '/api/calendar/oauth/start'
+      fullPath: '/api/calendar/oauth/start'
+      preLoaderRoute: typeof ApiCalendarOauthStartRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
